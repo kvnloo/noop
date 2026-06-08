@@ -17,6 +17,22 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 1.16 — Health Connect shows as Health Connect (Android)
+
+- **Fixed (Android): Health Connect data was attributed to "Apple Health."** `HealthConnectImporter`
+  stored its daily aggregates (steps/HR/HRV/sleep/weight) under the shared `apple-health` deviceId — the
+  same bucket the Apple Health export uses — so the Data Sources screen counted them under the Apple
+  Health card (only the workouts were correctly tagged `health-connect`). It now files **all** Health
+  Connect data under its own `health-connect` source, named "Health Connect," and the Data Sources
+  Health Connect card shows its own counts. The unified-external-health read sites (Today footer,
+  Workouts) union both sources, so nothing disappears; `CompareScreen` is unaffected (Health Connect
+  writes no `metricSeries`). A one-time refile runs at the start of a Health Connect import to move any
+  legacy `apple-health` Health-Connect data across (safe + idempotent: HC writes no `metricSeries`, so
+  `apple-health` daily rows with no `metricSeries` are unambiguously HC-origin; runs before the import so
+  re-importing never duplicates). No data was ever lost — labelling only (issue #34).
+
+---
+
 ## 1.15 — WHOOP 5/MG: the wrist buzz works
 
 - **The haptic buzz now fires on WHOOP 5.0/MG (experimental), both platforms.** @jamartif confirming live
