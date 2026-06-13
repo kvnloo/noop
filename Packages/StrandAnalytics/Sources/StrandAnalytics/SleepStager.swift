@@ -1000,8 +1000,12 @@ public enum SleepStager {
         var t = start
         while t < end {
             let bucket = seg.filter { $0.ts >= t && $0.ts < t + windowS }.map { Double($0.rrMs) }
-            let filtered = HRVAnalyzer.rangeFilter(bucket)
-            if filtered.count >= 2, let r = HRVAnalyzer.rmssdRaw(filtered) { vals.append(r) }
+            // Full clean (range + Malik ectopic rejection), not just range — matches the
+            // analyze() pipeline. The 0x2A37 RR on a WHOOP 5/MG is PPG-derived and noisier
+            // than a 4.0's; rMSSD is built from SUCCESSIVE differences, so an un-rejected
+            // jitter spike inflates the session HRV. Ectopic rejection drops those (#262/#235).
+            let cleaned = HRVAnalyzer.cleanRR(bucket)
+            if cleaned.count >= 2, let r = HRVAnalyzer.rmssdRaw(cleaned) { vals.append(r) }
             t += windowS
         }
         guard !vals.isEmpty else { return nil }

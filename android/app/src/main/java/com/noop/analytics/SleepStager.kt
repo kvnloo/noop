@@ -1139,9 +1139,13 @@ object SleepStager {
         var t = start
         while (t < end) {
             val bucket = seg.filter { it.ts >= t && it.ts < t + windowS }.map { it.rrMs.toDouble() }
-            val filtered = HrvAnalyzer.rangeFilter(bucket)
-            if (filtered.size >= 2) {
-                val r = HrvAnalyzer.rmssdRaw(filtered)
+            // Full clean (range + Malik ectopic rejection), not just range — matches the
+            // analyze() pipeline. The 0x2A37 RR on a WHOOP 5/MG is PPG-derived and noisier
+            // than a 4.0's; rMSSD is built from SUCCESSIVE differences, so an un-rejected
+            // jitter spike inflates the session HRV. Ectopic rejection drops those (#262/#235).
+            val cleaned = HrvAnalyzer.cleanRR(bucket)
+            if (cleaned.size >= 2) {
+                val r = HrvAnalyzer.rmssdRaw(cleaned)
                 if (r != null) vals.add(r)
             }
             t += windowS

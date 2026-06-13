@@ -330,4 +330,21 @@ final class SleepStagerTests: XCTestCase {
             onsetIdx: 0, finalWakeIdx: 3)
         XCTAssertEqual(allLate, ["deep", "deep", "deep", "deep"])
     }
+
+    func testSessionAvgHRVRejectsEctopicSpikes() {
+        // A 5-min window of steady ~900 ms beats (≈67 bpm) with a +600 ms ectopic
+        // spike every 15th beat — the shape of PPG-derived 0x2A37 RR on a WHOOP 5/MG.
+        // rMSSD is built from SUCCESSIVE differences, so the spikes would inflate the
+        // session HRV if left in. cleanRR's Malik ectopic rejection drops them, so the
+        // cleaned series is steady → HRV ≈ 0. Pre-fix (rangeFilter only) this path
+        // returned ~200 ms; this guards the #262/#235 fix against regression.
+        var rr: [RRInterval] = []
+        let start = 1000, end = start + 300
+        for i in 0..<300 {
+            rr.append(RRInterval(ts: start + i, rrMs: (i % 15 == 0) ? 1500 : 900))
+        }
+        let hrv = SleepStager.sessionAvgHRV(start: start, end: end, rr: rr)
+        XCTAssertNotNil(hrv)
+        XCTAssertLessThan(hrv!, 50, "ectopic spikes must be rejected before rMSSD")
+    }
 }
