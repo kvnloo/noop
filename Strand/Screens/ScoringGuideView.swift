@@ -32,6 +32,31 @@ enum ScoreSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The Bevel colour world this score belongs to — drives the card tint, the sample
+    /// gauge stroke and the scenic bloom, so each section reads as its own domain.
+    var domain: DomainTheme {
+        switch self {
+        case .charge: return .charge
+        case .effort: return .effort
+        case .rest:   return .rest
+        }
+    }
+
+    /// A representative sample fraction (0–1) for the section's illustrative gauge — a
+    /// "what a strong day looks like" reading, purely decorative in the guide.
+    var sampleFraction: Double {
+        switch self {
+        case .charge: return 0.82
+        case .effort: return 0.64
+        case .rest:   return 0.88
+        }
+    }
+
+    /// The number shown inside the sample gauge (the 0–100 score the fraction maps to).
+    var sampleNumber: String {
+        "\(Int((sampleFraction * 100).rounded()))"
+    }
+
     /// The SF Symbol for the section header (heart/spark · flame · moon).
     var icon: String {
         switch self {
@@ -54,6 +79,11 @@ struct ScoringGuideView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                // A scenic Charge-tinted hero behind the title region sets the premium tone
+                // the moment the guide opens — the same backdrop the Today rings float over.
+                .background {
+                    ScenicHeroBackground(domain: .charge, starCount: 28, fadesToBase: true)
+                }
             Divider().overlay(StrandPalette.hairline)
             ScrollViewReader { proxy in
                 ScrollView {
@@ -95,16 +125,19 @@ struct ScoringGuideView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("How your scores work").font(StrandFont.title2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("YOUR DAILY SCORES").font(StrandFont.overline)
+                    .tracking(StrandFont.overlineTracking)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                Text("How your scores work").font(StrandFont.rounded(26, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
                 Text("Charge · Effort · Rest").font(StrandFont.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
+                    .foregroundStyle(StrandPalette.textSecondary)
             }
             Spacer()
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 22))
                     .foregroundStyle(StrandPalette.textTertiary)
             }
             .buttonStyle(.plain)
@@ -152,26 +185,52 @@ struct ScoringGuideView: View {
 
     private func legendDot(_ section: ScoreSection, _ label: String) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(section.accent).frame(width: 8, height: 8)
+            Circle().fill(section.domain.color).frame(width: 8, height: 8)
             Text(label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
 
-    /// One colour-accented score section: a tinted icon + headline, the body, and an
-    /// italic/secondary "vs WHOOP" line set off by a hairline rule.
+    /// One colour-accented score section: a frosted, domain-tinted card carrying a sample
+    /// BevelGauge of that world beside a tinted headline, the body, and an italic "vs WHOOP"
+    /// line set off by a hairline rule. The gauge is illustrative — a "what a strong day reads
+    /// like" preview in the section's own colour — so a glance maps a card to its Today ring.
     private func scoreCard(_ section: ScoreSection, headline: String, body: String, vsWhoop: String) -> some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: section.icon)
-                        .font(.system(size: 18))
-                        .foregroundStyle(section.accent)
-                        .accessibilityHidden(true)
-                    Text(headline).font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+        NoopCard(tint: section.domain.color) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Header row — the sample gauge sits beside the tinted icon + headline.
+                HStack(alignment: .center, spacing: 14) {
+                    BevelGauge(
+                        fraction: section.sampleFraction,
+                        stops: section.domain.gradient.stops,
+                        tipColor: section.domain.bright,
+                        numberText: section.sampleNumber,
+                        captionText: section.rawValue.capitalized,
+                        diameter: 84,
+                        lineWidth: 9,
+                        showsLabel: true,
+                        animatedFraction: section.sampleFraction,
+                        bloomActive: true
+                    )
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: section.icon)
+                                .font(.system(size: 16))
+                                .foregroundStyle(section.domain.color)
+                                .accessibilityHidden(true)
+                            Text(section.rawValue.capitalized)
+                                .font(StrandFont.overline)
+                                .tracking(StrandFont.overlineTracking)
+                                .textCase(.uppercase)
+                                .foregroundStyle(section.domain.color)
+                        }
+                        Text(headline).font(StrandFont.headline)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
                 Text(body)
                     .font(StrandFont.subhead)
@@ -182,7 +241,7 @@ struct ScoringGuideView: View {
                     Text("vs WHOOP").font(StrandFont.overline)
                         .tracking(StrandFont.overlineTracking)
                         .textCase(.uppercase)
-                        .foregroundStyle(section.accent)
+                        .foregroundStyle(section.domain.color)
                         .padding(.top, 1)
                     Text(vsWhoop)
                         .font(StrandFont.footnote)
@@ -193,18 +252,10 @@ struct ScoringGuideView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // A left accent strip ties the card to its score colour without a hard fill.
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(section.accent)
-                .frame(width: 3)
-                .padding(.vertical, 14)
-                .opacity(0.9)
-        }
-        // Deep-link highlight: a brief accent-tinted ring when arrived at via an ⓘ.
+        // Deep-link highlight: a brief domain-tinted ring when arrived at via an ⓘ.
         .overlay(
             RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous)
-                .strokeBorder(section.accent, lineWidth: 2)
+                .strokeBorder(section.domain.color, lineWidth: 2)
                 .opacity(highlighted == section ? 1 : 0)
         )
         .animation(.easeOut(duration: 0.35), value: highlighted)

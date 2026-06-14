@@ -662,7 +662,9 @@ private fun OverlaySection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader("Overlay", overline = range.phrase, trailing = "${series.size} series")
-        NoopCard {
+        // Anchor the overlay card to the brand-green chrome world; each line keeps its own categorical
+        // series colour so the overlaid lines stay distinguishable against the wash.
+        NoopCard(tint = Palette.accent) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Overline("Normalized overlay")
                 Text(
@@ -757,6 +759,11 @@ private fun OverlayChart(series: List<CompareSeries>, modifier: Modifier) {
                 color = s.color,
                 style = Stroke(width = 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
+            // Bevel "now" end-cap on this series' latest point — soft halo + bright core + white centre.
+            val last = pts.last()
+            drawCircle(color = s.color.copy(alpha = 0.30f), radius = 8f, center = last)
+            drawCircle(color = s.color.copy(alpha = 0.65f), radius = 5f, center = last)
+            drawCircle(color = Color.White, radius = 2.2f, center = last)
         }
     }
 }
@@ -865,7 +872,9 @@ private fun CorrelationSection(series: List<CompareSeries>, range: CompareRange)
 @Composable
 private fun PairCard(p: PairResult) {
     val tint = correlationColor(p.r)
-    NoopCard {
+    // Frosted card washed by the relationship's own colour (green positive / rose negative), with a
+    // TrendChip surfacing the signed direction at a glance — Today's delta idiom, applied to r.
+    NoopCard(tint = tint) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -883,6 +892,7 @@ private fun PairCard(p: PairResult) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                TrendChip(text = signedR(p.r), color = tint)
                 Text("r = ${signedR(p.r)}", style = NoopType.number(18f), color = tint)
             }
 

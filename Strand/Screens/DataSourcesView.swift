@@ -25,11 +25,13 @@ struct DataSourcesView: View {
         ScreenScaffold(title: "Data Sources",
                        subtitle: "Everything stays on \(Platform.deviceNounPhrase). Bring your history in once, then it's yours.",
                        onRefresh: { await repo.refresh() }) {
-            whoopCard
-            appleHealthCard
-            nutritionCard
-            liftingCard
-            liveCard
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                whoopCard
+                appleHealthCard
+                nutritionCard
+                liftingCard
+                liveCard
+            }
         }
         // A single target-aware importer avoids SwiftUI collapsing competing importers on the same screen.
         .fileImporter(isPresented: $showingImporter,
@@ -40,7 +42,11 @@ struct DataSourcesView: View {
     }
 
     private var whoopCard: some View {
-        card(title: "WHOOP Export", icon: "square.and.arrow.down.fill",
+        let hasWhoop = !repo.days.isEmpty
+        return card(title: "WHOOP Export", icon: "square.and.arrow.down.fill",
+             tint: StrandPalette.accent,
+             status: StatePill(hasWhoop ? "Imported" : "Nothing imported",
+                               tone: hasWhoop ? .accent : .neutral),
              subtitle: "Import your full WHOOP history — recovery, strain, sleep, workouts — from a data export (.zip). Works for WHOOP 4.0, 5.0 and MG. Get one at app.whoop.com → Data Management.") {
             let importingWhoop = model.isImporting(.whoop)
             HStack(spacing: 12) {
@@ -67,6 +73,7 @@ struct DataSourcesView: View {
 
     private var appleHealthCard: some View {
         card(title: "Apple Health", icon: "heart.fill",
+             tint: StrandPalette.metricCyan,
              subtitle: "Import an Apple Health export (Health app → profile → Export All Health Data → export.zip). 7 years of HR, HRV, sleep, SpO₂, steps and more — streamed locally. Large exports take a minute or two.") {
             let importingAppleHealth = model.isImporting(.appleHealth)
             HStack(spacing: 12) {
@@ -74,7 +81,7 @@ struct DataSourcesView: View {
                     Label(importingAppleHealth ? "Working…" : "Choose export.zip…", systemImage: "tray.and.arrow.down")
                         .padding(.horizontal, 6)
                 }
-                .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
                 .disabled(model.hasActiveImport || nutritionImporting || liftingImporting)
                 if importingAppleHealth { ProgressView().controlSize(.small) }
             }
@@ -87,6 +94,7 @@ struct DataSourcesView: View {
 
     private var nutritionCard: some View {
         card(title: "Nutrition (.csv)", icon: "fork.knife",
+             tint: StrandPalette.metricAmber,
              subtitle: "Import daily nutrition totals — calories in, protein, carbs, fat (and weight if present) — from a Cronometer or MacroFactor CSV export. Other trackers work too if the file has a date column and daily totals.") {
             HStack(spacing: 12) {
                 Button { presentImporter(.nutrition) } label: {
@@ -106,6 +114,7 @@ struct DataSourcesView: View {
 
     private var liftingCard: some View {
         card(title: "Lifting log (Hevy / Liftosaur)", icon: "dumbbell.fill",
+             tint: DomainTheme.effort.color,
              subtitle: "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a measured strain — it never changes your Effort.") {
             HStack(spacing: 12) {
                 Button { presentImporter(.lifting) } label: {
@@ -308,36 +317,48 @@ struct DataSourcesView: View {
         }
     }
     private var liveCard: some View {
-        card(title: "WHOOP Strap (Live BLE)", icon: "antenna.radiowaves.left.and.right",
+        // Three-state, consistent with the Live screen's connection pill — a connected-but-
+        // not-yet-streaming strap (e.g. an experimental WHOOP 5/MG link) no longer reads as
+        // "Not connected" on one screen and "Connected" on another (issue #8).
+        let (tone, label): (StrandTone, LocalizedStringKey) =
+            live.bonded ? (.positive, "Bonded — streaming.")
+            : live.connected ? (.warning, "Connected.")
+            : (.critical, "Not connected — open Live to pair.")
+        return card(title: "WHOOP Strap (Live BLE)", icon: "antenna.radiowaves.left.and.right",
+             tint: StrandPalette.accent,
+             status: StatePill(label, tone: tone, pulsing: live.connected && !live.bonded),
              subtitle: "Pairs directly with your strap over Bluetooth — no WHOOP app, no cloud.") {
-            HStack(spacing: 8) {
-                // Three-state, consistent with the Live screen's connection pill — a connected-but-
-                // not-yet-streaming strap (e.g. an experimental WHOOP 5/MG link) no longer reads as
-                // "Not connected" on one screen and "Connected" on another (issue #8).
-                let (dot, label): (Color, String) =
-                    live.bonded ? (StrandPalette.statusPositive, "Bonded — streaming.")
-                    : live.connected ? (StrandPalette.statusWarning, "Connected.")
-                    : (StrandPalette.statusCritical, "Not connected — open Live to pair.")
-                Circle().fill(dot).frame(width: 8, height: 8)
-                Text(label).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-            }
+            EmptyView()
         }
     }
 
+    /// One source as a frosted, domain-tinted NoopCard: a tinted source glyph + title, an optional
+    /// status pill on the trailing edge, the explainer line, then the connect/import action(s). The
+    /// glyph + accents take the card's `tint` (its colour world); the status pill carries connection
+    /// state. Replaces the old flat surfaceRaised rectangle with the shared Bevel card surface.
     @ViewBuilder
-    private func card<C: View>(title: String, icon: String, subtitle: String,
-                              @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).foregroundStyle(StrandPalette.accent)
-                Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+    private func card<C: View, S: View>(title: String, icon: String,
+                              tint: Color = StrandPalette.accent,
+                              status: S = EmptyView(),
+                              subtitle: String,
+                              @ViewBuilder content: @escaping () -> C) -> some View {
+        NoopCard(padding: 18, tint: tint) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 30, height: 30)
+                        .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .accessibilityHidden(true)
+                    Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+                    Spacer(minLength: 8)
+                    status
+                }
+                Text(subtitle).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                content()
             }
-            Text(subtitle).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-            content()
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(StrandPalette.hairline))
     }
 }

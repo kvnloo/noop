@@ -252,6 +252,15 @@ fun SleepScreen(
             if (live.backfilling) SyncingHistoryNote(chunks = live.syncChunksThisSession)
             SleepEmptyState()
         } else {
+            // REST HERO — a scenic indigo backdrop with the night's sleep-performance score as a
+            // layered BevelGauge (Rest gradient), else a big rounded hours-slept headline. Mirrors the
+            // macOS SleepView.restHero. Presentation-only — reads the existing model figures. (Bevel)
+            RestHero(
+                score = model?.performance?.latest,
+                asleepMin = model?.stages?.asleep,
+                source = restHeroSource(imported, days),
+            )
+            Spacer(Modifier.height(Metrics.selectorTopUp))
             Hero(
                 display = display,
                 clock = night?.clockLabel ?: model?.clockLabel,
@@ -296,6 +305,79 @@ fun SleepScreen(
     }
 }
 
+// MARK: - 0. REST HERO — scenic backdrop + sleep-performance gauge (Bevel)
+//
+// The Rest world's opening: a scenic indigo [ScenicHeroBackground] with — when the night carries a
+// 0–100 sleep-performance score — a layered [BevelGauge] in the Rest gradient; else a big rounded
+// hours-slept headline over the same backdrop. A [SourceBadge] states whether the score is WHOOP's
+// own imported figure or NOOP's on-device estimate. Mirrors the macOS SleepView.restHero. The number
+// comes straight from the existing model figures — presentation-only.
+
+@Composable
+private fun RestHero(score: Double?, asleepMin: Double?, source: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
+        SectionHeader("Sleep performance", overline = "Last night", trailing = "Rest")
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cardRadius)),
+        ) {
+            ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Rest)
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(Metrics.space24),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Metrics.space14),
+            ) {
+                if (score != null) {
+                    BevelGauge(
+                        fraction = (score / 100.0).coerceIn(0.0, 1.0),
+                        stops = Palette.restGradientStops,
+                        tipColor = Palette.restColor,
+                        numberText = "${score.roundToInt()}",
+                        captionText = "of 100",
+                        stateText = sleepScoreWord(score),
+                        diameter = 184.dp,
+                        lineWidth = 15.dp,
+                    )
+                } else {
+                    // No 0–100 score for the night — lead with hours slept as a big rounded headline.
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(Metrics.space4),
+                        modifier = Modifier.padding(vertical = Metrics.space16),
+                    ) {
+                        Text(
+                            durationText(asleepMin ?: 0.0),
+                            style = NoopType.number(46f),
+                            color = Palette.restBright,
+                        )
+                        Text("asleep last night", style = NoopType.subhead, color = Palette.textSecondary)
+                    }
+                }
+                SourceBadge(text = source, tint = Palette.restColor)
+            }
+        }
+    }
+}
+
+/** A short Rest state word for the hero gauge — same banding the synthesis hero uses. */
+private fun sleepScoreWord(score: Double): String = when {
+    score < 50.0 -> "Poor"
+    score < 70.0 -> "Fair"
+    score < 85.0 -> "Good"
+    else -> "Optimal"
+}
+
+/**
+ * Whether the night's sleep-performance score is WHOOP's own imported figure or NOOP's on-device
+ * approximation — so the hero is honest about provenance, like Today's badges. Mirrors the macOS
+ * SleepView.sleepScoreSource.
+ */
+private fun restHeroSource(imported: ImportedSleepSeries, days: List<DailyMetric>): String {
+    val lastDay = days.lastOrNull()?.day
+    return if (lastDay != null && imported.performance[lastDay] != null) "Whoop" else "On-device"
+}
+
 // MARK: - 1. HERO — stage breakdown for the navigated night
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -322,7 +404,7 @@ private fun Hero(
         if (display == null) {
             // Honest fallback: this night recorded no usable stage data — never silently
             // substitute another night's hypnogram. (#160)
-            NoopCard {
+            NoopCard(tint = Palette.restColor) {
                 Text(
                     "No stage data recorded for this night.",
                     style = NoopType.subhead,
@@ -339,6 +421,7 @@ private fun Hero(
                 subtitle = "${durationText(inBedMin)} in bed · ${display.efficiencyText} efficiency" +
                     (if (display.realSegments != null) " · approx. stages (on-device)" else ""),
                 trailing = durationText(s.asleep),
+                tint = Palette.restColor,
                 footer = {
                     ChartFooter(
                         listOf(
@@ -391,26 +474,28 @@ private fun Hero(
 private fun SleepWindowRow(session: SleepSession) {
     val asleep = clockTimeLabel(session.startTs)
     val woke = clockTimeLabel(session.endTs)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Metrics.cornerSm))
-            .background(Palette.surfaceRaised)
-            .padding(horizontal = Metrics.space16, vertical = Metrics.space12)
-            .semantics(mergeDescendants = true) { contentDescription = "Fell asleep at $asleep, woke at $woke" },
-        verticalAlignment = Alignment.CenterVertically,
+    // A frosted Rest-tinted card (was a flat surfaceRaised block) so the window row sits in the
+    // same colour world as the rest of the screen. Bevel treatment — content unchanged.
+    NoopCard(
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "Fell asleep at $asleep, woke at $woke"
+        },
+        padding = Metrics.space14,
+        tint = Palette.restColor,
     ) {
-        SleepTime(icon = Icons.Filled.Bedtime, label = "Asleep", value = asleep)
-        Spacer(Modifier.width(Metrics.space12))
-        Box(
-            modifier = Modifier
-                .height(30.dp)
-                .width(Metrics.divider)
-                .background(Palette.hairline),
-        )
-        Spacer(Modifier.width(Metrics.space12))
-        SleepTime(icon = Icons.Filled.WbSunny, label = "Woke", value = woke)
-        Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SleepTime(icon = Icons.Filled.Bedtime, label = "Asleep", value = asleep)
+            Spacer(Modifier.width(Metrics.space12))
+            Box(
+                modifier = Modifier
+                    .height(30.dp)
+                    .width(Metrics.divider)
+                    .background(Palette.hairline),
+            )
+            Spacer(Modifier.width(Metrics.space12))
+            SleepTime(icon = Icons.Filled.WbSunny, label = "Woke", value = woke)
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 
@@ -423,7 +508,7 @@ private fun SleepTime(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
         Icon(
             icon,
             contentDescription = null, // row carries the combined description
-            tint = Palette.accent,
+            tint = Palette.restColor,
             modifier = Modifier.size(20.dp),
         )
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space2)) {
@@ -713,7 +798,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.performance.latest),
                 caption = vsTypical(m.performance.latest, m.performance.typical, "%"),
                 accent = m.performance.latest?.let { Palette.recoveryColor(it) } ?: Palette.textPrimary,
-                spark = m.performance.series, sparkColor = Palette.accent,
+                spark = m.performance.series, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("performance") },
             )
         },
@@ -743,7 +828,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.hoursVsNeeded.latest),
                 caption = vsTypical(m.hoursVsNeeded.latest, m.hoursVsNeeded.typical, "%"),
                 accent = m.hoursVsNeeded.latest?.let { Palette.recoveryColor(minOf(100.0, it)) } ?: Palette.textPrimary,
-                spark = m.hoursVsNeeded.series, sparkColor = Palette.accent,
+                spark = m.hoursVsNeeded.series, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("hours_vs_needed") },
             )
         },
@@ -804,7 +889,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
 internal fun SleepDebtLedgerCard(ledger: SleepDebtLedger) {
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader("Sleep-debt ledger", overline = "Last 14 nights", trailing = "running balance")
-        NoopCard(padding = Metrics.cardPadding) {
+        NoopCard(padding = Metrics.cardPadding, tint = Palette.restColor) {
             if (ledger.nightCount == 0) {
                 Text(
                     "No nights with sleep data yet — your ledger fills in as you wear the strap to bed.",
@@ -906,7 +991,7 @@ private fun StagesVsTypical(m: SleepModel) {
     val s = m.stages
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader("Stages vs typical", overline = "Selected night", trailing = "marker = your mean")
-        NoopCard {
+        NoopCard(tint = Palette.restColor) {
             Column(verticalArrangement = Arrangement.spacedBy(Metrics.space14)) {
                 StageRow("Deep", last = s.deep, typical = m.typicalDeepMin, color = Palette.sleepDeep)
                 Hairline()
@@ -1003,6 +1088,7 @@ private fun DurationTrend(m: SleepModel) {
             title = "Hours asleep",
             subtitle = "Per night, trailing 14 days",
             trailing = avg?.let { String.format(Locale.US, "%.1f h avg", it) },
+            tint = Palette.restColor,
             footer = {
                 ChartFooter(
                     listOf(
@@ -1020,7 +1106,7 @@ private fun DurationTrend(m: SleepModel) {
                         values = pts,
                         modifier = Modifier.fillMaxWidth().height(Metrics.compactChartHeight)
                             .semantics { contentDescription = "Sleep hours trend chart" },
-                        color = Palette.accent,
+                        color = Palette.restColor,
                         fill = true,
                         selectionEnabled = true,
                     )
@@ -1035,6 +1121,7 @@ private fun DurationTrend(m: SleepModel) {
             title = "Sleep Debt",
             subtitle = "Hours of sleep debt per day",
             trailing = m.trendDebtHours.lastOrNull()?.let { String.format(Locale.US, "%.1f h", it) },
+            tint = Palette.restColor,
             footer = {
                 ChartFooter(
                     listOf(
@@ -1129,9 +1216,10 @@ private fun ChartCard(
     subtitle: String,
     trailing: String?,
     footer: @Composable () -> Unit,
+    tint: Color? = null,
     chart: @Composable () -> Unit,
 ) {
-    NoopCard(padding = Metrics.cardPadding) {
+    NoopCard(padding = Metrics.cardPadding, tint = tint) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space14)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -1736,7 +1824,7 @@ internal fun HoursVsNeededCard(m: SleepModel) {
         else -> Palette.textTertiary
     }
 
-    NoopCard(padding = Metrics.cardPadding) {
+    NoopCard(padding = Metrics.cardPadding, tint = Palette.restColor) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space14)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -1745,7 +1833,7 @@ internal fun HoursVsNeededCard(m: SleepModel) {
                 }
                 Text(trendArrow, style = NoopType.title2, color = arrowColor)
                 Spacer(Modifier.width(Metrics.space6))
-                Text("${score.roundToInt()}%", style = NoopType.chartValue, color = Palette.accent)
+                Text("${score.roundToInt()}%", style = NoopType.chartValue, color = Palette.restColor)
             }
 
             // Gradient progress bar: slept / needed.
@@ -1762,7 +1850,7 @@ internal fun HoursVsNeededCard(m: SleepModel) {
                         .fillMaxWidth((sleptH / neededH).coerceIn(0.0, 1.0).toFloat())
                         .height(Metrics.progressHeight)
                         .clip(RoundedCornerShape(Metrics.cornerPill))
-                        .background(Brush.horizontalGradient(listOf(Palette.accent.copy(alpha = 0.6f), Palette.accent))),
+                        .background(Brush.horizontalGradient(listOf(Palette.restDeep, Palette.restBright))),
                 )
             }
 
@@ -1860,7 +1948,7 @@ internal fun SleepConsistencyCard(sleeps: List<SleepSession>) {
         return String.format(Locale.US, "%02d:00", norm.toInt())
     }
 
-    NoopCard(padding = Metrics.cardPadding) {
+    NoopCard(padding = Metrics.cardPadding, tint = Palette.restColor) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space14)) {
             // Header: title + trend-score.
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1869,11 +1957,13 @@ internal fun SleepConsistencyCard(sleeps: List<SleepSession>) {
                     Text("Bedtime & wake time", style = NoopType.headline, color = Palette.textPrimary)
                     Text("Sleep window over recent nights", style = NoopType.footnote, color = Palette.textSecondary)
                 }
-                Text("${consistencyPct.roundToInt()}%", style = NoopType.chartValue, color = Palette.accent)
+                Text("${consistencyPct.roundToInt()}%", style = NoopType.chartValue, color = Palette.restColor)
             }
 
-            // Canvas chart — clipped so bars never bleed outside the 160dp box.
-            val accentColor = Palette.accent
+            // Canvas chart — clipped so bars never bleed outside the 160dp box. The nightly
+            // sleep-window bars + wake marker read in the Rest world's indigo; the bed marker keeps
+            // the periwinkle (metricPurple) so the two overlays stay distinguishable. (Bevel)
+            val accentColor = Palette.restColor
             val purpleColor = Palette.metricPurple
             val hairlineColor = Palette.hairline
             val labelArgb = Palette.textTertiary.toArgb()
@@ -1947,7 +2037,7 @@ internal fun SleepConsistencyCard(sleeps: List<SleepSession>) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space14)) {
                 LegendDot("Typical bedtime  $typicalBedLabel", Palette.metricPurple)
-                LegendDot("Wake  $typicalWakeLabel", Palette.accent)
+                LegendDot("Wake  $typicalWakeLabel", Palette.restColor)
             }
 
             Hairline()
@@ -1982,10 +2072,10 @@ private data class SleepMetricSpec(
 )
 
 private fun sleepMetricSpec(key: String): SleepMetricSpec = when (key) {
-    "performance"     -> SleepMetricSpec("Rest", "%", Palette.accent) { "${it.roundToInt()}" }
+    "performance"     -> SleepMetricSpec("Rest", "%", Palette.restColor) { "${it.roundToInt()}" }
     "efficiency"      -> SleepMetricSpec("Sleep Efficiency", "%", Palette.statusPositive) { "${it.roundToInt()}" }
     "consistency"     -> SleepMetricSpec("Consistency", "%", Palette.metricCyan) { "${it.roundToInt()}" }
-    "hours_vs_needed" -> SleepMetricSpec("Hours vs Needed", "%", Palette.accent) { "${it.roundToInt()}" }
+    "hours_vs_needed" -> SleepMetricSpec("Hours vs Needed", "%", Palette.restColor) { "${it.roundToInt()}" }
     "restorative"     -> SleepMetricSpec("Restorative", "%", Palette.sleepREM) { "${it.roundToInt()}" }
     "respiratory"     -> SleepMetricSpec("Respiratory Rate", "rpm", Palette.metricPurple) { String.format(Locale.US, "%.1f", it) }
     "sleep_debt"      -> SleepMetricSpec("Sleep Debt", "h", Palette.metricRose) { String.format(Locale.US, "%.1f", it) }

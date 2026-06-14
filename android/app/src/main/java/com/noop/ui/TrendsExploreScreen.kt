@@ -1,5 +1,6 @@
 package com.noop.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -488,7 +491,8 @@ private fun HeroChartCard(
     } else {
         "${windowed.size} readings · ${range.windowName}"
     }
-    NoopCard {
+    // Wash the hero card in the metric's domain world (Charge green / Effort amber / Rest indigo).
+    NoopCard(tint = domainTint(metric.category)) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -524,13 +528,18 @@ private fun HeroChartCard(
                             Text(fmtY(avgV), style = NoopType.footnote, color = Palette.textTertiary, maxLines = 1)
                             Text(fmtY(minV), style = NoopType.footnote, color = Palette.textTertiary, maxLines = 1)
                         }
-                        LineChart(
-                            values = values,
-                            modifier = Modifier.weight(1f).height(Metrics.chartHeight),
-                            color = metric.accent,
-                            fill = true,
-                            selectionEnabled = true,
-                        )
+                        // The shared LineChart with a glowing "now" end-cap on its latest sample —
+                        // the Bevel idiom from Today's OverviewHRChart.
+                        Box(modifier = Modifier.weight(1f).height(Metrics.chartHeight)) {
+                            LineChart(
+                                values = values,
+                                modifier = Modifier.fillMaxSize(),
+                                color = metric.accent,
+                                fill = true,
+                                selectionEnabled = true,
+                            )
+                            ExploreGlowEndCap(values = values, tipColor = metric.accent)
+                        }
                     }
                     val days = windowed.map { it.day }
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -583,6 +592,39 @@ private fun ChartFootItem(label: String, value: String) {
     Column {
         Overline(label, color = Palette.textTertiary)
         Text(value, style = NoopType.captionNumber, color = Palette.textSecondary)
+    }
+}
+
+/** The metric category's domain colour world for the card wash; brand green for neutral categories. */
+private fun domainTint(category: String): Color = when (category) {
+    "Charge" -> Palette.chargeColor
+    "Effort" -> Palette.effortColor
+    "Rest" -> Palette.restColor
+    else -> Palette.accent
+}
+
+/**
+ * A glowing "now" end-cap on a LineChart's latest sample (soft halo + bright core + white centre),
+ * matching Today's OverviewHRChart. Reproduces LineChart's own point geometry so the dot sits on the
+ * curve's final point. Drawn as a sibling overlay — the shared LineChart stays untouched.
+ */
+@Composable
+private fun ExploreGlowEndCap(values: List<Double>, tipColor: Color) {
+    val clean = remember(values) { values.filter { it.isFinite() } }
+    if (clean.size < 2) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val strokePx = 2.5f
+        val topPad = strokePx + 4f
+        val bottomPad = strokePx + 4f
+        val minV = clean.min()
+        val maxV = clean.max()
+        val span = (maxV - minV).takeIf { it > 0.0 } ?: 1.0
+        val usableH = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+        val norm = ((clean.last() - minV) / span).toFloat().coerceIn(0f, 1f)
+        val center = Offset(size.width, topPad + (1f - norm) * usableH)
+        drawCircle(color = tipColor.copy(alpha = 0.30f), radius = 9f, center = center)
+        drawCircle(color = tipColor.copy(alpha = 0.65f), radius = 5.5f, center = center)
+        drawCircle(color = Color.White, radius = 2.4f, center = center)
     }
 }
 

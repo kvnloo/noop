@@ -56,6 +56,10 @@ struct SleepView: View {
     /// gaps preserved. Oldest→newest. Falls back to `repo.sleeps` until loaded. (#170)
     @State private var allSessions: [CachedSleepSession] = []
 
+    /// Draw-in fraction for the Rest hero gauge — owned here so the gauge animates the arc on appear /
+    /// when the sleep-performance score changes, exactly as TodayView drives its rings. Presentation-only.
+    @State private var heroFraction: Double = 0
+
     var body: some View {
         // Resolve the memoized model for THIS render. `dataKey` is O(1)-ish (counts + last-row
         // identity), so comparing it every render is cheap. When it matches the cached key we
@@ -69,6 +73,7 @@ struct SleepView: View {
             Group {
                 if let resolved {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                        restHero(resolved)
                         hero(resolved)
                         metricGrid(resolved)
                         sleepDebtLedger(resolved)
@@ -78,6 +83,14 @@ struct SleepView: View {
                 } else {
                     emptyState
                 }
+            }
+            // Animate the Rest hero gauge in once content resolves, and re-draw when the
+            // sleep-performance score changes (a sync / re-import). macOS-13-safe single-param onChange.
+            .onChange(of: heroScoreFraction(resolved)) { newFraction in
+                withAnimation(.easeOut(duration: 0.9)) { heroFraction = newFraction }
+            }
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.9)) { heroFraction = heroScoreFraction(resolved) }
             }
             // Persist the freshly-built model so subsequent renders with the same inputs hit
             // the cache. Writing State during body is not allowed, so commit it after layout;
@@ -118,6 +131,86 @@ struct SleepView: View {
         }
     }
 
+    // MARK: - 0. REST HERO — scenic backdrop + sleep-performance gauge (Bevel)
+
+    /// The fill fraction (0…1) the Rest hero gauge animates to — the night's sleep-performance
+    /// score over 100. 0 when no score exists (the headline-hours hero shows instead). Cheap, so
+    /// it's read every render to drive the draw-in animation.
+    private func heroScoreFraction(_ model: SleepModel?) -> Double {
+        guard let p = model?.performance.latest else { return 0 }
+        return min(max(p / 100.0, 0), 1)
+    }
+
+    /// The Rest world's opening: a scenic indigo backdrop with — when the night carries a 0–100
+    /// sleep-performance score — a layered `BevelGauge` in the Rest gradient; otherwise a big
+    /// SF-Rounded hours-slept headline over the same backdrop. A `SourceBadge` states whether the
+    /// score is WHOOP's own imported figure or NOOP's on-device estimate. Presentation-only — the
+    /// number comes straight from the existing `model.performance.latest` / hours computation. (Bevel)
+    @ViewBuilder
+    private func restHero(_ model: SleepModel) -> some View {
+        let score = model.performance.latest
+        let frac = heroScoreFraction(model)
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            SectionHeader("Sleep performance", overline: "Last night", trailing: "Rest")
+            ZStack {
+                ScenicHeroBackground(domain: .rest)
+                    .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                VStack(spacing: 14) {
+                    if let score {
+                        BevelGauge(
+                            fraction: frac,
+                            stops: StrandPalette.restGradient.stops,
+                            tipColor: StrandPalette.restColor,
+                            numberText: "\(Int(score.rounded()))",
+                            captionText: "of 100",
+                            stateText: sleepScoreWord(score),
+                            diameter: 184,
+                            lineWidth: 15,
+                            animatedFraction: heroFraction
+                        )
+                        .padding(.top, 4)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Sleep performance \(Int(score.rounded())) of 100")
+                    } else {
+                        // No 0–100 score for the night — lead with hours slept as a big rounded headline.
+                        VStack(spacing: 4) {
+                            Text(durationText(model.night.stages.asleep))
+                                .font(StrandFont.number(46))
+                                .foregroundStyle(StrandPalette.restBright)
+                            Text("asleep last night")
+                                .font(StrandFont.subhead)
+                                .foregroundStyle(StrandPalette.textSecondary)
+                        }
+                        .padding(.vertical, 18)
+                        .accessibilityElement(children: .combine)
+                    }
+                    SourceBadge(score != nil ? sleepScoreSource(model) : "On-device", tint: StrandPalette.restColor)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// A short Rest state word for the hero gauge — same banding the synthesis hero uses.
+    private func sleepScoreWord(_ score: Double) -> String {
+        switch score {
+        case ..<50:  return "Poor"
+        case ..<70:  return "Fair"
+        case ..<85:  return "Good"
+        default:     return "Optimal"
+        }
+    }
+
+    /// Whether the night's sleep-performance score is WHOOP's own imported figure or NOOP's
+    /// on-device approximation — so the hero is honest about provenance, like Today's badges.
+    private func sleepScoreSource(_ model: SleepModel) -> LocalizedStringKey {
+        if let lastDay = repo.days.last?.day, repo.importedSleep[lastDay]?.performancePct != nil {
+            return "Whoop"
+        }
+        return "On-device"
+    }
+
     // MARK: - 1. HERO — stage breakdown
 
     @ViewBuilder
@@ -145,6 +238,7 @@ struct SleepView: View {
                     title: "Stage breakdown",
                     subtitle: "\(durationText(Double(session.endTs - session.startTs) / 60.0)) in bed",
                     height: NoopMetrics.chartHeight,
+                    tint: StrandPalette.restColor,
                     chart: { noStagePlaceholder }
                 )
             }
@@ -164,6 +258,7 @@ struct SleepView: View {
                 + (isPersisted ? " · stages approximate (on-device)" : ""),
             trailing: durationText(s.asleep),
             height: NoopMetrics.chartHeight,
+            tint: StrandPalette.restColor,
             chart: {
                 if intervals.count >= 2 {
                     Hypnogram(intervals: intervals,
@@ -191,24 +286,26 @@ struct SleepView: View {
     /// first were effectively hidden. The header now carries just the date span.
     @ViewBuilder
     private func sleepWindowRow(_ night: Night) -> some View {
-        HStack(spacing: 0) {
-            sleepTime(icon: "moon.zzz.fill", label: "Asleep", value: night.onsetText)
-            Spacer(minLength: 12)
-            Rectangle().fill(StrandPalette.hairline).frame(width: 1, height: 30)
-            Spacer(minLength: 12)
-            sleepTime(icon: "sun.max.fill", label: "Woke", value: night.wakeText)
-            Spacer(minLength: 0)
+        // A frosted Rest-tinted card (was a flat surfaceRaised block) so the window row sits in the
+        // same colour world as the rest of the screen. Bevel treatment — content unchanged.
+        NoopCard(padding: 14, tint: StrandPalette.restColor) {
+            HStack(spacing: 0) {
+                sleepTime(icon: "moon.zzz.fill", label: "Asleep", value: night.onsetText)
+                Spacer(minLength: 12)
+                Rectangle().fill(StrandPalette.hairline).frame(width: 1, height: 30)
+                Spacer(minLength: 12)
+                sleepTime(icon: "sun.max.fill", label: "Woke", value: night.wakeText)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func sleepTime(icon: String, label: LocalizedStringKey, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(StrandFont.headline)
-                .foregroundStyle(StrandPalette.accent)
+                .foregroundStyle(StrandPalette.restColor)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label).strandOverline()
@@ -289,7 +386,7 @@ struct SleepView: View {
                     caption: vsTypical(perf.latest, perf.typical, suffix: "%"),
                     accent: perf.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
                     sparkline: spark(perf.series),
-                    sparkColor: StrandPalette.accent)
+                    sparkColor: StrandPalette.restColor)
 
                 StatTile(
                     label: "Efficiency",
@@ -313,7 +410,7 @@ struct SleepView: View {
                     caption: vsTypical(need.latest, need.typical, suffix: "%"),
                     accent: need.latest.map { StrandPalette.recoveryColor(min(100, $0)) } ?? StrandPalette.textPrimary,
                     sparkline: spark(need.series),
-                    sparkColor: StrandPalette.accent)
+                    sparkColor: StrandPalette.restColor)
 
                 StatTile(
                     label: "Restorative",
@@ -355,7 +452,7 @@ struct SleepView: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Sleep-debt ledger", overline: "Last 14 nights",
                           trailing: "running balance")
-            NoopCard {
+            NoopCard(tint: StrandPalette.restColor) {
                 if ledger.nightCount == 0 {
                     Text("No nights with sleep data yet — your ledger fills in as you wear the strap to bed.")
                         .font(StrandFont.subhead)
@@ -438,7 +535,7 @@ struct SleepView: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Stages vs typical", overline: "Last night",
                           trailing: "marker = your mean")
-            NoopCard {
+            NoopCard(tint: StrandPalette.restColor) {
                 VStack(alignment: .leading, spacing: 14) {
                     stageRow("Deep",  last: s.deep,  typical: model.typicalDeepMin,  color: StrandPalette.sleepDeep)
                     Divider().overlay(StrandPalette.hairline)
@@ -513,10 +610,11 @@ struct SleepView: View {
                 subtitle: "Per night, trailing 30 days",
                 trailing: avg.map { String(format: "%.1f h avg", $0) },
                 height: NoopMetrics.chartHeight,
+                tint: StrandPalette.restColor,
                 chart: {
                     if pts.count >= 2 {
                         TrendChart(points: pts,
-                                   gradient: StrandPalette.recoveryGradient,
+                                   gradient: StrandPalette.restGradient,
                                    valueRange: trendRange(pts),
                                    showsArea: true,
                                    height: NoopMetrics.chartHeight,

@@ -377,7 +377,10 @@ struct CompareView: View {
                 subtitle: anyWidened
                     ? "Min–max normalized · sparse series widened past \(range.phrase) · \(inspectHint)"
                     : "Each line min–max normalized within \(range.phrase) · \(inspectHint)",
-                trailing: "\(nonEmpty.count) series"
+                trailing: "\(nonEmpty.count) series",
+                // Anchor the overlay card to the brand-green chrome world; each line keeps its own
+                // categorical series colour so the lines stay distinguishable against the wash.
+                tint: StrandPalette.accent
             ) {
                 // The overlay is min–max NORMALIZED 0–1, so the Effort scale never touches the line shape;
                 // only the per-series hover read-outs convert (passed through to the tooltip). (#268)
@@ -499,7 +502,9 @@ struct CompareView: View {
     /// One pairwise correlation as its own NoopCard.
     private func pairCard(_ p: PairResult) -> some View {
         let tint = correlationColor(p.r)
-        return NoopCard {
+        // Frosted card washed by the relationship's own colour (green positive / rose negative), with a
+        // TrendChip surfacing the signed direction at a glance — the Today delta idiom, applied to r.
+        return NoopCard(tint: tint) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     // Two color swatches for the pair.
@@ -511,6 +516,7 @@ struct CompareView: View {
                         .font(StrandFont.headline)
                         .foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
+                    TrendChip(text: signedR(p.r), color: tint)
                     Text("r = \(signedR(p.r))")
                         .font(StrandFont.number(18))
                         .foregroundStyle(tint)
@@ -650,11 +656,24 @@ private struct OverlayChart: View {
         }
     }
 
+    /// The latest normalized plot point of each series — the "now" end-caps that get a bright glowing dot.
+    private var endCaps: [Plot] {
+        series.compactMap { s in
+            guard let row = s.rows.last, let d = parseCompareDay(row.day) else { return nil }
+            return Plot(title: s.metric.title, date: d, norm: s.normalized(row.value))
+        }
+    }
+
     /// The union of all days present, ascending — the x-domain for hover snapping.
     private var allDays: [String] {
         var set = Set<String>()
         for s in series { for r in s.rows { set.insert(r.day) } }
         return set.sorted()
+    }
+
+    /// The series colour for a metric title — drives the matching "now" end-cap glow.
+    private func colorFor(_ title: String) -> Color? {
+        series.first(where: { $0.metric.title == title })?.color
     }
 
     var body: some View {
@@ -673,6 +692,26 @@ private struct OverlayChart: View {
             )
             .symbolSize(10)
             .foregroundStyle(by: .value("Metric", p.title))
+        }
+        // Bevel "now" end-caps — a soft halo + bright core on each series' latest point, drawn on top.
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                let plot = geo[proxy.plotAreaFrame]
+                ForEach(endCaps) { cap in
+                    if let px = proxy.position(forX: cap.date),
+                       let py = proxy.position(forY: cap.norm),
+                       let color = colorFor(cap.title) {
+                        ZStack {
+                            Circle().fill(color.opacity(0.30)).frame(width: 16, height: 16)
+                            Circle().fill(color.opacity(0.65)).frame(width: 10, height: 10)
+                            Circle().fill(Color.white).frame(width: 4, height: 4)
+                        }
+                        .position(x: px + plot.minX, y: py + plot.minY)
+                        .allowsHitTesting(false)
+                    }
+                }
+            }
+            .accessibilityHidden(true)
         }
         .chartForegroundStyleScale(range: series.map(\.color))
         .chartYScale(domain: 0...1)

@@ -51,10 +51,13 @@ struct DonationNudgeCard: View {
 
     var body: some View {
         if shouldShow {
-            NoopCard {
+            // A frosted, brand-green-tinted card — the Charge world's anchor colour — so the
+            // honest donation ask reads as a warm, on-brand moment, never a hard grey box.
+            NoopCard(tint: StrandPalette.accent) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "heart.circle.fill")
+                            .font(.system(size: 18))
                             .foregroundStyle(StrandPalette.accent)
                         Text("Enjoying NOOP?")
                             .font(StrandFont.headline)
@@ -68,6 +71,12 @@ struct DonationNudgeCard: View {
                     Text("\(DonationStats.downloads.formatted())+ downloads so far — \(DonationStats.donors) donors.")
                         .font(StrandFont.footnote.weight(.semibold))
                         .foregroundStyle(StrandPalette.textPrimary)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 10)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(StrandPalette.accentMuted)
+                        )
                     Text("If it's saving you a subscription, a suggested $50+ — a fraction of a year of WHOOP — genuinely keeps the project alive. Anything is appreciated. Crypto only; the project stays anonymous.")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)

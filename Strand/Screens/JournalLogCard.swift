@@ -44,7 +44,7 @@ struct JournalLogCard: View {
                     dayPill("Yesterday", offset: 1)
                 }
             }
-            NoopCard {
+            NoopCard(tint: StrandPalette.restColor) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(editing
                          ? "Remove a question to tidy your list. Custom questions are deleted; the built-in ones are hidden and can be restored below."
@@ -147,9 +147,9 @@ struct JournalLogCard: View {
                 .foregroundStyle(selected ? StrandPalette.surfaceBase : StrandPalette.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(selected ? StrandPalette.accent : StrandPalette.surfaceInset,
+                .background(selected ? StrandPalette.restColor : StrandPalette.surfaceInset,
                             in: Capsule())
-                .overlay(Capsule().stroke(selected ? StrandPalette.accent : StrandPalette.hairline,
+                .overlay(Capsule().stroke(selected ? StrandPalette.restColor : StrandPalette.hairline,
                                           lineWidth: 1))
         }
         .buttonStyle(.plain)

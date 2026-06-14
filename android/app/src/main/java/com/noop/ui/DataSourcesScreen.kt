@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -312,6 +313,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         SourceCard(
             title = "Apple Health",
             icon = Icons.Filled.FavoriteBorder,
+            tint = Palette.metricCyan,
             subtitle = "Import HR, HRV, sleep, SpO₂ and steps from an Apple Health export. On " +
                 "an iPhone: Health app → tap your photo → Export All Health Data, then " +
                 "import the .zip here. Working now on Android.",
@@ -330,6 +332,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
                 label = "Import Apple Health export…",
                 icon = Icons.Filled.FileUpload,
                 enabled = !busy,
+                tint = Palette.metricCyan,
                 modifier = Modifier.fillMaxWidth(),
             ) { appleImportLauncher.launch(arrayOf("*/*")) }
         }
@@ -462,6 +465,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         SourceCard(
             title = "Nutrition (CSV)",
             icon = Icons.Filled.Restaurant,
+            tint = Palette.metricAmber,
             subtitle = "Import daily calories, protein, carbs, fat and body weight from a " +
                 "nutrition CSV — a MyFitnessPal or Cronometer export, or any spreadsheet " +
                 "with a date column plus those values. Meal-level rows are summed per day.",
@@ -488,6 +492,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         SourceCard(
             title = "Lifting log (Hevy / Liftosaur)",
             icon = Icons.Filled.FitnessCenter,
+            tint = DomainTheme.Effort.color,
             subtitle = "Import your strength-training history from a Hevy CSV export or a Liftosaur " +
                 "JSON export. Each workout becomes a Strength session with a training-volume " +
                 "estimate (weight × reps) — a volume figure, not a measured strain, so it never " +
@@ -571,20 +576,31 @@ private fun SourceCard(
     title: String,
     icon: ImageVector,
     subtitle: String,
+    tint: Color = Palette.accent,
     content: @Composable () -> Unit,
 ) {
-    NoopCard(padding = 18.dp) {
+    // A frosted, domain-tinted card: a tinted source glyph chip + title, the explainer line, then
+    // the source's status pill + connect/import action(s). Replaces the old flat surface.
+    NoopCard(padding = 18.dp, tint = tint) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = Palette.accent,
-                    modifier = Modifier.size(20.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(tint.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
                 Text(title, style = NoopType.headline, color = Palette.textPrimary)
             }
             Text(subtitle, style = NoopType.subhead, color = Palette.textSecondary)
@@ -617,24 +633,25 @@ private fun BackupButton(
     icon: ImageVector,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    tint: Color = Palette.accent,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(14.dp)
-    val tint = if (enabled) Palette.accent else Palette.accent.copy(alpha = Palette.disabledOpacity)
+    val ink = if (enabled) tint else tint.copy(alpha = Palette.disabledOpacity)
     Row(
         modifier = modifier
             .height(48.dp)
             .clip(shape)
-            .background(Palette.accentMuted)
-            .border(1.dp, tint.copy(alpha = 0.4f), shape)
+            .background(tint.copy(alpha = 0.14f))
+            .border(1.dp, ink.copy(alpha = 0.4f), shape)
             .let { if (enabled) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 14.dp)
             .semantics { contentDescription = label },
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = null, tint = ink, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(label, style = NoopType.headline, color = tint)
+        Text(label, style = NoopType.headline, color = ink)
     }
 }

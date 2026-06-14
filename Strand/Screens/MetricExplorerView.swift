@@ -70,6 +70,37 @@ private func metricGradient(_ m: MetricDescriptor) -> Gradient {
     return Gradient(colors: [c.opacity(0.55), c])
 }
 
+/// The Bevel colour world a metric's detail hero belongs to — the catalog's category
+/// already names it (Charge / Rest / Effort), and Heart/Health/Nutrition/Mind metrics
+/// fall back to the world that best fits their accent. Drives the ScenicHeroBackground
+/// tint + the hero gauge/number glow.
+private func metricDomain(_ m: MetricDescriptor) -> DomainTheme {
+    switch m.category {
+    case "Charge":            return .charge
+    case "Effort":            return .effort
+    case "Rest", "Mind":      return .rest
+    default:
+        // Heart / Health / Nutrition: lean on the metric's own world. RHR-style risk
+        // metrics read as Stress (teal); everything else rides the Charge green chrome.
+        switch m.key {
+        case "rhr", "max_hr", "stress", "body_fat": return .stress
+        default:                                    return .charge
+        }
+    }
+}
+
+/// A 0–100 score that reads naturally as a layered ring gauge in the hero (vs a bare
+/// headline number). Recovery / Rest / Blood-oxygen sit on a clean 0–100 axis.
+private func metricGaugeFraction(_ m: MetricDescriptor, value: Double) -> Double? {
+    switch m.key {
+    case "recovery", "sleep_performance", "spo2", "hours_vs_needed_pct",
+         "sleep_consistency", "restorative_pct", "sleep_efficiency":
+        return min(max(value / 100.0, 0), 1)
+    default:
+        return nil
+    }
+}
+
 // MARK: - Range
 
 /// The W/M/3M/6M/1Y/ALL window, driving the single SegmentedPillControl.
@@ -291,6 +322,9 @@ struct MetricDetailView: View {
     }
 
     @State private var range: ExploreRange = .month
+    /// Draw-in fraction for the hero ring gauge (0–100 scores). Set to the real fraction
+    /// in `.onAppear` with a soft ease, exactly as TodayView animates its rings.
+    @State private var heroAnimatedFraction: Double = 0
     /// Full ascending series for this metric — ALL history.
     @State private var series: [(day: String, value: Double)] = []
     /// Every OTHER catalog series, loaded once for the correlation scan.
@@ -372,13 +406,19 @@ struct MetricDetailView: View {
         let fellBack = effRange != range
         return ScrollView {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                rangeBar(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                 if loaded && series.isEmpty {
-                    // ONLY genuine empty state: no data in the entire history.
+                    // No data in the entire history — keep the range bar for context, then the
+                    // honest empty state (no scenic hero floating over nothing).
+                    rangeBar(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     ComingSoon(what: "Import your history first. A WHOOP export in Data Sources fills every metric you can explore here in about a minute.")
                 } else if !loaded {
+                    rangeBar(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     ComingSoon(what: "Reading your \(metric.title.lowercased())…")
                 } else {
+                    // Scenic hero: the metric's current value as a layered ring gauge (0–100
+                    // scores) or a big SF-Rounded headline, floated over the domain's starfield,
+                    // with the range pill. Then the frosted chart / stat tiles / correlations.
+                    heroHeader(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     heroChart(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     statRow(effectiveRange: effRange, windowed: win)
                     correlationCard
@@ -406,6 +446,96 @@ struct MetricDetailView: View {
         loaded = true
         // First correlation build, now that `series`/`others` exist.
         recomputeCorrelations()
+    }
+
+    // MARK: Scenic hero
+
+    /// The detail's opening hero: the metric's latest value as either a layered ring
+    /// BevelGauge (for 0–100 scores) or a big SF-Rounded headline number, floated over a
+    /// domain-tinted ScenicHeroBackground, with the category overline, the "as of" line,
+    /// and the range pill. Mirrors TodayView's score-hero idiom.
+    @ViewBuilder
+    private func heroHeader(effectiveRange: ExploreRange,
+                            windowed: [(day: String, value: Double)],
+                            windowFellBack: Bool) -> some View {
+        let domain = metricDomain(metric)
+        let value = latest?.value
+        let heroValue = latest.map { fmt($0.value) } ?? "—"
+        let asOf: String = {
+            guard let day = latest?.day, let d = parseDay(day) else { return "—" }
+            return "as of \(longDate(d))"
+        }()
+        let fraction = value.flatMap { metricGaugeFraction(metric, value: $0) }
+
+        ZStack(alignment: .top) {
+            ScenicHeroBackground(domain: domain)
+                .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                // Title + range control over the starfield.
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(metric.category.uppercased()).strandOverline()
+                        Text(metric.title)
+                            .font(StrandFont.title2)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    }
+                    Spacer()
+                    SegmentedPillControl(ExploreRange.allCases, selection: $range) { $0.label }
+                }
+
+                // The headline read-out: a ring gauge for 0–100 scores, else a big number.
+                HStack {
+                    Spacer(minLength: 0)
+                    if let fraction {
+                        BevelGauge(
+                            fraction: fraction,
+                            stops: domain.gradient.stops,
+                            tipColor: domain.bright,
+                            numberText: latest.map { String(Int($0.value.rounded())) } ?? "—",
+                            captionText: metric.unit.isEmpty ? nil : "\(metric.unit)",
+                            stateText: nil,
+                            supporting: asOf,
+                            diameter: 188,
+                            lineWidth: 15,
+                            showsLabel: latest != nil,
+                            animatedFraction: heroAnimatedFraction
+                        )
+                    } else {
+                        VStack(spacing: 6) {
+                            Text(heroValue)
+                                .font(StrandFont.number(54))
+                                .foregroundStyle(StrandPalette.textPrimary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.5)
+                            Text(asOf)
+                                .font(StrandFont.footnote)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        .padding(.vertical, 18)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                // The "N readings · range" caption (auto-widen flagged when it happens).
+                Text(rangeCaption(effectiveRange: effectiveRange,
+                                  windowed: windowed,
+                                  windowFellBack: windowFellBack))
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(windowFellBack ? StrandPalette.statusWarning : StrandPalette.textTertiary)
+                    .accessibilityLabel(rangeCaption(effectiveRange: effectiveRange,
+                                                     windowed: windowed,
+                                                     windowFellBack: windowFellBack))
+            }
+            .padding(NoopMetrics.cardPadding)
+        }
+        // The hero shows the LATEST available point (range-independent), so the gauge
+        // settles once on appear — like TodayView's rings.
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.9)) {
+                heroAnimatedFraction = fraction ?? 0
+            }
+        }
     }
 
     // MARK: Range bar
@@ -463,7 +593,8 @@ struct MetricDetailView: View {
         return ChartCard(
             title: "\(metric.title)",
             subtitle: subtitle,
-            trailing: "\(heroValue) · \(asOf)"
+            trailing: "\(heroValue) · \(asOf)",
+            tint: metricDomain(metric).color
         ) {
             TrendChart(
                 points: trendPoints(windowed),
@@ -573,7 +704,7 @@ struct MetricDetailView: View {
 
     private var correlationCard: some View {
         let rows = correlationCache
-        return NoopCard {
+        return NoopCard(tint: metricDomain(metric).color) {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("What correlates").strandOverline()

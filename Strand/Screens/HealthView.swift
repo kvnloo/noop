@@ -136,11 +136,14 @@ private struct HeartRateSection: View {
         return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Heart Rate", overline: "Live", trailing: hrIsDerived ? "from R-R" : nil)
 
+            // The live HR hero floats over a Charge-world scenic backdrop (the Health screen's
+            // colour world), with the card itself tinted rose — heart-rate's metric accent.
             ChartCard(
                 title: "Heart Rate",
                 subtitle: hrIsDerived ? "Estimated from R-R interval"
                     : (hasLiveHR ? "Streaming live" : "Awaiting strap"),
-                trailing: hasLiveHR ? "\(displayHR!) bpm" : "—"
+                trailing: hasLiveHR ? "\(displayHR!) bpm" : "—",
+                tint: StrandPalette.metricRose
             ) {
                 heroChart(displayHR: displayHR, hasLiveHR: hasLiveHR,
                           fraction: fraction, zone: zone, series: series)
@@ -151,6 +154,10 @@ private struct HeartRateSection: View {
                     ("Max HR", "\(profile.hrMax)"),
                     ("State", hasLiveHR ? "STREAMING" : "IDLE"),
                 ])
+            }
+            .background {
+                ScenicHeroBackground(domain: .charge)
+                    .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
             }
         }
         .onChange(of: displayHR) { newHR in
@@ -316,11 +323,16 @@ private struct VitalsSection: View {
                 spacing: NoopMetrics.gap
             ) {
                 ForEach(readings) { v in
+                    // Each vital is a frosted, metric-tinted StatTile — matching Today's Key-Metrics
+                    // grid. `accent` carries the metric's colour world (rose RHR, purple HRV, cyan
+                    // SpO₂, amber skin temp), washing the card and tinting its spark trail to match.
                     StatTile(
                         label: "\(v.label)",
                         value: v.formattedValue ?? "—",
                         caption: v.stateCaption,
-                        accent: v.accent
+                        accent: v.accent,
+                        sparkline: v.sparkline,
+                        sparkColor: v.metricColor
                     )
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(v.accessibilityText)

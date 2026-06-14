@@ -20,7 +20,7 @@ struct IntelligenceView: View {
             if let f = forecast { forecastCard(f) }
             explainerCard
             if intelligence.computing {
-                StrandCard(padding: 20) {
+                NoopCard(padding: 20, tint: StrandPalette.chargeColor) {
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
                         Text("Crunching your raw streams…").font(StrandFont.subhead)
@@ -28,9 +28,9 @@ struct IntelligenceView: View {
                     }
                 }
             } else if let note = intelligence.note {
-                StrandCard(padding: 20) {
+                NoopCard(padding: 20, tint: StrandPalette.chargeColor) {
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "moon.zzz.fill").foregroundStyle(StrandPalette.accent)
+                        Image(systemName: "moon.zzz.fill").foregroundStyle(StrandPalette.chargeColor)
                             .accessibilityHidden(true)
                         Text(note).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -59,7 +59,7 @@ struct IntelligenceView: View {
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if filtered.isEmpty {
-                    StrandCard(padding: 18) {
+                    NoopCard(padding: 18, tint: StrandPalette.chargeColor) {
                         Text("No scored days in this window. Widen the range or import more history.")
                             .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -117,32 +117,50 @@ struct IntelligenceView: View {
                                            plannedSleepHours: plannedHours)
     }
 
+    /// Animated draw-in for the hero forecast gauge — set to the fill fraction on appear so the
+    /// arc sweeps in, exactly as TodayView drives its rings. Charge world (green).
+    @State private var heroFraction: Double = 0
+
+    /// The forecast hero — tomorrow-morning Charge as a layered BevelGauge floated over a scenic
+    /// Charge-tinted backdrop, with the plain-English estimate read-out beneath. The number, ± band
+    /// and copy are unchanged; only the container + gauge are new (presentation-only).
     private func forecastCard(_ f: RecoveryForecast) -> some View {
-        StrandCard(padding: 20) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    HStack(spacing: 10) {
-                        Image(systemName: "sunrise.fill").foregroundStyle(StrandPalette.accent)
-                            .accessibilityHidden(true)
-                        Text("Tomorrow's Charge").font(StrandFont.headline)
-                            .foregroundStyle(StrandPalette.textPrimary)
+        let frac = min(max(f.charge / 100.0, 0), 1)
+        return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            SectionHeader("Tomorrow's Charge", overline: "Evening forecast", trailing: "Estimate")
+            ZStack {
+                ScenicHeroBackground(domain: .charge)
+                    .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                VStack(spacing: 14) {
+                    BevelGauge(
+                        fraction: frac,
+                        stops: StrandPalette.recoveryStops,
+                        tipColor: StrandPalette.recoveryColor(f.charge),
+                        numberText: "\(Int(f.charge.rounded()))",
+                        captionText: "± \(Int(f.band.rounded()))",
+                        stateText: StrandPalette.recoveryState(f.charge),
+                        diameter: 184,
+                        lineWidth: 15,
+                        animatedFraction: heroFraction
+                    )
+                    .padding(.top, 4)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Tomorrow's Charge estimate \(Int(f.charge.rounded())) plus or minus \(Int(f.band.rounded()))")
+                    .onAppear {
+                        withAnimation(.easeOut(duration: 0.9)) { heroFraction = frac }
                     }
-                    Spacer()
-                    SourceBadge("Estimate")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight.")
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline — not a measurement. Your real Charge is scored from tomorrow's HRV when you wake.")
+                            .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(Int(f.charge.rounded()))").font(StrandFont.number(40))
-                        .foregroundStyle(recoveryColor(f.charge))
-                    Text("± \(Int(f.band.rounded()))").font(StrandFont.number(20))
-                        .foregroundStyle(StrandPalette.textTertiary)
-                    Spacer()
-                }
-                Text("You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight.")
-                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline — not a measurement. Your real Charge is scored from tomorrow's HRV when you wake.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(20)
             }
         }
     }
@@ -156,22 +174,61 @@ struct IntelligenceView: View {
     }
 
     private var explainerCard: some View {
-        StrandCard(padding: 20) {
-            VStack(alignment: .leading, spacing: 10) {
+        NoopCard(padding: 20, tint: StrandPalette.chargeColor) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Image(systemName: "brain.head.profile").foregroundStyle(StrandPalette.accent)
+                    Image(systemName: "brain.head.profile").foregroundStyle(StrandPalette.chargeColor)
                         .accessibilityHidden(true)
                     Text("How this works").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                 }
                 Text("Charge weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), rest quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Effort is a 0–\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data — it works for any day NOOP collected raw streams.")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // The Charge model made concrete — the five weighted inputs, each its own metric accent.
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Charge model").strandOverline()
+                    weightRow("Heart-rate variability", "~55%", fraction: 0.55, color: StrandPalette.metricPurple)
+                    weightRow("Resting heart rate", "~20%", fraction: 0.20, color: StrandPalette.metricRose)
+                    weightRow("Rest quality", "~15%", fraction: 0.15, color: StrandPalette.metricCyan)
+                    weightRow("Respiration", "~5%", fraction: 0.05, color: StrandPalette.accent)
+                    weightRow("Skin-temperature deviation", "~5%", fraction: 0.05, color: StrandPalette.metricAmber)
+                    HStack {
+                        Text("Effort").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        Spacer()
+                        Text("0–\(UnitFormatter.effortScaleMax(effortScale)) scale")
+                            .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.effortColor)
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(.top, 2)
             }
         }
     }
 
+    /// One weighted-input row: label + percent + a thin proportional meter on the inset well, tinted
+    /// to the input's own metric accent. Presentation of the Charge model — no per-day data.
+    private func weightRow(_ label: String, _ percent: String, fraction: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label).font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                Spacer()
+                Text(percent).font(StrandFont.captionNumber).foregroundStyle(color)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(StrandPalette.surfaceInset)
+                    Capsule().fill(color)
+                        .frame(width: geo.size.width * min(max(fraction, 0), 1))
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(percent) of Charge")
+    }
+
     private func dayCard(_ d: IntelligenceEngine.Computed) -> some View {
-        StrandCard(padding: 18) {
+        NoopCard(padding: 18, tint: StrandPalette.chargeColor) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text(d.day).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
@@ -179,11 +236,25 @@ struct IntelligenceView: View {
                     SourceBadge("NOOP-computed")
                 }
                 HStack(spacing: 0) {
-                    stat("Charge", d.recovery.map { "\(Int($0.rounded()))%" } ?? "—", recoveryColor(d.recovery))
-                    stat("Effort", d.strain.map { UnitFormatter.effortDisplay($0, scale: effortScale) } ?? "—", StrandPalette.metricCyan)
-                    stat("Rest", d.sleepMin.map { "\(Int($0 / 60))h \(Int($0.truncatingRemainder(dividingBy: 60)))m" } ?? "—", StrandPalette.metricPurple)
+                    stat("Charge", d.recovery.map { "\(Int($0.rounded()))%" } ?? "—",
+                         d.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textSecondary)
+                    stat("Effort", d.strain.map { UnitFormatter.effortDisplay($0, scale: effortScale) } ?? "—",
+                         d.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.textSecondary)
+                    stat("Rest", d.sleepMin.map { "\(Int($0 / 60))h \(Int($0.truncatingRemainder(dividingBy: 60)))m" } ?? "—", StrandPalette.restColor)
                     stat("HRV", d.hrv.map { "\(Int($0.rounded()))" } ?? "—", StrandPalette.metricPurple)
                     stat("RHR", d.rhr.map { "\($0)" } ?? "—", StrandPalette.metricRose)
+                }
+                // Effort load meter (0–100), tinted along the strain ramp — at-a-glance cardio load.
+                if let s = d.strain {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(StrandPalette.surfaceInset)
+                            Capsule().fill(StrandPalette.strainColor(s))
+                                .frame(width: geo.size.width * min(max(s / 100.0, 0), 1))
+                        }
+                    }
+                    .frame(height: 6)
+                    .accessibilityHidden(true)
                 }
             }
         }
@@ -197,12 +268,6 @@ struct IntelligenceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func recoveryColor(_ r: Double?) -> Color {
-        guard let r else { return StrandPalette.textSecondary }
-        if r >= 67 { return StrandPalette.statusPositive }
-        if r >= 34 { return StrandPalette.statusWarning }
-        return StrandPalette.statusCritical
-    }
 }
 
 /// Recent-window options for the By Day list. `days == nil` means show everything.

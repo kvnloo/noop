@@ -42,12 +42,11 @@ struct KeyMetricsEditorSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
-            VStack(spacing: 0) {
+            // Each tile is its own frosted row, tinted by that metric's own accent, so the editor
+            // reads like a stack of the cards it controls rather than a flat settings list.
+            VStack(spacing: 8) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     row(item, at: index)
-                    if index < items.count - 1 {
-                        Divider().overlay(StrandPalette.hairline)
-                    }
                 }
             }
             footer
@@ -60,55 +59,82 @@ struct KeyMetricsEditorSheet: View {
     // MARK: Rows
 
     private func row(_ item: Item, at index: Int) -> some View {
-        HStack(spacing: 12) {
-            // Show/hide toggle — an off tile is dimmed but stays listed so it can be re-enabled.
-            Toggle(isOn: enabledBinding(at: index)) {
-                Text(item.metric.title)
-                    .font(StrandFont.body)
-                    .foregroundStyle(item.enabled ? StrandPalette.textPrimary : StrandPalette.textTertiary)
-            }
-            .toggleStyle(.switch)
-            .tint(StrandPalette.accent)
-            .accessibilityLabel("Show \(item.metric.title)")
+        let accent = accent(for: item.metric)
+        return NoopCard(padding: 12, tint: item.enabled ? accent : nil) {
+            HStack(spacing: 12) {
+                // A per-metric accent dot ties the row to its Today tile; dims when the tile is off.
+                Circle()
+                    .fill(item.enabled ? accent : StrandPalette.textTertiary)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                // Show/hide toggle — an off tile is dimmed but stays listed so it can be re-enabled.
+                Toggle(isOn: enabledBinding(at: index)) {
+                    Text(item.metric.title)
+                        .font(StrandFont.body)
+                        .foregroundStyle(item.enabled ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                }
+                .toggleStyle(.switch)
+                .tint(StrandPalette.accent)
+                .accessibilityLabel("Show \(item.metric.title)")
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
 
-            // Explicit reorder — robust on macOS + iOS without List EditMode/drag.
-            Button {
-                move(from: index, to: index - 1)
-            } label: {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(index == 0 ? StrandPalette.textTertiary : StrandPalette.textSecondary)
-                    .padding(6)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(index == 0)
-            .accessibilityLabel("Move \(item.metric.title) up")
+                // Explicit reorder — robust on macOS + iOS without List EditMode/drag.
+                Button {
+                    move(from: index, to: index - 1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(index == 0 ? StrandPalette.textTertiary : StrandPalette.textSecondary)
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                .accessibilityLabel("Move \(item.metric.title) up")
 
-            Button {
-                move(from: index, to: index + 1)
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(index == items.count - 1 ? StrandPalette.textTertiary : StrandPalette.textSecondary)
-                    .padding(6)
-                    .contentShape(Rectangle())
+                Button {
+                    move(from: index, to: index + 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(index == items.count - 1 ? StrandPalette.textTertiary : StrandPalette.textSecondary)
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(index == items.count - 1)
+                .accessibilityLabel("Move \(item.metric.title) down")
             }
-            .buttonStyle(.plain)
-            .disabled(index == items.count - 1)
-            .accessibilityLabel("Move \(item.metric.title) down")
         }
-        .padding(.vertical, 8)
+    }
+
+    /// The accent each metric carries on the Today grid — kept in sync with TodayView's tiles so a
+    /// row's dot/wash matches the tile it toggles. Local to the editor (presentation only).
+    private func accent(for metric: KeyMetric) -> Color {
+        switch metric {
+        case .charge:      return StrandPalette.accent
+        case .effort:      return StrandPalette.effortColor
+        case .rest:        return StrandPalette.metricPurple
+        case .hrv:         return StrandPalette.metricPurple
+        case .restingHr:   return StrandPalette.metricRose
+        case .bloodOxygen: return StrandPalette.metricCyan
+        case .respiratory: return StrandPalette.accent
+        case .steps:       return StrandPalette.metricCyan
+        case .weight:      return StrandPalette.accent
+        case .calories:    return StrandPalette.metricAmber
+        }
     }
 
     // MARK: Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CONTROL CENTER").font(StrandFont.overline)
+                .tracking(StrandFont.overlineTracking)
+                .foregroundStyle(StrandPalette.textTertiary)
             Text("Edit Key Metrics")
-                .font(StrandFont.title2)
+                .font(StrandFont.rounded(24, weight: .bold))
                 .foregroundStyle(StrandPalette.textPrimary)
             Text("Choose which tiles show on your Control Center and reorder them with the arrows.")
                 .font(StrandFont.subhead)

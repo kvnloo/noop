@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -40,7 +42,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -213,7 +214,7 @@ fun BreatheScreen(viewModel: AppViewModel) {
         }
 
         // The orb card.
-        NoopCard(padding = 24.dp) {
+        NoopCard(padding = 24.dp, tint = Palette.restColor) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -227,12 +228,27 @@ fun BreatheScreen(viewModel: AppViewModel) {
                     )
                 }
 
-                BreathingOrb(progress = orbProgress, bpm = bpm, modifier = Modifier.height(280.dp))
+                // The breathing orb is the immersive hero: it floats over a calm Rest-world
+                // starfield, the scenic bloom deepening as the orb expands so the field breathes.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .clip(RoundedCornerShape(Metrics.cardRadius)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ScenicHeroBackground(
+                        modifier = Modifier.matchParentSize(),
+                        domain = DomainTheme.Rest,
+                        starCount = 56,
+                    )
+                    BreathingOrb(progress = orbProgress, bpm = bpm, modifier = Modifier.height(280.dp))
+                }
 
                 Text(
                     text = if (running) phaseWord(phase) else pace.tagline,
                     style = NoopType.subhead,
-                    color = if (running) Palette.accent else Palette.textSecondary,
+                    color = if (running) Palette.restBright else Palette.textSecondary,
                 )
 
                 SegmentedPillControl(
@@ -298,13 +314,33 @@ fun BreatheScreen(viewModel: AppViewModel) {
             else -> null
         }
         if (outcomeLine != null) {
-            Text(
-                outcomeLine,
-                style = NoopType.footnote,
-                color = Palette.textSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // The session's HRV outcome as a frosted Rest-tinted card with a TrendChip for the
+            // vs-start RMSSD change. Presentation-only — the same outcome String + chip source.
+            val chipSource = endedOutcome ?: lastStoredOutcome.takeIf { it.isNotEmpty() }
+            val trend = chipSource?.takeIf { it != "—" }?.let { leadingSignedPercent(it) }
+            NoopCard(padding = 14.dp, tint = Palette.restColor) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Air,
+                        contentDescription = null,
+                        tint = Palette.restBright,
+                        modifier = Modifier.size(16.dp).padding(end = 8.dp),
+                    )
+                    Text(
+                        outcomeLine,
+                        style = NoopType.footnote,
+                        color = Palette.textSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (trend != null) {
+                        val sign = if (trend >= 0) "+" else "−"
+                        TrendChip(
+                            text = "$sign${kotlin.math.abs(trend)}% HRV",
+                            color = if (trend >= 0) Palette.statusPositive else Palette.textTertiary,
+                        )
+                    }
+                }
+            }
         }
 
         // Readout tiles.
@@ -360,9 +396,9 @@ private fun BreathingOrb(progress: Float, bpm: Int?, modifier: Modifier = Modifi
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(CircleShape)
-                .border(1.dp, Palette.hairline, CircleShape),
+                .border(1.dp, Palette.restColor.copy(alpha = 0.28f), CircleShape),
         )
-        // Outer halo.
+        // Outer halo — a Rest-world bloom that brightens as the orb expands.
         Box(
             modifier = Modifier
                 .fillMaxWidth(scale * 1.35f)
@@ -370,11 +406,11 @@ private fun BreathingOrb(progress: Float, bpm: Int?, modifier: Modifier = Modifi
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Palette.accent.copy(alpha = 0.22f), Color.Transparent),
+                        colors = listOf(Palette.restBright.copy(alpha = 0.30f), Color.Transparent),
                     ),
                 ),
         )
-        // Orb body — soft accent gradient.
+        // Orb body — soft indigo→periwinkle Rest gradient.
         Box(
             modifier = Modifier
                 .fillMaxWidth(scale)
@@ -383,13 +419,13 @@ private fun BreathingOrb(progress: Float, bpm: Int?, modifier: Modifier = Modifi
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Palette.accentHover.copy(alpha = 0.85f),
-                            Palette.accent.copy(alpha = 0.55f),
-                            Palette.accentMuted.copy(alpha = 0.85f),
+                            Palette.restBright.copy(alpha = 0.90f),
+                            Palette.restColor.copy(alpha = 0.62f),
+                            Palette.restDeep.copy(alpha = 0.85f),
                         ),
                     ),
                 )
-                .border(1.dp, Palette.accent.copy(alpha = 0.45f), CircleShape),
+                .border(1.dp, Palette.restBright.copy(alpha = 0.50f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -502,6 +538,17 @@ internal fun breatheOutcomeCore(
     val mean = sum / count
     val pct = ((mean - baseline) / baseline * 100).roundToInt()
     return String.format(Locale.US, "%+d%% vs start · peak %.0f ms", pct, peak)
+}
+
+/**
+ * Parse a leading "+18%"/"-7%" from an outcome core, returning the integer percent — the signed
+ * RMSSD-vs-start change shown as a TrendChip. Null when no signed % leads (abandoned / "—" line).
+ * Display-only: it reads the same String the outcome line already shows, never new data.
+ */
+internal fun leadingSignedPercent(s: String): Int? {
+    val pct = s.indexOf('%')
+    if (pct <= 0) return null
+    return s.substring(0, pct).replace("+", "").trim().toIntOrNull()
 }
 
 // MARK: - Haptic hint

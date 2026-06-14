@@ -64,7 +64,7 @@ struct MindSection: View {
 
     @ViewBuilder
     private var checkInCard: some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.restColor) {
             if let mood = todayMood, !editing {
                 answeredRow(mood)
             } else {
@@ -88,8 +88,9 @@ struct MindSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// One tappable face. Selection reads via an accent STROKE — deliberately the
-    /// same neutral treatment for every face (no red for low mood).
+    /// One tappable face. Selection reads via a calm Rest STROKE + soft fill —
+    /// deliberately the same neutral, non-valenced treatment for every face (no red
+    /// for low mood; the indigo carries no good/bad signal, it just marks the choice).
     private func faceButton(_ value: Int) -> some View {
         let selected = todayMood == value
         return Button {
@@ -97,11 +98,13 @@ struct MindSection: View {
         } label: {
             Text(MoodStore.face(for: value))
                 .font(StrandFont.number(24))
-                .padding(.vertical, 6)
+                .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
-                .background(Capsule().fill(StrandPalette.surfaceInset))
+                .background(Capsule().fill(
+                    selected ? StrandPalette.restColor.opacity(0.16) : StrandPalette.surfaceInset))
                 .overlay(Capsule().strokeBorder(
-                    selected ? StrandPalette.accent : StrandPalette.hairline))
+                    selected ? StrandPalette.restBright : StrandPalette.hairline,
+                    lineWidth: selected ? 1.5 : 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(MoodStore.label(for: value)) — mood \(value) of 5")
@@ -126,7 +129,7 @@ struct MindSection: View {
             Button("Edit") { editing = true }
                 .buttonStyle(.plain)
                 .font(StrandFont.caption)
-                .foregroundStyle(StrandPalette.accent)
+                .foregroundStyle(StrandPalette.restBright)
                 .accessibilityLabel("Edit today's mood")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,29 +149,34 @@ struct MindSection: View {
     // MARK: - Insights card
 
     private var insightsCard: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("What tracks your mood — \(moodDayCount) check-ins")
-                    .strandOverline()
-                    .padding(.bottom, 10)
-                ForEach(Array(lines.enumerated()), id: \.element.id) { idx, line in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(line.text)
-                            .font(StrandFont.subhead)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(line.caption)
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(StrandPalette.textTertiary)
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            Text("What tracks your mood — \(moodDayCount) check-ins")
+                .strandOverline()
+            // Each correlation as its own frosted Rest-tinted insight card. The indigo wash is
+            // calm and carries no valence — a link is just a link, never framed as good or bad.
+            ForEach(lines) { line in
+                NoopCard(tint: StrandPalette.restColor) {
+                    HStack(alignment: .top, spacing: 12) {
+                        // A soft Rest dot marks the row without colour-coding sentiment.
+                        Circle().fill(StrandPalette.restBright)
+                            .frame(width: 7, height: 7)
+                            .padding(.top, 6)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(line.text)
+                                .font(StrandFont.subhead)
+                                .foregroundStyle(StrandPalette.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(line.caption)
+                                .font(StrandFont.footnote)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityElement(children: .combine)
-                    if idx < lines.count - 1 {
-                        Divider().overlay(StrandPalette.hairline)
-                    }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

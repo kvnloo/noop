@@ -80,7 +80,7 @@ struct ComingSoon: View {
             }
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 14))
+        .frostedCardSurface(cornerRadius: 14)
     }
 }
 

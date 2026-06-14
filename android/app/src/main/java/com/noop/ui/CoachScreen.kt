@@ -212,7 +212,7 @@ private fun CoachChat(vm: CoachViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
         // Active-provider strip + reset-key affordance.
-        NoopCard(padding = 14.dp) {
+        NoopCard(padding = 14.dp, tint = Palette.chargeColor) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatePill(title = "${provider.displayName} · $model", tone = StrandTone.Accent, showsDot = true)
                 Spacer(Modifier.weight(1f))
@@ -231,7 +231,7 @@ private fun CoachChat(vm: CoachViewModel) {
 
         // Data-access consent — off by default; no metrics are sent until this is on.
         val consent by vm.consent.collectAsStateWithLifecycle()
-        NoopCard(padding = 14.dp) {
+        NoopCard(padding = 14.dp, tint = Palette.chargeColor) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Let the coach use my data", style = NoopType.subhead, color = Palette.textPrimary)
@@ -276,9 +276,14 @@ private fun CoachChat(vm: CoachViewModel) {
             )
         }
 
-        // Input row + Send.
+        // Input row + Send — a frosted overlay surface so the composer reads as a docked input bar.
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Palette.surfaceOverlay)
+                .border(1.dp, Palette.hairline, RoundedCornerShape(18.dp))
+                .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -322,16 +327,22 @@ private fun ChatBubble(msg: ChatMsg) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
+        // User bubbles = a brand-green tinted bubble; Coach replies = a frosted Charge-tinted surface
+        // so the reply reads as a card in the green Coach world rather than a flat grey box.
+        val bubbleModifier = if (isUser) {
+            Modifier
+                .clip(bubbleShape)
+                .background(Palette.accentMuted)
+                .border(1.dp, Palette.accent.copy(alpha = 0.35f), bubbleShape)
+        } else {
+            Modifier
+                .clip(bubbleShape)
+                .frostedCardSurface(tint = Palette.chargeColor, cornerRadius = 16.dp)
+        }
         Box(
             modifier = Modifier
                 .widthIn(max = 320.dp)
-                .clip(bubbleShape)
-                .background(if (isUser) Palette.accentMuted else Palette.surfaceRaised)
-                .border(
-                    1.dp,
-                    if (isUser) Palette.accent.copy(alpha = 0.35f) else Palette.hairline,
-                    bubbleShape,
-                )
+                .then(bubbleModifier)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -352,13 +363,11 @@ private fun ChatBubble(msg: ChatMsg) {
 
 @Composable
 private fun ThinkingBubble() {
-    val bubbleShape = RoundedCornerShape(16.dp)
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Row(
             modifier = Modifier
-                .clip(bubbleShape)
-                .background(Palette.surfaceRaised)
-                .border(1.dp, Palette.hairline, bubbleShape)
+                .clip(RoundedCornerShape(16.dp))
+                .frostedCardSurface(tint = Palette.chargeColor, cornerRadius = 16.dp)
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .semantics { contentDescription = "Coach is thinking" },
             verticalAlignment = Alignment.CenterVertically,

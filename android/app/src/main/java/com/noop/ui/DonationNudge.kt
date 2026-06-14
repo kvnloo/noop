@@ -3,12 +3,16 @@ package com.noop.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Button
@@ -82,7 +86,9 @@ fun DonationNudgeCard() {
     var visible by remember { mutableStateOf(DonationNudgePrefs.shouldShow(context)) }
     if (!visible) return
 
-    NoopCard {
+    // A frosted, brand-green-tinted card — the Charge world's anchor colour — so the honest
+    // donation ask reads as a warm, on-brand moment, never a hard grey box.
+    NoopCard(tint = Palette.accent) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -100,6 +106,10 @@ fun DonationNudgeCard() {
             Text(
                 "${"%,d".format(DonationStats.DOWNLOADS)}+ downloads so far — ${DonationStats.DONORS} donors.",
                 style = NoopType.footnote, color = Palette.textPrimary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Palette.accentMuted)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             )
             Text(
                 "If it's saving you a subscription, a suggested \$50+ — a fraction of a year of WHOOP — " +

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,51 +133,61 @@ fun IntelligenceScreen(vm: AppViewModel) {
     }
 }
 
-// MARK: - Tomorrow's Charge forecast (ported from IntelligenceView.forecastCard)
+// MARK: - Tomorrow's Charge forecast hero (ported from IntelligenceView.forecastCard)
 //
 // An evening ESTIMATE of tomorrow-morning Charge from tonight's known levers —
 // today's Effort vs your norm, your typical sleep, and the recent recovery baseline.
-// Labelled an estimate with a ± band; the real Charge is scored from tomorrow's HRV.
+// Bevel hero: the estimate as a layered Charge-world [BevelGauge] over a scenic
+// [ScenicHeroBackground], with the ± band as the caption and the plain-English read-out
+// beneath. Labelled an estimate; the real Charge is scored from tomorrow's HRV. The
+// number, band and copy are unchanged — only the container + gauge are new.
 
 @Composable
 private fun ForecastCard(f: RecoveryForecast) {
     val charge = f.charge.roundToInt()
     val band = f.band.roundToInt()
-    NoopCard(padding = 20.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
+        SectionHeader("Tomorrow's Charge", overline = "Evening forecast", trailing = "Estimate")
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cardRadius)),
+        ) {
+            ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Charge)
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                BevelGauge(
+                    fraction = (f.charge / 100.0).coerceIn(0.0, 1.0),
+                    stops = Palette.recoveryStops,
+                    tipColor = Palette.recoveryColor(f.charge),
+                    numberText = "$charge",
+                    captionText = "± $band",
+                    stateText = Palette.recoveryState(f.charge),
+                    diameter = 184.dp,
+                    lineWidth = 15.dp,
+                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(
-                        Icons.Filled.WbSunny,
-                        contentDescription = null,
-                        tint = Palette.accent,
-                        modifier = Modifier.size(20.dp),
+                    Text(
+                        "You'll likely wake around $charge ± $band Charge if you sleep about " +
+                            "${sleepHoursLabel(f.plannedSleepHours)} tonight.",
+                        style = NoopType.subhead,
+                        color = Palette.textSecondary,
                     )
-                    Text("Tomorrow's Charge", style = NoopType.headline, color = Palette.textPrimary)
+                    Text(
+                        "Estimate from today's effort, your typical sleep and your ${f.nights}-night " +
+                            "recovery baseline — not a measurement. Your real Charge is scored from " +
+                            "tomorrow's HRV when you wake.",
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                    )
                 }
-                SourceBadge("Estimate")
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("$charge", style = NoopType.number(40f), color = recoveryStatColor(f.charge))
-                Text("± $band", style = NoopType.number(20f), color = Palette.textTertiary)
-            }
-            Text(
-                "You'll likely wake around $charge ± $band Charge if you sleep about " +
-                    "${sleepHoursLabel(f.plannedSleepHours)} tonight.",
-                style = NoopType.subhead,
-                color = Palette.textSecondary,
-            )
-            Text(
-                "Estimate from today's effort, your typical sleep and your ${f.nights}-night " +
-                    "recovery baseline — not a measurement. Your real Charge is scored from " +
-                    "tomorrow's HRV when you wake.",
-                style = NoopType.footnote,
-                color = Palette.textTertiary,
-            )
         }
     }
 }
@@ -195,7 +204,7 @@ private fun sleepHoursLabel(hours: Double): String {
 
 @Composable
 private fun ExplainerCard(effortScale: EffortScale) {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.chargeColor) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -204,7 +213,7 @@ private fun ExplainerCard(effortScale: EffortScale) {
                 Icon(
                     Icons.Filled.AutoAwesome,
                     contentDescription = null,
-                    tint = Palette.accent,
+                    tint = Palette.chargeColor,
                     modifier = Modifier.size(20.dp),
                 )
                 Text("How this works", style = NoopType.headline, color = Palette.textPrimary)
@@ -227,7 +236,7 @@ private fun ExplainerCard(effortScale: EffortScale) {
 
 @Composable
 private fun EmptyNote() {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.chargeColor) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Top,
@@ -235,7 +244,7 @@ private fun EmptyNote() {
             Icon(
                 Icons.Filled.AutoAwesome,
                 contentDescription = null,
-                tint = Palette.accent,
+                tint = Palette.chargeColor,
                 modifier = Modifier.size(18.dp),
             )
             Text(
@@ -256,7 +265,7 @@ private fun EmptyNote() {
 
 @Composable
 private fun ModelBreakdownCard(effortScale: EffortScale) {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.chargeColor) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Overline("Charge model")
             WeightRow("Heart-rate variability", "~55%", 0.55f, Palette.metricPurple)
@@ -278,7 +287,7 @@ private fun ModelBreakdownCard(effortScale: EffortScale) {
                 Text(
                     "0–${UnitFormatter.effortScaleMax(effortScale)} scale",
                     style = NoopType.captionNumber,
-                    color = Palette.metricCyan,
+                    color = Palette.effortColor,
                 )
             }
         }
@@ -330,7 +339,7 @@ private fun Meter(fraction: Float, color: Color) {
 
 @Composable
 private fun DayCard(d: DailyMetric, effortScale: EffortScale) {
-    NoopCard(padding = 18.dp) {
+    NoopCard(padding = 18.dp, tint = Palette.chargeColor) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -346,19 +355,19 @@ private fun DayCard(d: DailyMetric, effortScale: EffortScale) {
                 DayStat(
                     "Charge",
                     d.recovery?.let { "${it.roundToInt()}%" } ?: "—",
-                    d.recovery?.let { recoveryStatColor(it) } ?: Palette.textSecondary,
+                    d.recovery?.let { Palette.recoveryColor(it) } ?: Palette.textSecondary,
                     Modifier.weight(1f),
                 )
                 DayStat(
                     "Effort",
                     d.strain?.let { UnitFormatter.effortDisplay(it, effortScale) } ?: "—",
-                    Palette.metricCyan,
+                    d.strain?.let { Palette.strainColor(it) } ?: Palette.textSecondary,
                     Modifier.weight(1f),
                 )
                 DayStat(
                     "Rest",
                     sleepValue(d.totalSleepMin),
-                    Palette.metricPurple,
+                    Palette.restColor,
                     Modifier.weight(1f),
                 )
                 DayStat(
@@ -407,13 +416,6 @@ private fun DayStat(label: String, value: String, color: Color, modifier: Modifi
 }
 
 // MARK: - Derived helpers
-
-/** Recovery-band status color, mirroring IntelligenceView.recoveryColor (67 / 34 cuts). */
-private fun recoveryStatColor(r: Double): Color = when {
-    r >= 67 -> Palette.statusPositive
-    r >= 34 -> Palette.statusWarning
-    else -> Palette.statusCritical
-}
 
 private fun sleepValue(totalMin: Double?): String {
     val m = totalMin ?: return "—"

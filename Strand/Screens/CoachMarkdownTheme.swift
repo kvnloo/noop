@@ -39,6 +39,7 @@ extension Theme {
                 .markdownTextStyle {
                     FontWeight(.semibold)
                     FontSize(17)
+                    ForegroundColor(StrandPalette.textPrimary)
                 }
         }
         .heading2 { configuration in
@@ -47,6 +48,7 @@ extension Theme {
                 .markdownTextStyle {
                     FontWeight(.semibold)
                     FontSize(17)
+                    ForegroundColor(StrandPalette.textPrimary)
                 }
         }
         .heading3 { configuration in
@@ -55,6 +57,7 @@ extension Theme {
                 .markdownTextStyle {
                     FontWeight(.semibold)
                     FontSize(16)
+                    ForegroundColor(StrandPalette.textPrimary)
                 }
         }
         .heading4 { configuration in
@@ -63,6 +66,7 @@ extension Theme {
                 .markdownTextStyle {
                     FontWeight(.semibold)
                     FontSize(15)
+                    ForegroundColor(StrandPalette.textPrimary)
                 }
         }
         .heading5 { configuration in

@@ -18,9 +18,53 @@ struct SmartAlarmView: View {
         ScreenScaffold(title: "Smart alarm",
                        subtitle: "A gentle evening wind-down nudge to help you reach your wake time rested.") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                windowHero
                 honestyCard
                 windDownCard
             }
+        }
+    }
+
+    // A small Rest-tinted hero — the wind-down readout as a clean time pairing (wind-down → wake)
+    // over a scenic Rest backdrop, so a glance gives the night's shape. It's about winding down to
+    // sleep, so it reads in the Rest world (indigo) rather than the brand-green chrome below.
+    private var windowHero: some View {
+        ZStack {
+            ScenicHeroBackground(domain: .rest)
+                .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Tonight").strandOverline()
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    heroTime(label: "Wind down",
+                             time: windDownOn ? timeLabel(WindDownNudge.nudgeMinuteOfDay()) : "—",
+                             tint: StrandPalette.restColor)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .accessibilityHidden(true)
+                    heroTime(label: "Wake",
+                             time: timeLabel(wakeMinutes),
+                             tint: StrandPalette.restBright)
+                    Spacer(minLength: 0)
+                }
+                Text(windDownOn
+                     ? "A calm nudge \(WindDownNudge.sleepNeedMinutes / 60)h \(WindDownNudge.leadMinutes)m before your wake time."
+                     : "Turn on the wind-down reminder below to land at your wake time rested.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(20)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func heroTime(label: LocalizedStringKey, time: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).strandOverline()
+            Text(time)
+                .font(StrandFont.number(28))
+                .foregroundStyle(tint)
         }
     }
 
@@ -45,15 +89,19 @@ struct SmartAlarmView: View {
     }
 
     private var windDownCard: some View {
-        StrandCard(padding: 20) {
+        // Rest-tinted when armed so the active state reads in the sleep world; neutral when off.
+        StrandCard(padding: 20, tint: windDownOn ? StrandPalette.restColor : nil) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Image(systemName: "moon.zzz.fill")
-                        .foregroundStyle(StrandPalette.accent)
-                        .accessibilityHidden(true)
-                    Text("Wind-down nudge")
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Evening").strandOverline()
+                    HStack(spacing: 10) {
+                        Image(systemName: "moon.zzz.fill")
+                            .foregroundStyle(StrandPalette.restColor)
+                            .accessibilityHidden(true)
+                        Text("Wind-down nudge")
+                            .font(StrandFont.title2)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    }
                 }
 
                 HStack(alignment: .center, spacing: 16) {

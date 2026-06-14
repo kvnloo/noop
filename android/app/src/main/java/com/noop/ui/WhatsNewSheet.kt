@@ -49,7 +49,12 @@ fun WhatsNewSheet(onClose: () -> Unit) {
         color = Palette.surfaceBase,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Header(onClose = onClose)
+            // A scenic Charge-tinted hero behind the title region — the same premium backdrop
+            // the Today rings float over, so the changelog opens on-brand.
+            Box {
+                ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Charge, starCount = 28)
+                Header(onClose = onClose)
+            }
             Hairline()
 
             Column(
@@ -61,8 +66,10 @@ fun WhatsNewSheet(onClose: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(Metrics.sectionGap),
             ) {
                 ExpectationsCard()
-                AppChangelog.releases.forEach { release ->
-                    ReleaseCard(release)
+                // The newest release is the headline — give it the brand-green wash; the rest stay
+                // frosted-neutral so the latest stands out at a glance.
+                AppChangelog.releases.forEachIndexed { index, release ->
+                    ReleaseCard(release, isLatest = index == 0)
                 }
             }
 
@@ -85,21 +92,18 @@ private fun Header(onClose: () -> Unit) {
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("What's new", style = NoopType.title2, color = Palette.textPrimary)
-            Text(
-                "NOOP ${AppChangelog.CURRENT_VERSION}",
-                style = NoopType.caption,
-                color = Palette.textTertiary,
-            )
+            Overline("What's new", color = Palette.textTertiary)
+            Text("NOOP ${AppChangelog.CURRENT_VERSION}", style = NoopType.display(26f), color = Palette.textPrimary)
+            Text("Release notes", style = NoopType.caption, color = Palette.textSecondary)
         }
         IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
             Icon(
                 Icons.Filled.Close,
                 contentDescription = "Close",
                 tint = Palette.textTertiary,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
     }
@@ -109,7 +113,7 @@ private fun Header(onClose: () -> Unit) {
 
 @Composable
 private fun ExpectationsCard() {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.accent) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Overline("What to expect")
             AppChangelog.expectations.forEach { e ->
@@ -142,8 +146,8 @@ private fun ExpectationsCard() {
 // MARK: - Release card (v-badge + title + date, then bulleted items)
 
 @Composable
-private fun ReleaseCard(release: AppChangelog.Release) {
-    NoopCard(padding = 20.dp) {
+private fun ReleaseCard(release: AppChangelog.Release, isLatest: Boolean = false) {
+    NoopCard(padding = 20.dp, tint = if (isLatest) Palette.accent else null) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

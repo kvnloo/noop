@@ -70,29 +70,28 @@ struct CoachView: View {
     }
 
     /// Explicit, revocable permission for the coach to read & send the user's data. Off by default.
+    /// A frosted Charge-tinted card so it reads as part of the green Coach world, not a flat panel.
     private var consentBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: coach.dataConsent ? "lock.open.fill" : "lock.fill")
-                .foregroundStyle(coach.dataConsent ? StrandPalette.accent : StrandPalette.textTertiary)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Let the coach use my data")
-                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
-                Text(coach.dataConsent
-                     ? "On — your charge, rest, HRV and workouts are shared with the provider for tailored coaching."
-                     : "Off — the coach answers generally and sends none of your metrics.")
-                    .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+        NoopCard(padding: 14, tint: StrandPalette.chargeColor) {
+            HStack(spacing: 10) {
+                Image(systemName: coach.dataConsent ? "lock.open.fill" : "lock.fill")
+                    .foregroundStyle(coach.dataConsent ? StrandPalette.accent : StrandPalette.textTertiary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Let the coach use my data")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                    Text(coach.dataConsent
+                         ? "On — your charge, rest, HRV and workouts are shared with the provider for tailored coaching."
+                         : "Off — the coach answers generally and sends none of your metrics.")
+                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Toggle("", isOn: $coach.dataConsent)
+                    .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                    .accessibilityLabel("Let the coach use my data")
             }
-            Spacer(minLength: 8)
-            Toggle("", isOn: $coach.dataConsent)
-                .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
-                .accessibilityLabel("Let the coach use my data")
         }
-        .padding(12)
-        .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(StrandPalette.hairline, lineWidth: 1))
     }
 
     // MARK: - Setup (no key yet)
@@ -353,16 +352,15 @@ struct CoachView: View {
             // LLM replies arrive as Markdown (bold, lists, headings, tables) —
             // rendered with the chat-bubble-sized Strand theme. User bubbles stay
             // verbatim `Text` so typed `*`/`#` never turn into surprise formatting.
+            // The reply sits on a frosted Charge-tinted surface — a card, not a flat box.
             HStack {
                 Markdown(message.text)
                     .markdownTheme(.strand)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(StrandPalette.hairline, lineWidth: 1))
+                    .padding(.vertical, 11)
+                    .frostedCardSurface(tint: StrandPalette.chargeColor, cornerRadius: 16)
                     .frame(maxWidth: 560, alignment: .leading)
                 Spacer(minLength: 48)
             }
@@ -373,15 +371,15 @@ struct CoachView: View {
 
     private var typingIndicator: some View {
         HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
+            ProgressView().controlSize(.small).tint(StrandPalette.accent)
             Text("Coach is thinking…")
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.vertical, 11)
+        .frostedCardSurface(tint: StrandPalette.chargeColor, cornerRadius: 16)
         .frame(maxWidth: 320, alignment: .leading)
         .accessibilityLabel("Coach is thinking")
     }
@@ -427,6 +425,8 @@ struct CoachView: View {
         }
     }
 
+    /// The input bar — a frosted overlay surface holding the field + Send, so the composer reads as a
+    /// distinct docked surface above the canvas rather than two floating controls.
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("Ask Coach about your data…", text: $draft, axis: .vertical)
@@ -460,6 +460,10 @@ struct CoachView: View {
             .disabled(coach.sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityLabel("Send")
         }
+        .padding(8)
+        .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(StrandPalette.hairline, lineWidth: 1))
     }
 
     private var privacyFootnote: some View {

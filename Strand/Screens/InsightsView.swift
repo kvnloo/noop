@@ -70,6 +70,17 @@ struct InsightsView: View {
             case .rhr:                    return false
             }
         }
+        /// The Bevel colour world each outcome belongs to — Charge→green, HRV→Rest
+        /// (periwinkle, the HRV world), Rest→indigo, RHR→Stress (teal). Drives the
+        /// section's domain accent + the segmented selection's wash.
+        var domain: DomainTheme {
+            switch self {
+            case .recovery: return .charge
+            case .hrv:      return .rest
+            case .sleep:    return .rest
+            case .rhr:      return .stress
+            }
+        }
     }
 
     /// One personal-experiment window length (and the matching baseline span).
@@ -775,7 +786,10 @@ struct InsightsView: View {
         // copy and the accessibility label (was computed twice per card).
         let sentence = BehaviorInsights.sentence(e)
 
-        return NoopCard {
+        // The card wash reads as the OUTCOME's colour world (so the whole Behaviour
+        // Effects section sits in one world), while the dot / StatTile accents stay
+        // sign-aware to flag the good/bad direction.
+        return NoopCard(tint: outcome.domain.color) {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
 
                 // Header: behaviour name + significance pill.
@@ -856,7 +870,9 @@ struct InsightsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                NoopCard {
+                // Every curated relationship terminates in Charge, so the card sits in
+                // the Charge (green) colour world via a faint wash.
+                NoopCard(tint: DomainTheme.charge.color) {
                     VStack(spacing: 0) {
                         ForEach(Array(rels.enumerated()), id: \.element.id) { idx, rel in
                             relationshipRow(rel)

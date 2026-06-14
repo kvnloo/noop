@@ -65,8 +65,8 @@ struct ManualWorkoutSheet: View {
                     HStack(spacing: 12) {
                         Stepper(value: $durationMin, in: 1...(24 * 60), step: 5) {
                             Text(durationLabel)
-                                .font(StrandFont.bodyNumber)
-                                .foregroundStyle(StrandPalette.textPrimary)
+                                .font(StrandFont.number(16))
+                                .foregroundStyle(StrandPalette.effortBright)
                         }
                         .accessibilityLabel("Duration in minutes")
                     }
@@ -101,15 +101,25 @@ struct ManualWorkoutSheet: View {
     // MARK: - Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(editing == nil ? "Add Workout" : "Edit Workout")
-                .font(StrandFont.title2)
-                .foregroundStyle(StrandPalette.textPrimary)
-            Text(editing == nil
-                 ? "Log a session you tracked elsewhere."
-                 : "Adjust this session's details.")
-                .font(StrandFont.subhead)
-                .foregroundStyle(StrandPalette.textSecondary)
+        HStack(alignment: .top, spacing: 12) {
+            // A small Effort-world glyph so the sheet reads as part of the workouts (amber) world.
+            Image(systemName: "figure.run")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(StrandPalette.effortColor)
+                .frame(width: 30, height: 30)
+                .background(StrandPalette.effortColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(editing == nil ? "Add Workout" : "Edit Workout")
+                    .font(StrandFont.title2)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text(editing == nil
+                     ? "Log a session you tracked elsewhere."
+                     : "Adjust this session's details.")
+                    .font(StrandFont.subhead)
+                    .foregroundStyle(StrandPalette.textSecondary)
+            }
+            Spacer(minLength: 0)
         }
     }
 

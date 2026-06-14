@@ -236,7 +236,11 @@ private fun HeartRateSection(live: LiveState, hrMax: Int) {
             trailing = if (derived) "from R-R" else null,
         )
 
-        NoopCard(padding = Metrics.space18) {
+        // The live HR hero floats over a Charge-world scenic backdrop (the Health screen's colour
+        // world) with the card tinted rose — heart-rate's metric accent. Mirrors HealthView.swift.
+        Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Metrics.cardRadius))) {
+            ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Charge)
+            NoopCard(padding = Metrics.space18, tint = Palette.metricRose) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Card header: title + subtitle on the left, live bpm read-out right.
                 Row(
@@ -313,6 +317,7 @@ private fun HeartRateSection(live: LiveState, hrMax: Int) {
                     maxHr = "$hrMax",
                     state = if (hasLiveHr) "STREAMING" else "IDLE",
                 )
+            }
             }
         }
     }
@@ -540,6 +545,9 @@ private data class Vital(
     val banding: VitalBands.Result,
     /** The metric's category colour (used only when in range). */
     val metricColor: Color,
+    /** Trailing values (oldest → newest) for the tile's metric-tinted sparkline trail, matching
+     *  Today's Key-Metrics tiles. Presentation-only; defaulted so existing call sites compile. */
+    val sparkline: List<Double> = emptyList(),
 ) {
     /** Value with its unit appended, or null when no data. */
     val formattedValue: String? = value?.let { "${format(it)} $unit" }
@@ -603,6 +611,10 @@ private fun vitalsFor(
         val max = allValues.maxOrNull() ?: return null
         return "within ${format(min)} -- ${format(max)} $unit"
     }
+    // Trailing values (oldest → newest) feeding each tile's sparkline trail. Built from the same
+    // history already gathered for banding, including the displayed day's value. Presentation-only.
+    fun trail(current: Double?, window: Int = 14, selector: (DailyMetric) -> Double?): List<Double> =
+        (history.mapNotNull(selector) + listOfNotNull(current)).takeLast(window)
 
     // Skin temp is bimodal: CSV imports store ABSOLUTE °C, the on-device pipeline a ±°C
     // DEVIATION — partition the history to the displayed value's kind and pick the matching
@@ -658,6 +670,7 @@ private fun vitalsFor(
             rangeCaption = respRangeCaption,
             banding = VitalBands.band(d?.respRateBpm, series { it.respRateBpm }, 12.0..20.0, Baselines.respCfg),
             metricColor = Palette.metricCyan,
+            sparkline = trail(d?.respRateBpm) { it.respRateBpm },
         ),
         Vital(
             key = "spo2", label = "Blood O₂", unit = "%",
@@ -670,6 +683,7 @@ private fun vitalsFor(
             // of personal baseline (no "spo2" MetricCfg exists).
             banding = VitalBands.band(d?.spo2Pct, emptyList(), 95.0..100.0, null),
             metricColor = Palette.metricCyan,
+            sparkline = trail(d?.spo2Pct) { it.spo2Pct },
         ),
         Vital(
             key = "rhr", label = "Resting HR", unit = "bpm",
@@ -683,6 +697,7 @@ private fun vitalsFor(
                 Baselines.restingHRCfg,
             ),
             metricColor = Palette.metricRose,
+            sparkline = trail(d?.restingHr?.toDouble()) { it.restingHr?.toDouble() },
         ),
         Vital(
             key = "hrv", label = "HRV", unit = "ms",
@@ -693,6 +708,7 @@ private fun vitalsFor(
             rangeCaption = hrvRangeCaption,
             banding = VitalBands.band(d?.avgHrv, series { it.avgHrv }, 40.0..120.0, Baselines.hrvCfg),
             metricColor = Palette.metricPurple,
+            sparkline = trail(d?.avgHrv) { it.avgHrv },
         ),
         Vital(
             key = "skin", label = "Skin Temp", unit = skinUnitLabel,
@@ -702,6 +718,10 @@ private fun vitalsFor(
             asOfLabel = asOfLabel(todayKey),
             rangeCaption = skinRangeCaption,
             banding = skinResult, metricColor = Palette.metricAmber,
+            // Keep the trail on the displayed value's kind — absolute °C and ±deviation must not mix.
+            sparkline = trail(skin) { row ->
+                row.skinTempDevC?.takeIf { VitalBands.isAbsoluteSkinTemp(it) == skinIsAbsolute }
+            },
         ),
     )
 }
@@ -714,7 +734,9 @@ private fun VitalTile(
     caption: String = vital.stateCaption,
     accent: Color = vital.accent,
 ) {
-    NoopCard(modifier = modifier.height(Metrics.tileHeight), padding = Metrics.space14) {
+    // The tile borrows its accent as a faint card wash, so each vital reads as part of its colour
+    // world while staying legible on the deep blue-black — matching Today's StatTile.
+    NoopCard(modifier = modifier.height(Metrics.tileHeight), padding = Metrics.space14, tint = accent) {
         Column {
             Overline(vital.label)
             Spacer(Modifier.weight(1f))
@@ -725,6 +747,18 @@ private fun VitalTile(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // A metric-tinted sparkline trail with a glowing "now" end-cap, mirroring Today's tiles.
+            // Hidden below two points so a sparse vital shows the caption with no flat trail.
+            if (vital.sparkline.size > 1) {
+                TileSparkline(
+                    values = vital.sparkline,
+                    color = vital.metricColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .padding(top = Metrics.space4),
+                )
+            }
             Text(
                 text = caption,
                 style = NoopType.footnote,
@@ -734,6 +768,74 @@ private fun VitalTile(
                 modifier = Modifier.padding(top = Metrics.space2),
             )
         }
+    }
+}
+
+/**
+ * A compact metric-tinted sparkline for a tile trail: a soft gradient fill under a coloured line,
+ * capped with a glowing end-cap (a halo + white core) at the latest point so it reads as "now".
+ * Built locally with Canvas + Palette colours (there is no shared tile-spark composable), mirroring
+ * the Bevel chart end-cap used on the macOS sparkline and the Today HR chart. Decorative — the tile
+ * already carries a combined contentDescription, so the spark is not separately announced.
+ */
+@Composable
+private fun TileSparkline(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.clipToBounds()) {
+        if (values.size < 2 || size.width <= 0f || size.height <= 0f) return@Canvas
+        val strokePx = 2f
+        val pad = strokePx + 2f
+        val usableH = (size.height - pad * 2).coerceAtLeast(1f)
+        val lo = values.min()
+        val hi = values.max()
+        val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
+        val n = values.size
+        fun xFor(i: Int): Float = if (n > 1) size.width * i / (n - 1) else 0f
+        fun yFor(v: Double): Float {
+            val norm = ((v - lo) / span).toFloat().coerceIn(0f, 1f)
+            return pad + (1f - norm) * usableH
+        }
+        val pts = values.mapIndexed { i, v -> Offset(xFor(i), yFor(v)) }
+
+        // Soft gradient fill under the curve.
+        val fillPath = Path().apply {
+            moveTo(pts.first().x, size.height)
+            lineTo(pts.first().x, pts.first().y)
+            for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+            lineTo(pts.last().x, size.height)
+            close()
+        }
+        drawPath(
+            path = fillPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    color.copy(alpha = StrandAlpha.chartFillSoft),
+                    Color.Transparent,
+                ),
+                startY = 0f,
+                endY = size.height,
+            ),
+        )
+
+        // The line, tinted lighter → full at the leading edge so it reads as building toward "now".
+        val linePath = Path().apply {
+            moveTo(pts.first().x, pts.first().y)
+            for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+        }
+        drawPath(
+            path = linePath,
+            brush = Brush.horizontalGradient(
+                colors = listOf(color.copy(alpha = 0.5f), color),
+                startX = 0f,
+                endX = size.width,
+            ),
+            style = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+
+        // Glowing "now" end-cap at the latest point: a soft halo + white core.
+        val end = pts.last()
+        drawCircle(color = color.copy(alpha = 0.30f), radius = 6f, center = end)
+        drawCircle(color = color.copy(alpha = 0.65f), radius = 3.5f, center = end)
+        drawCircle(color = Color.White, radius = 1.6f, center = end)
     }
 }
 

@@ -146,6 +146,34 @@ struct TrendsView: View {
         return pts.map(\.value).reduce(0, +) / Double(pts.count)
     }
 
+    /// The window's trend as a signed mean-of-recent-half minus mean-of-earlier-half. Drives a
+    /// TrendChip so the card reads its direction at a glance, like Today's deltas. nil for a window
+    /// too short to split. `higherIsBetter == nil` (e.g. Effort) keeps the chip neutral.
+    private func periodChange(_ pts: [TrendPoint]) -> Double? {
+        guard pts.count >= 4 else { return nil }
+        let mid = pts.count / 2
+        let earlier = pts.prefix(mid).map(\.value)
+        let recent = pts.suffix(pts.count - mid).map(\.value)
+        guard !earlier.isEmpty, !recent.isEmpty else { return nil }
+        let e = earlier.reduce(0, +) / Double(earlier.count)
+        let r = recent.reduce(0, +) / Double(recent.count)
+        return r - e
+    }
+
+    /// A TrendChip for a window's period change, coloured green/rose by whether the move is good for
+    /// THIS metric (`higherIsBetter`); neutral when direction has no valence or the change is flat.
+    @ViewBuilder
+    private func changeChip(_ pts: [TrendPoint], higherIsBetter: Bool?, fmt: @escaping (Double) -> String) -> some View {
+        if let d = periodChange(pts), abs(d) > 0.0001 {
+            let sign = d >= 0 ? "+" : "−"
+            let color: Color = {
+                guard let better = higherIsBetter else { return StrandPalette.textTertiary }
+                return (d > 0) == better ? StrandPalette.statusPositive : StrandPalette.metricRose
+            }()
+            TrendChip(text: "\(sign)\(fmt(abs(d)))", color: color)
+        }
+    }
+
     /// "Trailing 90 days" / "All history" — used as a card subtitle.
     private var rangeSubtitle: String {
         guard let n = range.days else { return "All history" }
@@ -214,29 +242,36 @@ struct TrendsView: View {
     private func heroRecovery(recovery: ResolvedMetric) -> some View {
         let pts = recovery.points
         let avg = mean(pts)
+        // Charge world — green. The hero is a domain-tinted, glowing line with a bright "now" cap.
         return ChartCard(
             title: "Charge",
             subtitle: recovery.caption,
             trailing: avg.map { "\(Int($0.rounded()))" },
             height: NoopMetrics.chartHeight,
+            tint: StrandPalette.chargeColor,
             chart: {
                 if pts.count >= 2 {
-                    TrendChart(points: pts,
-                               gradient: StrandPalette.recoveryGradient,
-                               valueRange: 0...100,
-                               showsArea: true,
-                               height: NoopMetrics.chartHeight)
+                    glowChart(points: pts,
+                              gradient: StrandPalette.recoveryGradient,
+                              valueRange: 0...100,
+                              tip: StrandPalette.chargeBright,
+                              valueFormat: { "\(Int($0.rounded()))" })
                 } else {
                     sparsePlaceholder
                 }
             },
             footer: {
-                ChartFooter([
-                    ("Avg", avg.map { "\(Int($0.rounded()))" } ?? "—"),
-                    ("Peak", pts.map(\.value).max().map { "\(Int($0.rounded()))" } ?? "—"),
-                    ("Low", pts.map(\.value).min().map { "\(Int($0.rounded()))" } ?? "—"),
-                    ("Days", "\(pts.count)"),
-                ])
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        ChartFooter([
+                            ("Avg", avg.map { "\(Int($0.rounded()))" } ?? "—"),
+                            ("Peak", pts.map(\.value).max().map { "\(Int($0.rounded()))" } ?? "—"),
+                            ("Low", pts.map(\.value).min().map { "\(Int($0.rounded()))" } ?? "—"),
+                            ("Days", "\(pts.count)"),
+                        ])
+                        changeChip(pts, higherIsBetter: true, fmt: { "\(Int($0.rounded()))" })
+                    }
+                }
             }
         )
     }
@@ -252,11 +287,16 @@ struct TrendsView: View {
         return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Daily signals", overline: "Trends", trailing: rangeSubtitle)
             LazyVGrid(columns: cols, alignment: .leading, spacing: NoopMetrics.gap) {
+                // HRV / Resting HR are Charge sub-signals → the Charge (green) card world, each line
+                // keeping its established metric hue for legibility. Effort sits in its amber world.
                 metricChart(
                     title: "Heart rate variability", unit: "ms",
                     points: hrvPts,
                     subtitle: hrv.caption,
                     gradient: gradient(StrandPalette.metricPurple),
+                    tip: StrandPalette.metricPurple,
+                    tint: StrandPalette.chargeColor,
+                    higherIsBetter: true,
                     range: valueRange(hrvPts, fallback: 20...120),
                     fmt: { "\(Int($0.rounded()))" }
                 )
@@ -265,6 +305,9 @@ struct TrendsView: View {
                     points: rhrPts,
                     subtitle: rhr.caption,
                     gradient: gradient(StrandPalette.metricRose),
+                    tip: StrandPalette.metricRose,
+                    tint: StrandPalette.chargeColor,
+                    higherIsBetter: false,
                     range: valueRange(rhrPts, fallback: 40...80),
                     fmt: { "\(Int($0.rounded()))" }
                 )
@@ -275,6 +318,9 @@ struct TrendsView: View {
                     points: strainPts,
                     subtitle: strain.caption,
                     gradient: StrandPalette.strainGradient,
+                    tip: StrandPalette.effortBright,
+                    tint: StrandPalette.effortColor,
+                    higherIsBetter: nil,
                     range: valueRange(strainPts, fallback: 0...100),
                     fmt: { UnitFormatter.effortDisplay($0, scale: effortScale) }
                 )
@@ -288,6 +334,9 @@ struct TrendsView: View {
         points pts: [TrendPoint],
         subtitle: String,
         gradient: Gradient,
+        tip: Color,
+        tint: Color,
+        higherIsBetter: Bool?,
         range: ClosedRange<Double>,
         fmt: @escaping (Double) -> String
     ) -> some View {
@@ -297,24 +346,24 @@ struct TrendsView: View {
             subtitle: subtitle,
             trailing: avg.map(fmt),
             height: NoopMetrics.chartHeight,
+            tint: tint,
             chart: {
                 if pts.count >= 2 {
-                    TrendChart(points: pts,
-                               gradient: gradient,
-                               valueRange: range,
-                               showsArea: true,
-                               height: NoopMetrics.chartHeight,
-                               valueFormat: { "\(fmt($0)) \(unit)" })
+                    glowChart(points: pts, gradient: gradient, valueRange: range,
+                              tip: tip, valueFormat: { "\(fmt($0)) \(unit)" })
                 } else {
                     sparsePlaceholder
                 }
             },
             footer: {
-                ChartFooter([
-                    ("Mean \(unit)", avg.map(fmt) ?? "—"),
-                    ("Min", pts.map(\.value).min().map(fmt) ?? "—"),
-                    ("Max", pts.map(\.value).max().map(fmt) ?? "—"),
-                ])
+                HStack {
+                    ChartFooter([
+                        ("Mean \(unit)", avg.map(fmt) ?? "—"),
+                        ("Min", pts.map(\.value).min().map(fmt) ?? "—"),
+                        ("Max", pts.map(\.value).max().map(fmt) ?? "—"),
+                    ])
+                    changeChip(pts, higherIsBetter: higherIsBetter, fmt: fmt)
+                }
             }
         )
     }
@@ -330,7 +379,7 @@ struct TrendsView: View {
             return RecoveryDay(date: dt, score: d.recovery)
         }
         let title = (range == .all && repo.days.count > 365) ? "Charge — all history" : "Charge — past year"
-        return NoopCard {
+        return NoopCard(tint: StrandPalette.chargeColor) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader("\(title)", overline: "Calendar", trailing: "\(recoveryDays.filter { $0.score != nil }.count) days")
                 if recoveryDays.isEmpty {
@@ -367,12 +416,73 @@ struct TrendsView: View {
         ])
     }
 
+    /// A domain-tinted `TrendChart` with a soft glow and a bright end-cap dot at the latest point —
+    /// the Bevel "now" idiom matching Today's OverviewHRChart. The glow is a blurred copy of the same
+    /// line under the crisp one; the end-cap is a small halo + white core pinned to the final sample.
+    /// Pure presentation: it forwards every value to the locked `TrendChart` unchanged.
+    @ViewBuilder
+    private func glowChart(points pts: [TrendPoint], gradient: Gradient, valueRange: ClosedRange<Double>,
+                           tip: Color, valueFormat: @escaping (Double) -> String) -> some View {
+        ZStack(alignment: .topLeading) {
+            // Soft underglow — the same line, blurred and dimmed, so the curve reads as lit.
+            TrendChart(points: pts, gradient: gradient, valueRange: valueRange,
+                       showsArea: false, height: NoopMetrics.chartHeight, showsHover: false)
+                .blur(radius: 6)
+                .opacity(0.5)
+                .allowsHitTesting(false)
+            // The crisp, interactive line + area.
+            TrendChart(points: pts, gradient: gradient, valueRange: valueRange,
+                       showsArea: true, height: NoopMetrics.chartHeight, valueFormat: valueFormat)
+            // Bright end-cap at the most-recent sample — "now".
+            NowEndCap(value: pts.last?.value, valueRange: valueRange, tip: tip)
+                .allowsHitTesting(false)
+        }
+    }
+
     private var sparsePlaceholder: some View {
         Text("Not enough data for this window.")
             .font(StrandFont.subhead)
             .foregroundStyle(StrandPalette.textTertiary)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - Now end-cap
+
+/// A glowing dot pinned to the latest point of a `TrendChart` — a halo + white core in the domain
+/// tip colour, the Bevel "now" marker. Pinned to the trailing edge (the most-recent x) and mapped
+/// vertically by the value within the chart's value range. Decorative + accessibility-hidden; the
+/// real read-out is the card's trailing value and the line's own hover tooltip.
+private struct NowEndCap: View {
+    let value: Double?
+    let valueRange: ClosedRange<Double>
+    let tip: Color
+
+    private func unit(_ v: Double) -> Double {
+        let lo = valueRange.lowerBound, hi = valueRange.upperBound
+        guard hi > lo else { return 0.5 }
+        return min(max((v - lo) / (hi - lo), 0), 1)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            if let v = value {
+                // TrendChart pads the plot ~6.5pt top/bottom; inset the mapping so the cap lands on
+                // the curve rather than the frame edge. The latest sample is always at the right edge.
+                let inset: CGFloat = 7
+                let h = max(geo.size.height - inset * 2, 1)
+                let y = inset + (1 - CGFloat(unit(v))) * h
+                let x = geo.size.width - inset
+                ZStack {
+                    Circle().fill(tip.opacity(0.30)).frame(width: 18, height: 18)
+                    Circle().fill(tip.opacity(0.65)).frame(width: 11, height: 11)
+                    Circle().fill(Color.white).frame(width: 5, height: 5)
+                }
+                .position(x: x, y: y)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

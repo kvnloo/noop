@@ -18,6 +18,11 @@ struct BodyVitalReading: Identifiable {
     let day: String?
     let source: DailyMetricSource?
     let missingCaption: String
+    /// Trailing values for this vital (oldest → newest), so the tile can draw a metric-tinted
+    /// sparkline with a glowing "now" end-cap like Today's Key-Metrics tiles. Presentation-only:
+    /// the resolved value, banding and source are unchanged — this is just the trend for the trail.
+    /// Defaulted so existing call sites (previews/tests) keep compiling unchanged.
+    var sparkline: [Double]? = nil
 
     var id: String { key }
 
@@ -146,6 +151,13 @@ enum BodyVitalSigns {
         let hrvRow = latest(hrvPoints)
         let skinRow = latest(skinPoints)
 
+        // Trailing values (oldest → newest) feeding each tile's sparkline trail. A 2+ point series
+        // draws; the tile hides the trail otherwise. Presentation-only — built from the same resolved
+        // points already used for the value, just kept as a series rather than collapsed to `latest`.
+        func trail(_ pts: [VitalPoint], window: Int = 14) -> [Double] {
+            pts.suffix(window).map(\.value)
+        }
+
         // Skin temp is bimodal: CSV imports store ABSOLUTE °C, the on-device pipeline a ±°C DEVIATION —
         // partition the history to the displayed value's kind and pick the matching config + population
         // fallback (±0.6 °C mirrors the illness watch's flag threshold).
@@ -189,7 +201,8 @@ enum BodyVitalSigns {
                 metricColor: StrandPalette.metricCyan,
                 day: respRow?.day,
                 source: respRow?.source,
-                missingCaption: String(localized: "No respiratory-rate value")
+                missingCaption: String(localized: "No respiratory-rate value"),
+                sparkline: trail(respPoints)
             ),
             BodyVitalReading(
                 key: "spo2",
@@ -208,7 +221,8 @@ enum BodyVitalSigns {
                 metricColor: StrandPalette.metricCyan,
                 day: spo2Row?.day,
                 source: spo2Row?.source,
-                missingCaption: String(localized: "No SpO₂ import or Health value")
+                missingCaption: String(localized: "No SpO₂ import or Health value"),
+                sparkline: trail(spo2Points)
             ),
             BodyVitalReading(
                 key: "rhr",
@@ -225,7 +239,8 @@ enum BodyVitalSigns {
                 metricColor: StrandPalette.metricRose,
                 day: rhrRow?.day,
                 source: rhrRow?.source,
-                missingCaption: String(localized: "No resting HR value")
+                missingCaption: String(localized: "No resting HR value"),
+                sparkline: trail(rhrPoints)
             ),
             BodyVitalReading(
                 key: "hrv",
@@ -242,7 +257,8 @@ enum BodyVitalSigns {
                 metricColor: StrandPalette.metricPurple,
                 day: hrvRow?.day,
                 source: hrvRow?.source,
-                missingCaption: String(localized: "No HRV value")
+                missingCaption: String(localized: "No HRV value"),
+                sparkline: trail(hrvPoints)
             ),
             BodyVitalReading(
                 key: "skin",
@@ -254,7 +270,10 @@ enum BodyVitalSigns {
                 metricColor: StrandPalette.metricAmber,
                 day: skinRow?.day,
                 source: skinRow?.source,
-                missingCaption: String(localized: "No nightly skin-temp value")
+                missingCaption: String(localized: "No nightly skin-temp value"),
+                // Keep the trail on the displayed value's kind — absolute °C and ±deviation must not
+                // mix on one sparkline (matches the banding partition above).
+                sparkline: trail(skinPoints.filter { VitalBands.isAbsoluteSkinTemp($0.value) == skinIsAbsolute })
             ),
         ]
     }

@@ -87,6 +87,7 @@ fun AutomationsScreen(viewModel: AppViewModel) {
             icon = Icons.Filled.Bolt,
             title = "Haptic coaching",
             blurb = "Train by feel — the strap buzzes so you don't have to watch a screen.",
+            active = zoneCoaching || stressNudge,
         ) {
             ToggleRow(
                 label = "HR-zone coaching",
@@ -108,6 +109,7 @@ fun AutomationsScreen(viewModel: AppViewModel) {
             icon = Icons.Filled.TouchApp,
             title = "Wear & presence",
             blurb = "React when the strap comes off or goes on.",
+            active = autoLockOnWristOff,
         ) {
             ToggleRow(
                 label = "Lock the device when I take the strap off",
@@ -122,6 +124,7 @@ fun AutomationsScreen(viewModel: AppViewModel) {
             icon = Icons.Filled.Alarm,
             title = "Smart alarm",
             blurb = "Wake to a buzz from the strap's own firmware alarm. Experimental — we haven't yet confirmed the strap reliably fires this wake on our side, so keep a backup alarm and don't rely on it alone.",
+            active = smartAlarm,
         ) {
             ToggleRow(
                 label = "Enable smart alarm",
@@ -166,6 +169,7 @@ fun AutomationsScreen(viewModel: AppViewModel) {
             icon = Icons.Filled.MonitorHeart,
             title = "Illness early-warning",
             blurb = "Watches your resting HR, HRV, skin temperature and respiration against your own 28-day baseline. On-device and approximate — informational only, not a diagnosis.",
+            active = illnessWatch,
         ) {
             ToggleRow(
                 label = "Watch for early-illness signs",
@@ -184,14 +188,25 @@ private fun SettingsSection(
     icon: ImageVector,
     title: String,
     blurb: String,
+    active: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.accent) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = Palette.accent)
-                Spacer(Modifier.width(10.dp))
-                Text(title, style = NoopType.headline, color = Palette.textPrimary)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Overline("Automation")
+                    if (active) Overline("ON", color = Palette.accent)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (active) Palette.accent else Palette.textSecondary,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(title, style = NoopType.title2, color = Palette.textPrimary)
+                }
             }
             Text(blurb, style = NoopType.subhead, color = Palette.textSecondary)
             content()

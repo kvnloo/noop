@@ -316,9 +316,9 @@ struct AppleHealthView: View {
     }
 
     private var loadingState: some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.metricCyan) {
             HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
+                ConnectionDot(tone: .accent, pulsing: true)
                 Text("Reading your Apple Health history…")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
             }
@@ -335,11 +335,14 @@ struct AppleHealthView: View {
     #if os(iOS)
     @ViewBuilder
     private var liveSyncCard: some View {
-        StrandCard(padding: 20) {
+        StrandCard(padding: 20, tint: StrandPalette.metricCyan) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: "heart.text.square.fill")
-                        .foregroundStyle(StrandPalette.accent)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(StrandPalette.metricCyan)
+                        .frame(width: 30, height: 30)
+                        .background(StrandPalette.metricCyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .accessibilityHidden(true)
                     Text("Apple Health (Live)")
                         .font(StrandFont.headline)
@@ -373,7 +376,7 @@ struct AppleHealthView: View {
                         Label("Enable Apple Health", systemImage: "heart.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(StrandPalette.accent)
+                    .tint(StrandPalette.metricCyan)
                     if health.auth == .denied {
                         Text("If you don't see the prompt, enable NOOP under Settings › Health › Data Access & Devices.")
                             .font(StrandFont.footnote)
@@ -400,7 +403,7 @@ struct AppleHealthView: View {
                         Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .buttonStyle(.bordered)
-                    .tint(StrandPalette.accent)
+                    .tint(StrandPalette.metricCyan)
                     .disabled(health.syncing)
                 }
 

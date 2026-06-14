@@ -3,6 +3,7 @@ import SwiftUI
 import AppKit
 #endif
 import StrandDesign
+import StrandAnalytics
 import WhoopProtocol
 import WhoopStore
 
@@ -25,6 +26,20 @@ struct LiveView: View {
     /// Smoothed, spike-filtered live HR from AppModel (median over a short window).
     private var displayHR: Int? { model.bpm }
     private var activeConnection: Bool { live.connected && live.bonded }
+
+    /// The live HR zone for the focal readout's colour world (presentation only — same shared
+    /// `HRZones` model the live-workout screen uses). 0 = below Zone 1 / no HR yet.
+    private var liveZone: Int {
+        guard let bpm = displayHR else { return 0 }
+        return HRZones.zones(maxHR: Double(model.profile.hrMax)).zoneNumber(forBPM: Double(bpm))
+    }
+
+    /// The focal HR ring / numeral colour: the live HR-zone hue when streaming, the Effort world
+    /// otherwise — so the console reads in the Effort (amber) world like every workouts/live surface.
+    private var hrTint: Color {
+        guard displayHR != nil else { return StrandPalette.textTertiary }
+        return liveZone >= 1 ? StrandPalette.hrZoneColor(liveZone) : StrandPalette.effortColor
+    }
 
     /// Drives the focal HR ring's gentle pulse — toggled on every new HR value so the ring "beats".
     @State private var heartPulse = false
@@ -173,9 +188,10 @@ struct LiveView: View {
 
     /// The console's centrepiece: a pulsing focal HR ring beside a live-physiology stack (R-R strip,
     /// rolling RMSSD, last frame/event). Side-by-side on a wide window (Mac), stacked on a narrow one
-    /// (iPhone) via ViewThatFits.
+    /// (iPhone) via ViewThatFits. The whole console floats over an Effort-tinted scenic hero so the live
+    /// readout reads like a Bevel hero, and the card carries the Effort wash.
     private var bodyConsole: some View {
-        NoopCard(padding: 20) {
+        NoopCard(padding: 20, tint: StrandPalette.effortColor) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: 24) {
                     heartReadout
@@ -191,31 +207,48 @@ struct LiveView: View {
                 }
             }
         }
+        .background {
+            ScenicHeroBackground(domain: .effort)
+                .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+        }
     }
 
     private var heartReadout: some View {
-        VStack(alignment: .center, spacing: 8) {
+        let tint = hrTint
+        return VStack(alignment: .center, spacing: 8) {
             Text("HEART RATE")
                 .font(StrandFont.overline)
                 .tracking(StrandFont.overlineTracking)
                 .foregroundStyle(StrandPalette.textSecondary)
             ZStack {
+                // Soft zone-tinted bloom behind the ring — the Bevel "glow" that breathes with each beat.
                 Circle()
-                    .stroke((displayHR == nil ? StrandPalette.hairline : StrandPalette.accent)
-                        .opacity(heartPulse ? 0.28 : 0.10), lineWidth: 2)
+                    .fill(tint.opacity(displayHR == nil ? 0 : (heartPulse ? 0.22 : 0.10)))
+                    .blur(radius: 26)
+                    .scaleEffect(heartPulse ? 1.0 : 0.9)
+                Circle()
+                    .stroke((displayHR == nil ? StrandPalette.hairline : tint)
+                        .opacity(heartPulse ? 0.42 : 0.16), lineWidth: 2)
                     .scaleEffect(heartPulse ? 1.07 : 0.96)
                 Circle()
                     .stroke(StrandPalette.hairline, lineWidth: 1)
                     .padding(10)
                 VStack(spacing: 0) {
                     Text(displayHR.map(String.init) ?? "—")
-                        .font(.system(size: 96, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(displayHR == nil ? StrandPalette.textTertiary : StrandPalette.accent)
+                        .font(StrandFont.rounded(96, weight: .semibold))
+                        .foregroundStyle(displayHR == nil ? StrandPalette.textTertiary : tint)
                         .contentTransition(.numericText())
                         .animation(.snappy, value: displayHR)
                     Text("bpm")
                         .font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textSecondary)
+                    if liveZone >= 1 {
+                        Text("ZONE \(liveZone)")
+                            .font(StrandFont.overline)
+                            .tracking(StrandFont.overlineTracking)
+                            .foregroundStyle(tint)
+                            .padding(.top, 4)
+                    }
                 }
             }
             .frame(width: 210, height: 210)
@@ -489,7 +522,7 @@ struct LiveView: View {
     }
 
     private func activeWorkoutCard(_ w: AppModel.ActiveWorkout) -> some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.effortColor) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Circle().fill(StrandPalette.metricRose).frame(width: 8, height: 8)
@@ -498,15 +531,17 @@ struct LiveView: View {
                     Spacer()
                     // Re-render once a second so the elapsed clock ticks without a manual Timer.
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(Self.elapsed(since: w.start)).font(StrandFont.headline).monospacedDigit()
+                        Text(Self.elapsed(since: w.start)).font(StrandFont.number(17)).monospacedDigit()
                             .foregroundStyle(StrandPalette.textPrimary)
                     }
                 }
                 HStack(spacing: NoopMetrics.gap) {
-                    workoutStat("HR", model.bpm.map { "\($0)" } ?? "—")
+                    workoutStat("HR", model.bpm.map { "\($0)" } ?? "—",
+                                tint: model.bpm == nil ? StrandPalette.textPrimary : StrandPalette.metricRose)
                     workoutStat("Avg", w.avgHr > 0 ? "\(w.avgHr)" : "—")
                     workoutStat("Peak", w.peakHr > 0 ? "\(w.peakHr)" : "—")
-                    workoutStat("Effort", UnitFormatter.effortDisplay(w.liveStrain, scale: effortScale))
+                    workoutStat("Effort", UnitFormatter.effortDisplay(w.liveStrain, scale: effortScale),
+                                tint: StrandPalette.strainColor(w.liveStrain))
                 }
                 HStack(spacing: 10) {
                     // Re-open the full live workout screen (#238) after it's been dismissed.
@@ -525,12 +560,12 @@ struct LiveView: View {
         }
     }
 
-    private func workoutStat(_ title: String, _ value: String) -> some View {
+    private func workoutStat(_ title: String, _ value: String, tint: Color = StrandPalette.textPrimary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased()).font(StrandFont.overline).tracking(StrandFont.overlineTracking)
                 .foregroundStyle(StrandPalette.textSecondary)
-            Text(value).font(StrandFont.headline).monospacedDigit()
-                .foregroundStyle(StrandPalette.textPrimary).lineLimit(1).minimumScaleFactor(0.6)
+            Text(value).font(StrandFont.number(17))
+                .foregroundStyle(tint).lineLimit(1).minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

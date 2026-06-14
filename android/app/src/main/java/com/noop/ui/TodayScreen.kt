@@ -1592,17 +1592,25 @@ private fun SparkStatTile(
 
 @Composable
 private fun IllnessBanner(message: String) {
-    val shape = RoundedCornerShape(Metrics.cornerSm)
+    // Frosted Bevel warning card (amber tint) — matches the Swift HealthAlertBanner.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Palette.statusWarning.copy(alpha = StrandAlpha.warningFill), shape)
-            .border(Metrics.divider, Palette.statusWarning.copy(alpha = StrandAlpha.warningBorder), shape)
+            .clip(RoundedCornerShape(Metrics.cardRadius))
+            .frostedCardSurface(tint = Palette.statusWarning, cornerRadius = Metrics.cardRadius)
             .padding(Metrics.space14),
-        horizontalArrangement = Arrangement.spacedBy(Metrics.space10),
+        horizontalArrangement = Arrangement.spacedBy(Metrics.space12),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(Icons.Filled.Warning, contentDescription = null, tint = Palette.statusWarning)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Palette.statusWarning.copy(alpha = StrandAlpha.warningFill)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = Palette.statusWarning)
+        }
         Text(message, style = NoopType.subhead, color = Palette.textPrimary)
     }
 }

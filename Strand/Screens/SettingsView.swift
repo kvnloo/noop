@@ -1012,7 +1012,8 @@ struct SettingsView: View {
 
 // MARK: - Section card
 
-/// A grouped settings card: icon + title header, an explanatory blurb, then content.
+/// A grouped settings card: a "Settings" overline + icon + title header, an explanatory blurb,
+/// then content. A faint brand-green wash anchors the card to NOOP's neutral chrome.
 private struct SettingsSection<Content: View>: View {
     let icon: String
     let title: LocalizedStringKey
@@ -1020,15 +1021,18 @@ private struct SettingsSection<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        StrandCard(padding: 20) {
+        StrandCard(padding: 20, tint: StrandPalette.accent) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Image(systemName: icon)
-                        .foregroundStyle(StrandPalette.accent)
-                        .accessibilityHidden(true)
-                    Text(title)
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Settings").strandOverline()
+                    HStack(spacing: 10) {
+                        Image(systemName: icon)
+                            .foregroundStyle(StrandPalette.accent)
+                            .accessibilityHidden(true)
+                        Text(title)
+                            .font(StrandFont.title2)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                    }
                 }
                 Text(blurb)
                     .font(StrandFont.subhead)

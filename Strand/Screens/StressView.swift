@@ -142,7 +142,7 @@ struct StressView: View {
             SectionHeader("Today's Timeline", overline: "Intraday",
                           trailing: timelineTrailing(day))
 
-            NoopCard {
+            NoopCard(tint: StrandPalette.stressColor) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("Stress through the day").strandOverline()
@@ -192,11 +192,11 @@ struct StressView: View {
     /// A passive, in-app nudge to run a Breathe session after a sustained high-stress run.
     /// No notification — just a card with a CTA that opens the existing trainer.
     private func sustainedBreatheCard(_ day: DaytimeStress.Result) -> some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.stressColor) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: "lungs.fill")
-                        .foregroundStyle(StrandPalette.accent)
+                        .foregroundStyle(StrandPalette.stressColor)
                     Text("Sustained high stress").strandOverline()
                     Spacer()
                     StatePill("\(day.sustainedRun)h elevated", tone: .warning, showsDot: true)
@@ -227,24 +227,28 @@ struct StressView: View {
         return "\(h12) \(ampm)"
     }
 
-    // MARK: 1 · Hero gauge card
+    // MARK: 1 · Hero — layered Bevel gauge in the teal Stress world over a scenic hero.
 
     private func heroCard(_ model: StressModel) -> some View {
-        NoopCard {
-            VStack(spacing: 14) {
-                HStack {
-                    Text("Stress monitor").strandOverline()
-                    Spacer()
-                    StatePill("\(model.band.title)", tone: model.band.tone, showsDot: true)
+        ZStack {
+            ScenicHeroBackground(domain: .stress)
+                .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+            NoopCard(tint: StrandPalette.stressColor) {
+                VStack(spacing: 14) {
+                    HStack {
+                        Text("Stress monitor").strandOverline()
+                        Spacer()
+                        StatePill("\(model.band.title)", tone: model.band.tone, showsDot: true)
+                    }
+                    StressHeroGauge(score: model.score, band: model.band)
+                        .frame(maxWidth: .infinity)
+                    // One plain-English line, full width under the gauge.
+                    Text(model.explanation)
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                StressGauge(score: model.score, band: model.band)
-                    .frame(maxWidth: .infinity)
-                // One plain-English line, full width under the gauge.
-                Text(model.explanation)
-                    .font(StrandFont.subhead)
-                    .foregroundStyle(StrandPalette.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -328,7 +332,8 @@ struct StressView: View {
                 ChartCard(
                     title: "Stress · \(range.label)",
                     subtitle: "Daily 0–3 proxy",
-                    trailing: "avg " + String(format: "%.1f", avg)
+                    trailing: "avg " + String(format: "%.1f", avg),
+                    tint: StrandPalette.stressColor
                 ) {
                     TrendChart(
                         points: points,
@@ -351,7 +356,7 @@ struct StressView: View {
                     SegmentedPillControl(ExploreRange.allCases, selection: $range) { $0.label }
                 }
             } else {
-                NoopCard {
+                NoopCard(tint: StrandPalette.stressColor) {
                     Text("Not enough recent days to chart a trend yet. Import a history or keep wearing your strap.")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
@@ -375,7 +380,7 @@ struct StressView: View {
     // MARK: 4 · Methodology (transparency)
 
     private func methodologyCard(_ model: StressModel) -> some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.stressColor) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("How this is computed").strandOverline()
                 Text(model.usingStored
@@ -672,101 +677,39 @@ enum StressMath {
     }
 }
 
-// MARK: - Semicircular stress gauge (0–3, blue → mint → amber sweep)
+// MARK: - Stress hero gauge — the canonical layered BevelGauge in the teal Stress world
 //
-// A compact half-dial: cool-blue at 0, mint at the midpoint, amber at 3 — its own
-// ramp, never the recovery traffic light. The value + band read inside the bowl.
+// Bevel treatment: the 0–3 score reads as a layered ring gauge in the Stress teal colour
+// world (deep→bright teal stroke, stressColor glow/end-cap), sitting over the scenic hero.
+// The number is the 0–3 value, "of 3" is the caption, and the band (LOW/MEDIUM/HIGH) is the
+// state word — same data the bowl gauge showed, restyled to match Today's rings.
 
-struct StressGauge: View {
+struct StressHeroGauge: View {
     let score: Double          // 0–3
     let band: StressBand
-    var diameter: CGFloat = 248
+    var diameter: CGFloat = 220
 
-    @State private var animated = false
+    @State private var animatedFraction: Double = 0
 
-    private var fraction: CGFloat { CGFloat(min(max(score / 3.0, 0), 1)) }
+    private var fraction: Double { min(max(score / 3.0, 0), 1) }
 
     var body: some View {
-        let lineWidth: CGFloat = 16
-        ZStack {
-            ZStack {
-                // Background track (the full semicircle).
-                StressArc(progress: 1)
-                    .stroke(StrandPalette.surfaceInset, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                // Subtle ghost of the full ramp under the track.
-                StressArc(progress: 1)
-                    .stroke(
-                        AngularGradient(
-                            gradient: StressRamp.gradient,
-                            center: .center,
-                            startAngle: .degrees(180),
-                            endAngle: .degrees(360)
-                        ),
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .opacity(0.16)
-                // Value arc, swept to the current fraction.
-                StressArc(progress: animated ? fraction : 0)
-                    .stroke(
-                        AngularGradient(
-                            gradient: StressRamp.gradient,
-                            center: .center,
-                            startAngle: .degrees(180),
-                            endAngle: .degrees(360)
-                        ),
-                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
-                    )
-                    .shadow(color: StressRamp.color(score).opacity(0.55), radius: 10)
-            }
-            .frame(width: diameter, height: diameter)
-            // The arc occupies the top half of its bounding box; pin it so the
-            // readout sits inside the bowl.
-            .frame(height: diameter / 2 + lineWidth, alignment: .top)
-            .clipped()
-
-            // Center readout (number + band), tucked into the semicircle.
-            VStack(spacing: 2) {
-                Text(String(format: "%.1f", score))
-                    .font(StrandFont.display(58))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .contentTransition(.numericText())
-                Text("of 3 · \(band.title)")
-                    .font(StrandFont.overline)
-                    .tracking(StrandFont.overlineTracking)
-                    .foregroundStyle(StressRamp.color(score))
-            }
-            .offset(y: 12)
-        }
+        BevelGauge(
+            fraction: fraction,
+            stops: DomainTheme.stress.gradient.stops,
+            tipColor: StrandPalette.stressColor,
+            numberText: String(format: "%.1f", score),
+            captionText: "of 3",
+            stateText: band.title,
+            diameter: diameter,
+            animatedFraction: animatedFraction
+        )
         .frame(maxWidth: .infinity)
-        .frame(height: diameter / 2 + lineWidth + 26)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Stress \(String(format: "%.1f", score)) of 3, \(band.title)")
         .onAppear {
-            withAnimation(StrandMotion.drawIn) { animated = true }
+            withAnimation(StrandMotion.drawIn) { animatedFraction = fraction }
         }
-    }
-}
-
-/// A 180° arc across the top half (from 9 o'clock sweeping over the top to 3
-/// o'clock), trimmed to `progress` (0…1).
-struct StressArc: Shape {
-    var progress: CGFloat
-
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let lineInset: CGFloat = 16
-        let radius = min(rect.width, rect.height) / 2 - lineInset
-        // Center the arc on the bottom-middle so the bowl opens upward.
-        let center = CGPoint(x: rect.midX, y: rect.height)
-        let start = Angle.degrees(180)
-        let end = Angle.degrees(180 + 180 * Double(min(max(progress, 0), 1)))
-        p.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
-        return p
     }
 }
 
@@ -842,19 +785,23 @@ private struct StressPreviewHarness: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 Text("Stress").font(StrandFont.title1).foregroundStyle(StrandPalette.textPrimary)
 
-                NoopCard {
-                    VStack(spacing: 14) {
-                        HStack {
-                            Text("Stress monitor").strandOverline()
-                            Spacer()
-                            StatePill("\(band.title)", tone: band.tone)
+                ZStack {
+                    ScenicHeroBackground(domain: .stress)
+                        .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                    NoopCard(tint: StrandPalette.stressColor) {
+                        VStack(spacing: 14) {
+                            HStack {
+                                Text("Stress monitor").strandOverline()
+                                Spacer()
+                                StatePill("\(band.title)", tone: band.tone)
+                            }
+                            StressHeroGauge(score: score, band: band)
+                                .frame(maxWidth: .infinity)
+                            Text(StressMath.explanation(band: band, rhrDelta: 3, hrvDelta: -8, usingStored: false))
+                                .font(StrandFont.subhead)
+                                .foregroundStyle(StrandPalette.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        StressGauge(score: score, band: band)
-                            .frame(maxWidth: .infinity)
-                        Text(StressMath.explanation(band: band, rhrDelta: 3, hrvDelta: -8, usingStored: false))
-                            .font(StrandFont.subhead)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
 

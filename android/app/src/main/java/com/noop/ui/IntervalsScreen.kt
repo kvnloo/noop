@@ -38,13 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -173,10 +168,20 @@ fun IntervalsScreen(vm: AppViewModel) {
         if (rounds > 0) workSeconds * rounds + restSeconds * max(0, rounds - 1) else 0
     val sessionProgress =
         if (totalPlanned > 0) (elapsed.toDouble() / totalPlanned.toDouble()).coerceIn(0.0, 1.0) else 0.0
+    // The active phase's colour world: WORK → Effort (amber), REST → Rest (periwinkle), DONE → green.
     val phaseColor = when (phase) {
-        IntervalPhase.Work -> Palette.accent
-        IntervalPhase.Rest -> Palette.metricCyan
+        IntervalPhase.Work -> Palette.effortColor
+        IntervalPhase.Rest -> Palette.restColor
         IntervalPhase.Done -> Palette.statusPositive
+    }
+    // Deep→bright ramp for the active phase, fed to the hero progress BevelGauge's arc.
+    val phaseStops = when (phase) {
+        IntervalPhase.Work -> Palette.effortGradientStops
+        IntervalPhase.Rest -> Palette.restGradientStops
+        IntervalPhase.Done -> listOf(
+            0f to Palette.statusPositive.copy(alpha = 0.6f),
+            1f to Palette.statusPositive,
+        )
     }
     val atCleanStart = !running && remaining == phaseDuration &&
         currentRound == 1 && phase == IntervalPhase.Work && elapsed == 0
@@ -212,127 +217,110 @@ fun IntervalsScreen(vm: AppViewModel) {
             }
         }
 
-        // --- Stage card: the big glanceable face ---
-        NoopCard(padding = 24.dp) {
-            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                // Phase + round line.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        phase.label,
-                        style = NoopType.number(34f).copy(letterSpacing = 2.sp),
-                        color = phaseColor,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Overline("Round")
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            min(currentRound, rounds).toString(),
-                            style = NoopType.number(20f),
-                            color = Palette.textPrimary,
-                        )
-                        Spacer(Modifier.width(2.dp))
-                        Text(
-                            "/ $rounds",
-                            style = NoopType.number(20f),
-                            color = Palette.textTertiary,
-                        )
-                    }
-                }
-
-                // The ring + countdown.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(260.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    IntervalRing(
-                        progress = if (isFinished) 1.0 else intervalProgress,
-                        color = phaseColor,
-                    )
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            if (isFinished) "✓" else remaining.toString(),
-                            style = NoopType.number(96f, weight = androidx.compose.ui.text.font.FontWeight.Bold),
-                            color = if (isFinished) Palette.statusPositive else Palette.textPrimary,
-                        )
-                        Text(
-                            if (isFinished) "SESSION DONE" else "SECONDS",
-                            style = NoopType.footnote.copy(letterSpacing = 1.2.sp),
-                            color = Palette.textTertiary,
-                        )
-                    }
-                }
-
-                // Controls.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            if (isFinished) resetToStart()
-                            toggleRunning()
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Palette.accent,
-                            contentColor = Palette.surfaceBase,
-                        ),
-                    ) {
-                        Icon(
-                            if (running) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                        Text(
-                            if (running) "Pause" else if (isFinished) "Restart" else "Start",
-                            style = NoopType.headline,
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            running = false
-                            resetToStart()
-                        },
-                        modifier = Modifier.weight(1f),
-                        enabled = !atCleanStart,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Palette.textSecondary,
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                        Text("Reset", style = NoopType.headline)
-                    }
-                }
-
-                if (!live.bonded) {
+        // --- Stage hero: the immersive timer face over a scenic Effort backdrop ---
+        // The running timer is the hero — a layered-ring BevelGauge of the phase progress, glowing
+        // in the active phase's world (WORK → effort amber, REST → rest periwinkle), on a frosted
+        // Effort-tinted card over a starfield. The countdown is the gauge's centred numeral.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cardRadius)),
+        ) {
+            ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Effort)
+            NoopCard(padding = 24.dp, tint = phaseColor) {
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    // Phase chip + round chip line — both frosted.
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Filled.Vibration,
-                            contentDescription = null,
-                            tint = Palette.textTertiary,
-                            modifier = Modifier.size(14.dp),
+                        PhaseChip(label = phase.label, color = phaseColor)
+                        Spacer(Modifier.weight(1f))
+                        RoundChip(currentRound = min(currentRound, rounds), rounds = rounds)
+                    }
+
+                    // The hero progress gauge with the countdown at its centre.
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        BevelGauge(
+                            fraction = if (isFinished) 1.0 else intervalProgress,
+                            stops = phaseStops,
+                            tipColor = phaseColor,
+                            numberText = if (isFinished) "✓" else remaining.toString(),
+                            captionText = if (isFinished) "SESSION DONE" else "SECONDS",
+                            diameter = 240.dp,
+                            lineWidth = 18.dp,
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "Bond your strap on the Live screen to feel the transitions hands-free.",
-                            style = NoopType.footnote,
-                            color = Palette.textTertiary,
-                            textAlign = TextAlign.Center,
-                        )
+                    }
+
+                    // Controls.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = {
+                                if (isFinished) resetToStart()
+                                toggleRunning()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Palette.accent,
+                                contentColor = Palette.surfaceBase,
+                            ),
+                        ) {
+                            Icon(
+                                if (running) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                            Text(
+                                if (running) "Pause" else if (isFinished) "Restart" else "Start",
+                                style = NoopType.headline,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                running = false
+                                resetToStart()
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !atCleanStart,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Palette.textSecondary,
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                            Text("Reset", style = NoopType.headline)
+                        }
+                    }
+
+                    if (!live.bonded) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Filled.Vibration,
+                                contentDescription = null,
+                                tint = Palette.textTertiary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Bond your strap on the Live screen to feel the transitions hands-free.",
+                                style = NoopType.footnote,
+                                color = Palette.textTertiary,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                 }
             }
@@ -354,7 +342,7 @@ fun IntervalsScreen(vm: AppViewModel) {
                     )
                 }
 
-                // Slim total-session progress bar.
+                // Slim total-session progress bar — filled with the Effort world gradient.
                 val animatedSession by animateFloatAsState(
                     targetValue = sessionProgress.toFloat(),
                     animationSpec = tween(900, easing = Motion.easeOut),
@@ -373,14 +361,16 @@ fun IntervalsScreen(vm: AppViewModel) {
                                 .fillMaxWidth(animatedSession)
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(Palette.accent),
+                                .background(
+                                    Brush.horizontalGradient(*Palette.effortGradientStops.toTypedArray()),
+                                ),
                         )
                     }
                 }
 
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    OverviewStat(Modifier.weight(1f), "Work", "${workSeconds}s", Palette.accent)
-                    OverviewStat(Modifier.weight(1f), "Rest", "${restSeconds}s", Palette.metricCyan)
+                    OverviewStat(Modifier.weight(1f), "Work", "${workSeconds}s", Palette.effortColor)
+                    OverviewStat(Modifier.weight(1f), "Rest", "${restSeconds}s", Palette.restColor)
                     OverviewStat(Modifier.weight(1f), "Rounds", rounds.toString(), Palette.textPrimary)
                     OverviewStat(
                         Modifier.weight(1f), "Remaining",
@@ -396,13 +386,13 @@ fun IntervalsScreen(vm: AppViewModel) {
                 Overline("Configure")
                 ConfigStepper(
                     title = "Work", unit = "sec", value = workSeconds,
-                    range = 5..600, step = 5, tint = Palette.accent, enabled = !running,
+                    range = 5..600, step = 5, tint = Palette.effortColor, enabled = !running,
                     onChange = { workSeconds = it },
                 )
                 Divider()
                 ConfigStepper(
                     title = "Rest", unit = "sec", value = restSeconds,
-                    range = 5..600, step = 5, tint = Palette.metricCyan, enabled = !running,
+                    range = 5..600, step = 5, tint = Palette.restColor, enabled = !running,
                     onChange = { restSeconds = it },
                 )
                 Divider()
@@ -423,76 +413,42 @@ fun IntervalsScreen(vm: AppViewModel) {
     }
 }
 
-// MARK: - Countdown ring (mirrors IntervalTimerView.intervalRing)
-//
-// A full 360° ring: a thick surface-inset track, a 1px hairline inset, and a sweep
-// of the phase color filled to `progress`, drawn from 12 o'clock clockwise with a
-// round cap, animating to each new progress value.
+// MARK: - Phase + round chips (frosted pills, mirror IntervalTimerView.phaseChip / .roundChip)
 
+/** Frosted phase pill (WORK / REST / DONE) tinted to the active world. */
 @Composable
-private fun IntervalRing(
-    progress: Double,
-    color: Color,
-    modifier: Modifier = Modifier,
-    diameter: androidx.compose.ui.unit.Dp = 240.dp,
-    lineWidth: androidx.compose.ui.unit.Dp = 18.dp,
-) {
-    val animated by animateFloatAsState(
-        targetValue = progress.toFloat().coerceIn(0f, 1f),
-        animationSpec = tween(900, easing = Motion.easeOut),
-        label = "ringFill",
+private fun PhaseChip(label: String, color: Color) {
+    val shape = RoundedCornerShape(50)
+    Text(
+        label,
+        style = NoopType.number(15f, weight = androidx.compose.ui.text.font.FontWeight.Bold)
+            .copy(letterSpacing = 2.sp),
+        color = color,
+        modifier = Modifier
+            .clip(shape)
+            .background(color.copy(alpha = 0.16f))
+            .border(1.dp, color.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     )
-    Box(
-        modifier = modifier.size(diameter),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(diameter)
-                .drawBehind {
-                    val stroke = lineWidth.toPx()
-                    val radius = (min(size.width, size.height) - stroke) / 2f
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val topLeft = Offset(center.x - radius, center.y - radius)
-                    val arcSize = Size(radius * 2f, radius * 2f)
-                    val cap = Stroke(width = stroke, cap = StrokeCap.Round)
+}
 
-                    // Full-circle track.
-                    drawArc(
-                        color = Palette.surfaceInset,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = Stroke(width = stroke),
-                    )
-                    // Hairline inset ring.
-                    drawCircle(
-                        color = Palette.hairline,
-                        radius = radius - stroke / 2f - 8f,
-                        center = center,
-                        style = Stroke(width = 1f),
-                    )
-                    // Progress sweep (from 12 o'clock, clockwise).
-                    if (animated > 0.001f) {
-                        val sweep = Brush.sweepGradient(
-                            0f to color.copy(alpha = 0.6f),
-                            1f to color,
-                            center = center,
-                        )
-                        drawArc(
-                            brush = sweep,
-                            startAngle = -90f,
-                            sweepAngle = 360f * animated,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = cap,
-                        )
-                    }
-                },
-        )
+/** Frosted round chip — "ROUND n / N". */
+@Composable
+private fun RoundChip(currentRound: Int, rounds: Int) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier
+            .clip(shape)
+            .background(Palette.surfaceInset)
+            .border(1.dp, Palette.hairline, shape)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Overline("Round")
+        Spacer(Modifier.width(6.dp))
+        Text(currentRound.toString(), style = NoopType.number(18f), color = Palette.textPrimary)
+        Spacer(Modifier.width(2.dp))
+        Text("/ $rounds", style = NoopType.number(18f), color = Palette.textTertiary)
     }
 }
 

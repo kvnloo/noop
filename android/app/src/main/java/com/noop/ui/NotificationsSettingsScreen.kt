@@ -631,7 +631,11 @@ private fun AppRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp),
+            .height(48.dp)
+            // An enabled app reads as a selected row: a soft accentMuted wash behind it.
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (enabled) Modifier.background(Palette.accentMuted) else Modifier)
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -865,13 +869,17 @@ private fun AlertSection(
     icon: ImageVector,
     title: String,
     blurb: String? = null,
+    overline: String = "Alerts",
     content: @Composable () -> Unit,
 ) {
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = Palette.accent) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(icon, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(18.dp))
-                Text(title, style = NoopType.headline, color = Palette.textPrimary)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Overline(overline)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(icon, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(18.dp))
+                    Text(title, style = NoopType.title2, color = Palette.textPrimary)
+                }
             }
             if (blurb != null) {
                 Text(blurb, style = NoopType.subhead, color = Palette.textSecondary)

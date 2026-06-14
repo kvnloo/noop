@@ -10,12 +10,19 @@ struct WhatsNewView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+                // A scenic Charge-tinted hero behind the title region — the same premium backdrop
+                // the Today rings float over, so the changelog opens on-brand.
+                .background {
+                    ScenicHeroBackground(domain: .charge, starCount: 28, fadesToBase: true)
+                }
             Divider().overlay(StrandPalette.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                     expectationsCard
-                    ForEach(AppChangelog.releases) { release in
-                        releaseCard(release)
+                    ForEach(Array(AppChangelog.releases.enumerated()), id: \.element.id) { index, release in
+                        // The newest release is the headline — give it the brand-green wash; the
+                        // rest stay frosted-neutral so the latest stands out at a glance.
+                        releaseCard(release, isLatest: index == 0)
                     }
                 }
                 .padding(20)
@@ -36,16 +43,20 @@ struct WhatsNewView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("What's new").font(StrandFont.title2)
-                    .foregroundStyle(StrandPalette.textPrimary)
-                Text("NOOP \(AppChangelog.currentVersion)").font(StrandFont.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("WHAT'S NEW").font(StrandFont.overline)
+                    .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
+                Text("NOOP \(AppChangelog.currentVersion)")
+                    .font(StrandFont.rounded(26, weight: .bold))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text("Release notes").font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textSecondary)
             }
             Spacer()
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 22))
                     .foregroundStyle(StrandPalette.textTertiary)
             }
             .buttonStyle(.plain)
@@ -55,7 +66,7 @@ struct WhatsNewView: View {
     }
 
     private var expectationsCard: some View {
-        NoopCard {
+        NoopCard(tint: StrandPalette.accent) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("WHAT TO EXPECT").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
@@ -80,8 +91,8 @@ struct WhatsNewView: View {
         }
     }
 
-    private func releaseCard(_ release: AppChangelog.Release) -> some View {
-        NoopCard {
+    private func releaseCard(_ release: AppChangelog.Release, isLatest: Bool = false) -> some View {
+        NoopCard(tint: isLatest ? StrandPalette.accent : nil) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     SourceBadge("v\(release.version)")

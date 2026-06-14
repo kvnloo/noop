@@ -28,6 +28,7 @@ struct LiveWorkoutView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 heroHeartRate
+                effortGauge
                 zoneRail
                 statsGrid
                 Spacer(minLength: 12)
@@ -36,7 +37,12 @@ struct LiveWorkoutView: View {
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(StrandPalette.surfaceBase.ignoresSafeArea())
+        // A scenic Effort-tinted backdrop behind the whole in-exercise screen, fading to the base — the
+        // live workout reads as an Effort-world hero, not a flat panel.
+        .background {
+            ScenicHeroBackground(domain: .effort)
+                .ignoresSafeArea()
+        }
         // If the workout ended elsewhere (process restart cleared it), close the screen.
         .onChange(of: model.activeWorkout == nil) { gone in if gone { onClose() } }
     }
@@ -62,19 +68,46 @@ struct LiveWorkoutView: View {
     }
 
     private var heroHeartRate: some View {
-        let tint = zone >= 1 ? StrandPalette.hrZoneColor(zone) : StrandPalette.textSecondary
-        return NoopCard(padding: 24) {
+        let tint = zone >= 1 ? StrandPalette.hrZoneColor(zone) : StrandPalette.effortColor
+        return NoopCard(padding: 24, tint: StrandPalette.effortColor) {
             VStack(spacing: 6) {
                 Text("HEART RATE")
                     .font(StrandFont.overline).tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textSecondary)
                 Text(model.bpm.map { "\($0)" } ?? "—")
-                    .font(StrandFont.number(80)).monospacedDigit()
+                    .font(StrandFont.rounded(80, weight: .semibold))
                     .foregroundStyle(tint)
+                    // A soft zone-tinted halo behind the numeral — the Bevel glow.
+                    .background(
+                        Circle().fill(tint.opacity(model.bpm == nil ? 0 : 0.16)).blur(radius: 30)
+                    )
+                    .contentTransition(.numericText())
+                    .animation(.snappy, value: model.bpm)
                 Text("bpm").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 Text(zone >= 1 ? "Zone \(zone) · \(Self.zoneName(zone))" : "Below Zone 1")
                     .font(StrandFont.captionNumber)
                     .foregroundStyle(tint)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// The accumulating Effort, on the same layered StrainGauge the rest of the app uses — the live
+    /// `liveStrain` is on NOOP's 0–100 Effort axis, so map it down to the gauge's 0–21 span for the
+    /// arc + numeral (mirrors TodayView's effort hero). Display-only — the captured value stays 0–100.
+    private var effortGauge: some View {
+        let strain = model.activeWorkout?.liveStrain ?? 0
+        return NoopCard(padding: 18, tint: StrandPalette.effortColor) {
+            VStack(spacing: 10) {
+                Text("EFFORT BUILDING")
+                    .font(StrandFont.overline).tracking(StrandFont.overlineTracking)
+                    .foregroundStyle(StrandPalette.effortColor)
+                StrainGauge(
+                    strain: (strain / 100.0) * 21.0,
+                    diameter: 150, lineWidth: 14, showsHover: false,
+                    valueFormat: { _ in UnitFormatter.effortDisplay(strain, scale: effortScale) }
+                )
+                .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity)
         }
@@ -116,21 +149,24 @@ struct LiveWorkoutView: View {
     private var statsGrid: some View {
         let w = model.activeWorkout
         return HStack(spacing: NoopMetrics.gap) {
-            stat("AVG", (w?.avgHr ?? 0) > 0 ? "\(w!.avgHr)" : "—")
-            stat("PEAK", (w?.peakHr ?? 0) > 0 ? "\(w!.peakHr)" : "—")
-            stat("EFFORT", UnitFormatter.effortDisplay(w?.liveStrain ?? 0, scale: effortScale))
+            stat("AVG", (w?.avgHr ?? 0) > 0 ? "\(w!.avgHr)" : "—",
+                 tint: (w?.avgHr ?? 0) > 0 ? StrandPalette.metricRose : StrandPalette.textPrimary)
+            stat("PEAK", (w?.peakHr ?? 0) > 0 ? "\(w!.peakHr)" : "—",
+                 tint: (w?.peakHr ?? 0) > 0 ? StrandPalette.metricRose : StrandPalette.textPrimary)
+            stat("EFFORT", UnitFormatter.effortDisplay(w?.liveStrain ?? 0, scale: effortScale),
+                 tint: StrandPalette.strainColor(w?.liveStrain ?? 0))
         }
     }
 
-    private func stat(_ title: String, _ value: String) -> some View {
-        NoopCard(padding: 14) {
+    private func stat(_ title: String, _ value: String, tint: Color = StrandPalette.textPrimary) -> some View {
+        NoopCard(padding: 14, tint: tint) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(StrandFont.overline).tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textSecondary)
                 Text(value)
-                    .font(StrandFont.number(26)).monospacedDigit()
-                    .foregroundStyle(StrandPalette.textPrimary)
+                    .font(StrandFont.number(26))
+                    .foregroundStyle(tint)
                     .lineLimit(1).minimumScaleFactor(0.6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

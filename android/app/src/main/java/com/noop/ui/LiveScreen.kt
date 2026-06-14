@@ -58,6 +58,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import com.noop.analytics.HrZones
 import com.noop.analytics.Sport
 import com.noop.analytics.WorkoutSport
 import com.noop.ble.LiveState
@@ -79,9 +80,10 @@ fun LiveScreen(viewModel: AppViewModel) {
 
     // Imperial/Metric display preference (D#103). Live distance/pace are computed from metres + sec/km
     // and re-labelled here. Display-only.
-    val unitSystem = UnitPrefs.system(LocalContext.current)
+    val context = LocalContext.current
+    val unitSystem = UnitPrefs.system(context)
     // Effort display scale (#268) — routes the live + saved workout Effort read-outs. Display-only.
-    val effortScale = UnitPrefs.effortScale(LocalContext.current)
+    val effortScale = UnitPrefs.effortScale(context)
 
     // The runtime Bluetooth permission gates scanning. If it isn't granted, the Connect button
     // REQUESTS it (rather than silently doing nothing), then connects once allowed. Shared with
@@ -99,6 +101,12 @@ fun LiveScreen(viewModel: AppViewModel) {
     }
 
     val activeConnection = live.connected && live.bonded
+
+    // Live HR zone for the focal readout's colour world (presentation only — same shared HrZones model
+    // the live-workout screen uses). 0 = below Zone 1 / no HR yet.
+    val profile = remember { ProfileStore.from(context.applicationContext) }
+    val zoneSet = remember(profile.hrMax) { HrZones.zones(maxHR = profile.hrMax.toDouble()) }
+    val liveZone = bpm?.let { zoneSet.zoneNumber(it.toDouble()) } ?: 0
 
     ScreenScaffold(title = "Live Body Console", subtitle = "Current physiology, strap trust, and session controls") {
 
@@ -183,7 +191,7 @@ fun LiveScreen(viewModel: AppViewModel) {
         }
 
         // Body console — focal pulsing HR ring + live physiology (R-R strip, rolling RMSSD, frame/event).
-        BodyConsole(live = live, bpm = bpm, activeConnection = activeConnection)
+        BodyConsole(live = live, bpm = bpm, activeConnection = activeConnection, zone = liveZone)
 
         // Signal Trust rail — one tile per signal that has to be current for the console to be trusted.
         SignalTrustRail(live = live, bpm = bpm, activeConnection = activeConnection)
@@ -205,21 +213,23 @@ fun LiveScreen(viewModel: AppViewModel) {
                 while (true) { nowMs = System.currentTimeMillis(); delay(1000) }
             }
             val elapsedS = ((nowMs - w.startMs) / 1000).coerceAtLeast(0)
-            NoopCard {
+            NoopCard(tint = Palette.effortColor) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text("● ${w.sport.name.uppercase()}", style = NoopType.overline, color = Palette.statusCritical)
                         Spacer(Modifier.weight(1f))
                         Text(
                             String.format("%d:%02d", elapsedS / 60, elapsedS % 60),
-                            style = NoopType.title2, color = Palette.textPrimary,
+                            style = NoopType.number(22f), color = Palette.textPrimary,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-                        StatTile(modifier = Modifier.weight(1f), label = "HR", value = bpm?.toString() ?: "—")
+                        StatTile(modifier = Modifier.weight(1f), label = "HR", value = bpm?.toString() ?: "—",
+                            accent = if (bpm == null) Palette.textPrimary else Palette.metricRose)
                         StatTile(modifier = Modifier.weight(1f), label = "Avg", value = if (w.avgHr > 0) "${w.avgHr}" else "—")
                         StatTile(modifier = Modifier.weight(1f), label = "Peak", value = if (w.peakHr > 0) "${w.peakHr}" else "—")
-                        StatTile(modifier = Modifier.weight(1f), label = "Effort", value = UnitFormatter.effortDisplay(w.liveStrain, effortScale))
+                        StatTile(modifier = Modifier.weight(1f), label = "Effort", value = UnitFormatter.effortDisplay(w.liveStrain, effortScale),
+                            accent = Palette.strainColor(w.liveStrain))
                     }
                     if (w.gpsEnabled) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Metrics.gap)) {
@@ -518,33 +528,45 @@ private fun lastSyncLabel(live: LiveState): String =
 // MARK: - Body console (focal HR ring + live physiology)
 
 @Composable
-private fun BodyConsole(live: LiveState, bpm: Int?, activeConnection: Boolean) {
-    NoopCard(padding = 20.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            HeartReadout(live = live, bpm = bpm, activeConnection = activeConnection)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(Palette.hairline),
-            )
-            PhysiologyStack(live = live, activeConnection = activeConnection)
+private fun BodyConsole(live: LiveState, bpm: Int?, activeConnection: Boolean, zone: Int) {
+    // The console floats over an Effort-tinted scenic hero and carries the Effort wash, so the live
+    // readout reads like a Bevel hero rather than a flat panel.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Metrics.cardRadius)),
+    ) {
+        ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Effort)
+        NoopCard(padding = 20.dp, tint = Palette.effortColor) {
+            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                HeartReadout(live = live, bpm = bpm, activeConnection = activeConnection, zone = zone)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Palette.hairline),
+                )
+                PhysiologyStack(live = live, activeConnection = activeConnection)
+            }
         }
     }
 }
 
 @Composable
-private fun HeartReadout(live: LiveState, bpm: Int?, activeConnection: Boolean) {
-    val color by animateColorAsState(
-        if (bpm == null) Palette.textSecondary else Palette.accentHover,
-        tween(Motion.durationStandard), label = "hrColor",
-    )
+private fun HeartReadout(live: LiveState, bpm: Int?, activeConnection: Boolean, zone: Int) {
+    // Tint by the live HR zone when streaming, the Effort world otherwise — the workouts/live colour world.
+    val tint = when {
+        bpm == null -> Palette.textSecondary
+        zone >= 1 -> Palette.hrZoneColor(zone)
+        else -> Palette.effortColor
+    }
+    val color by animateColorAsState(tint, tween(Motion.durationStandard), label = "hrColor")
     // Pulse the ring on each new HR sample. animateFloatAsState toward a target that flips with the
     // value gives a single ease-out "beat" without an infinite loop.
     val pulseTarget = if (bpm == null) 0f else ((bpm % 2)).toFloat()
     val pulse by animateFloatAsState(pulseTarget, tween(300), label = "hrPulse")
     val ringScale = 0.96f + 0.11f * pulse
-    val ringColor = if (bpm == null) Palette.hairline else Palette.accent
+    val ringColor = if (bpm == null) Palette.hairline else tint
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -558,13 +580,22 @@ private fun HeartReadout(live: LiveState, bpm: Int?, activeConnection: Boolean) 
                 .aspectRatio(1f),
             contentAlignment = Alignment.Center,
         ) {
+            // Soft zone-tinted bloom behind the ring — the Bevel glow, breathing with each beat.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .aspectRatio(1f)
+                    .scale(0.9f + 0.1f * pulse)
+                    .clip(CircleShape)
+                    .background(tint.copy(alpha = if (bpm == null) 0f else 0.14f)),
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
                     .scale(ringScale)
                     .clip(CircleShape)
-                    .border(2.dp, ringColor.copy(alpha = 0.18f), CircleShape),
+                    .border(2.dp, ringColor.copy(alpha = 0.28f), CircleShape),
             )
             Box(
                 modifier = Modifier
@@ -576,6 +607,9 @@ private fun HeartReadout(live: LiveState, bpm: Int?, activeConnection: Boolean) 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = bpm?.toString() ?: "—", style = NoopType.number(72f), color = color)
                 Text("bpm", style = NoopType.subhead, color = Palette.textSecondary)
+                if (zone >= 1) {
+                    Text("ZONE $zone", style = NoopType.overline, color = tint)
+                }
             }
         }
         Text(

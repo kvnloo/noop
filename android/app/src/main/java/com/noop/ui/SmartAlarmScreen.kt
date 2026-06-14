@@ -8,11 +8,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -143,21 +146,31 @@ fun SmartAlarmScreen(vm: AppViewModel) {
 
 // MARK: - Cards
 
-/** The always-visible "you WILL be woken by" guarantee card. */
+/**
+ * The always-visible "you WILL be woken by" guarantee card — a small Rest-world frosted hero. The
+ * wake window reads as a clean earliest→deadline time pairing in big rounded numerals over a scenic
+ * Rest backdrop (it's about waking, so it lives in the indigo world, not the brand-green chrome).
+ */
 @Composable
 private fun WindowCard(enabled: Boolean, targetMinutes: Int, windowMinutes: Int) {
     val deadline = (targetMinutes + windowMinutes) % (24 * 60)
-    NoopCard(padding = 20.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Shield, contentDescription = null, tint = Palette.accent)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Metrics.cardRadius)),
+    ) {
+        ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Rest)
+        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Shield, contentDescription = null, tint = DomainTheme.Rest.color)
             Spacer(Modifier.width(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Overline("Guaranteed wake")
                 if (enabled) {
-                    Text(
-                        "Between ${hhmm(targetMinutes)} and ${hhmm(deadline)}",
-                        style = NoopType.title2, color = Palette.textPrimary,
-                    )
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(hhmm(targetMinutes), style = NoopType.number(28f), color = DomainTheme.Rest.color)
+                        Text("→", style = NoopType.title2, color = Palette.textTertiary)
+                        Text(hhmm(deadline), style = NoopType.number(28f), color = DomainTheme.Rest.bright)
+                    }
                     Text(
                         "A backup alarm is set for ${hhmm(deadline)} — it fires even if Bluetooth drops, the strap isn't worn, or NOOP is closed.",
                         style = NoopType.footnote, color = Palette.textSecondary,
@@ -188,16 +201,19 @@ private fun AlarmSettingsCard(content: @Composable () -> Unit) {
     }
 }
 
-/** The cross-platform evening wind-down nudge — a gentle reminder, not an alarm. */
+/** The cross-platform evening wind-down nudge — a gentle reminder, not an alarm. Rest-tinted when on. */
 @Composable
 private fun WindDownCard(vm: AppViewModel) {
     val enabled by vm.windDownEnabled.collectAsStateWithLifecycle()
-    NoopCard(padding = 20.dp) {
+    NoopCard(padding = 20.dp, tint = if (enabled) DomainTheme.Rest.color else null) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Bedtime, contentDescription = null, tint = Palette.accent)
-                Spacer(Modifier.width(10.dp))
-                Text("Wind-down nudge", style = NoopType.headline, color = Palette.textPrimary)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Overline("Evening")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Bedtime, contentDescription = null, tint = DomainTheme.Rest.color)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Wind-down nudge", style = NoopType.title2, color = Palette.textPrimary)
+                }
             }
             ToggleRowLocal(
                 label = "Remind me to wind down",

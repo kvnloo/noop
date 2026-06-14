@@ -8,13 +8,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +45,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 // MARK: - ScoringGuideScreen (ported from Strand/Screens/ScoringGuideView.swift)
 //
@@ -94,6 +93,28 @@ enum class ScoreSection {
             EFFORT -> "Effort"
             REST -> "Rest"
         }
+
+    /** The Bevel colour world this score belongs to — drives the card tint, the sample gauge
+     *  stroke and the scenic bloom, so each section reads as its own domain. */
+    val domain: DomainTheme
+        get() = when (this) {
+            CHARGE -> DomainTheme.Charge
+            EFFORT -> DomainTheme.Effort
+            REST -> DomainTheme.Rest
+        }
+
+    /** A representative sample fraction (0–1) for the section's illustrative gauge — a
+     *  "what a strong day looks like" reading, purely decorative in the guide. */
+    val sampleFraction: Double
+        get() = when (this) {
+            CHARGE -> 0.82
+            EFFORT -> 0.64
+            REST -> 0.88
+        }
+
+    /** The number shown inside the sample gauge (the 0–100 score the fraction maps to). */
+    val sampleNumber: String
+        get() = "${(sampleFraction * 100).roundToInt()}"
 }
 
 /**
@@ -151,7 +172,12 @@ fun ScoringGuideScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Header(onClose = onClose)
+            // A scenic Charge-tinted hero behind the title region sets the premium tone the
+            // moment the guide opens — the same backdrop the Today rings float over.
+            Box {
+                ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Charge, starCount = 28)
+                Header(onClose = onClose)
+            }
             Hairline()
 
             Column(
@@ -227,13 +253,14 @@ private fun Header(onClose: () -> Unit) {
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("How your scores work", style = NoopType.title2, color = Palette.textPrimary)
+            Overline("Your daily scores", color = Palette.textTertiary)
+            Text("How your scores work", style = NoopType.display(26f), color = Palette.textPrimary)
             Text(
                 "Charge · Effort · Rest",
                 style = NoopType.caption,
-                color = Palette.textTertiary,
+                color = Palette.textSecondary,
             )
         }
         IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
@@ -241,7 +268,7 @@ private fun Header(onClose: () -> Unit) {
                 Icons.Filled.Close,
                 contentDescription = "Close",
                 tint = Palette.textTertiary,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
     }
@@ -284,7 +311,7 @@ private fun LegendDot(section: ScoreSection) {
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(section.accent),
+                .background(section.domain.color),
         )
         Text(section.label, style = NoopType.caption, color = Palette.textSecondary)
     }
@@ -301,62 +328,78 @@ private fun ScoreCard(
     highlighted: Boolean,
     onPositioned: (Int) -> Unit,
 ) {
-    // Deep-link highlight: a brief accent ring when arrived at via an ⓘ, fading back to the hairline.
+    // Deep-link highlight: a brief domain ring when arrived at via an ⓘ, fading back to the hairline.
     val ringColor by animateColorAsState(
-        targetValue = if (highlighted) section.accent else Color.Transparent,
+        targetValue = if (highlighted) section.domain.color else Palette.hairline,
         label = "scoreCardHighlight",
     )
-    val shape = RoundedCornerShape(Metrics.cornerSm)
+    val shape = RoundedCornerShape(Metrics.cardRadius)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { onPositioned(it.positionInRoot().y.toInt()) }
             .clip(shape)
-            .background(Palette.surfaceRaised)
-            .border(2.dp, if (highlighted) ringColor else Palette.hairline, shape)
+            // Frosted, domain-tinted surface — a glassy wash of the section's colour world.
+            .frostedCardSurface(tint = section.domain.color, cornerRadius = Metrics.cardRadius)
+            .border(if (highlighted) 2.dp else 1.dp, ringColor, shape)
             .padding(20.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            // A left accent strip ties the card to its score colour without a hard fill.
-            Box(
-                modifier = Modifier
-                    .padding(vertical = 2.dp)
-                    .width(3.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(section.accent.copy(alpha = 0.9f)),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header row — a sample BevelGauge of the section's world beside the tinted headline.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BevelGauge(
+                    fraction = section.sampleFraction,
+                    stops = section.domain.gradientStops,
+                    tipColor = section.domain.bright,
+                    numberText = section.sampleNumber,
+                    captionText = section.label,
+                    diameter = 84.dp,
+                    lineWidth = 9.dp,
+                    showsLabel = true,
+                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Icon(
-                        section.icon,
-                        contentDescription = null,
-                        tint = section.accent,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            section.icon,
+                            contentDescription = null,
+                            tint = section.domain.color,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            section.label.uppercase(),
+                            style = NoopType.overline,
+                            color = section.domain.color,
+                        )
+                    }
                     Text(headline, style = NoopType.headline, color = Palette.textPrimary)
                 }
-                Text(body, style = NoopType.subhead, color = Palette.textSecondary)
-                Hairline()
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Text(
-                        "VS WHOOP",
-                        style = NoopType.overline,
-                        color = section.accent,
-                        modifier = Modifier.padding(top = 1.dp),
-                    )
-                    Text(
-                        vsWhoop,
-                        style = NoopType.footnote.copy(fontStyle = FontStyle.Italic),
-                        color = Palette.textTertiary,
-                    )
-                }
+            }
+            Text(body, style = NoopType.subhead, color = Palette.textSecondary)
+            Hairline()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    "VS WHOOP",
+                    style = NoopType.overline,
+                    color = section.domain.color,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
+                Text(
+                    vsWhoop,
+                    style = NoopType.footnote.copy(fontStyle = FontStyle.Italic),
+                    color = Palette.textTertiary,
+                )
             }
         }
     }

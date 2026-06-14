@@ -12,8 +12,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -73,62 +76,104 @@ fun LiveWorkoutScreen(vm: AppViewModel, onClose: () -> Unit) {
     }
     val elapsedS = ((nowMs - w.startMs) / 1000).coerceAtLeast(0)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Palette.surfaceBase)
-            .padding(28.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        // Header — sport + elapsed clock.
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Overline("Recording workout")
-                Text(w.sport.name, style = NoopType.title1, color = Palette.textPrimary)
+    // A scenic Effort-tinted backdrop behind the whole in-exercise screen — the live workout reads as
+    // an Effort-world hero, not a flat panel.
+    Box(modifier = Modifier.fillMaxSize().background(Palette.surfaceBase)) {
+        ScenicHeroBackground(modifier = Modifier.matchParentSize(), domain = DomainTheme.Effort)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            // Header — sport + elapsed clock.
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Overline("Recording workout", color = Palette.effortColor)
+                    Text(w.sport.name, style = NoopType.title1, color = Palette.textPrimary)
+                }
+                Text(
+                    String.format("%d:%02d", elapsedS / 60, elapsedS % 60),
+                    style = NoopType.number(34f), color = Palette.textPrimary,
+                )
             }
-            Text(
-                String.format("%d:%02d", elapsedS / 60, elapsedS % 60),
-                style = NoopType.number(34f), color = Palette.textPrimary,
+
+            // The hero — big live HR, tinted to the current zone.
+            HeroHeartRate(bpm = bpm, zone = zone)
+
+            // The accumulating Effort on the shared layered StrainGauge — liveStrain is on NOOP's 0–100
+            // Effort axis, mapped to the gauge's 0–21 span (mirrors the Today effort hero). Display-only.
+            EffortGauge(liveStrain = w.liveStrain, effortScale = effortScale)
+
+            // Zone rail — five segments, the active one lit.
+            ZoneRail(zone = zone, zoneSet = zoneSet)
+
+            // Live stats grid — avg / peak / effort, from the captured window.
+            Row(horizontalArrangement = Arrangement.spacedBy(Metrics.gap), modifier = Modifier.fillMaxWidth()) {
+                StatTile(modifier = Modifier.weight(1f), label = "Avg", value = if (w.avgHr > 0) "${w.avgHr}" else "—",
+                    accent = if (w.avgHr > 0) Palette.metricRose else Palette.textPrimary)
+                StatTile(modifier = Modifier.weight(1f), label = "Peak", value = if (w.peakHr > 0) "${w.peakHr}" else "—",
+                    accent = if (w.peakHr > 0) Palette.metricRose else Palette.textPrimary)
+                StatTile(modifier = Modifier.weight(1f), label = "Effort", value = UnitFormatter.effortDisplay(w.liveStrain, effortScale),
+                    accent = Palette.strainColor(w.liveStrain))
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            Button(
+                onClick = { vm.endWorkout(); onClose() },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Palette.statusCritical, contentColor = Palette.surfaceBase,
+                ),
+            ) { Text("End workout", style = NoopType.headline) }
+        }
+    }
+}
+
+@Composable
+private fun EffortGauge(liveStrain: Double, effortScale: EffortScale) {
+    NoopCard(padding = 18.dp, tint = Palette.effortColor) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Overline("Effort building", color = Palette.effortColor)
+            StrainGauge(
+                strain = (liveStrain / 100.0) * 21.0,
+                diameter = 150.dp,
+                lineWidth = 14.dp,
             )
         }
-
-        // The hero — big live HR, tinted to the current zone.
-        HeroHeartRate(bpm = bpm, zone = zone)
-
-        // Zone rail — five segments, the active one lit.
-        ZoneRail(zone = zone, zoneSet = zoneSet)
-
-        // Live stats grid — avg / peak / effort, from the captured window.
-        Row(horizontalArrangement = Arrangement.spacedBy(Metrics.gap), modifier = Modifier.fillMaxWidth()) {
-            StatTile(modifier = Modifier.weight(1f), label = "Avg", value = if (w.avgHr > 0) "${w.avgHr}" else "—")
-            StatTile(modifier = Modifier.weight(1f), label = "Peak", value = if (w.peakHr > 0) "${w.peakHr}" else "—")
-            StatTile(modifier = Modifier.weight(1f), label = "Effort", value = UnitFormatter.effortDisplay(w.liveStrain, effortScale))
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        Button(
-            onClick = { vm.endWorkout(); onClose() },
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Palette.statusCritical, contentColor = Palette.surfaceBase,
-            ),
-        ) { Text("End workout", style = NoopType.headline) }
     }
 }
 
 @Composable
 private fun HeroHeartRate(bpm: Int?, zone: Int) {
-    val tint = if (zone >= 1) Palette.hrZoneColor(zone) else Palette.textSecondary
-    NoopCard(padding = 24.dp) {
+    val tint = when {
+        bpm == null -> Palette.textSecondary
+        zone >= 1 -> Palette.hrZoneColor(zone)
+        else -> Palette.effortColor
+    }
+    NoopCard(padding = 24.dp, tint = Palette.effortColor) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Overline("Heart rate")
-            Text(bpm?.toString() ?: "—", style = NoopType.number(80f), color = tint)
+            Box(contentAlignment = Alignment.Center) {
+                // Soft zone-tinted halo behind the numeral — the Bevel glow.
+                Box(
+                    modifier = Modifier
+                        .size(132.dp)
+                        .clip(CircleShape)
+                        .background(tint.copy(alpha = if (bpm == null) 0f else 0.14f)),
+                )
+                Text(bpm?.toString() ?: "—", style = NoopType.number(80f), color = tint)
+            }
             Text("bpm", style = NoopType.subhead, color = Palette.textSecondary)
             Text(
                 if (zone >= 1) "Zone $zone · ${zoneName(zone)}" else "Below Zone 1",

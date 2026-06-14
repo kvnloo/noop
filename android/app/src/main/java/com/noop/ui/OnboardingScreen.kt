@@ -148,6 +148,15 @@ fun OnboardingScreen(viewModel: AppViewModel, onFinished: () -> Unit) {
         modifier = Modifier.fillMaxSize(),
         color = Palette.surfaceBase,
     ) {
+        // A scenic hero behind every step — this is the user's first impression of NOOP, so each
+        // step sits over a softly domain-tinted starfield (the same backdrop the Today rings float
+        // over). The world rotates with the step so the flow feels alive without any logic change.
+        Box(modifier = Modifier.fillMaxSize()) {
+            ScenicHeroBackground(
+                modifier = Modifier.matchParentSize(),
+                domain = page.domain,
+                starCount = 44,
+            )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -205,6 +214,7 @@ fun OnboardingScreen(viewModel: AppViewModel, onFinished: () -> Unit) {
                 },
             )
         }
+        }
     }
 }
 
@@ -219,7 +229,17 @@ private enum class OnboardingPage(val cta: String) {
     Profile("Save & continue"),
     Import("Continue"),
     Notifications("Continue"),
-    Done("Enter NOOP"),
+    Done("Enter NOOP");
+
+    /** The Bevel colour world the step's scenic hero is tinted toward — a gentle rotation so the
+     *  flow feels alive. Charge is the brand anchor; connection steps lean Effort, rest-y steps Rest. */
+    val domain: DomainTheme
+        get() = when (this) {
+            Welcome, WhatItDoes, Wear, Bonded, Done -> DomainTheme.Charge
+            Bluetooth, Connect -> DomainTheme.Effort
+            Expectations, Profile, Notifications -> DomainTheme.Rest
+            Import -> DomainTheme.Stress
+        }
 }
 
 // MARK: - Shell
@@ -315,9 +335,10 @@ private fun StepShell(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 title?.let {
+                    // Big SF-Rounded hero headline — the onboarding's first-impression voice.
                     Text(
                         it,
-                        style = NoopType.title1,
+                        style = NoopType.display(30f),
                         color = Palette.textPrimary,
                         textAlign = TextAlign.Center,
                     )

@@ -85,23 +85,27 @@ private enum class Outcome(
     val label: String,
     val outcomeName: String,
     val higherIsBetter: Boolean,
+    /** The Bevel colour world the outcome belongs to — drives the card wash so the
+     *  Behaviour Effects section sits in one world (Charge→green, HRV/Rest→indigo,
+     *  RHR→Stress teal), mirroring the Swift Outcome.domain. */
+    val domain: DomainTheme,
     val pick: (DailyMetric) -> Double?,
     val format: (Double) -> String,
 ) {
     Recovery(
-        label = "Charge", outcomeName = "Charge", higherIsBetter = true,
+        label = "Charge", outcomeName = "Charge", higherIsBetter = true, domain = DomainTheme.Charge,
         pick = { it.recovery }, format = { "${it.roundToInt()}%" },
     ),
     Hrv(
-        label = "HRV", outcomeName = "HRV", higherIsBetter = true,
+        label = "HRV", outcomeName = "HRV", higherIsBetter = true, domain = DomainTheme.Rest,
         pick = { it.avgHrv }, format = { "${it.roundToInt()} ms" },
     ),
     Sleep(
-        label = "Rest", outcomeName = "Rest", higherIsBetter = true,
+        label = "Rest", outcomeName = "Rest", higherIsBetter = true, domain = DomainTheme.Rest,
         pick = { it.efficiency }, format = { "${it.roundToInt()}%" },
     ),
     Rhr(
-        label = "RHR", outcomeName = "Resting HR", higherIsBetter = false,
+        label = "RHR", outcomeName = "Resting HR", higherIsBetter = false, domain = DomainTheme.Stress,
         pick = { it.restingHr?.toDouble() }, format = { "${it.roundToInt()} bpm" },
     ),
 }
@@ -431,7 +435,9 @@ private fun EffectCard(e: BehaviorEffect, outcome: Outcome) {
     val deltaText = "$arrow ${String.format(Locale.US, "%.1f", abs(e.delta))}"
     val sentence = effectSentence(e, outcome)
 
-    NoopCard {
+    // The card wash reads as the OUTCOME's colour world (so the whole Behaviour Effects
+    // section sits in one world), while the dot / StatTile accents stay sign-aware.
+    NoopCard(tint = outcome.domain.color) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
 
             // Header: behaviour name (tinted dot) + significance pill.
@@ -1111,7 +1117,9 @@ private fun RelationshipsSection(rels: List<Relationship>) {
                 )
             }
         } else {
-            NoopCard {
+            // Every curated relationship terminates in Charge, so the card sits in the
+            // Charge (green) colour world via a faint wash.
+            NoopCard(tint = DomainTheme.Charge.color) {
                 Column {
                     rels.forEachIndexed { idx, rel ->
                         RelationshipRow(rel)

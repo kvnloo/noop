@@ -23,7 +23,8 @@ struct AutomationsView: View {
 
     private var doubleTapCard: some View {
         Section2(icon: "hand.tap.fill", title: "Double-tap",
-                 blurb: "Double-tap the strap to trigger an action on \(Platform.deviceNounPhrase). (The strap exposes a single double-tap gesture.)") {
+                 blurb: "Double-tap the strap to trigger an action on \(Platform.deviceNounPhrase). (The strap exposes a single double-tap gesture.)",
+                 active: behavior.doubleTapAction != .none) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text("When I double-tap").font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
@@ -79,7 +80,8 @@ struct AutomationsView: View {
 
     private var wearCard: some View {
         Section2(icon: "figure.walk.motion", title: "Wear & presence",
-                 blurb: wearBlurb) {
+                 blurb: wearBlurb,
+                 active: wearActive) {
             VStack(spacing: 0) {
                 #if os(macOS)
                 ToggleRow(label: "Lock the Mac when I take the strap off",
@@ -102,7 +104,8 @@ struct AutomationsView: View {
 
     private var coachingCard: some View {
         Section2(icon: "bolt.heart.fill", title: "Haptic coaching",
-                 blurb: "Train by feel — the strap buzzes so you don't have to watch a screen.") {
+                 blurb: "Train by feel — the strap buzzes so you don't have to watch a screen.",
+                 active: behavior.zoneCoaching || behavior.stressNudge) {
             VStack(spacing: 0) {
                 ToggleRow(label: "HR-zone coaching",
                           help: "Buzz when you hit your top zone (ease off) and again when you recover. Uses your max HR from Settings.",
@@ -119,7 +122,8 @@ struct AutomationsView: View {
 
     private var alarmCard: some View {
         Section2(icon: "alarm.fill", title: "Smart alarm",
-                 blurb: "Wake to a wrist buzz. This arms the strap's own firmware alarm, so it still fires if \(Platform.deviceNounPhrase) is asleep or NOOP is closed.") {
+                 blurb: "Wake to a wrist buzz. This arms the strap's own firmware alarm, so it still fires if \(Platform.deviceNounPhrase) is asleep or NOOP is closed.",
+                 active: behavior.smartAlarmEnabled) {
             VStack(spacing: 0) {
                 ToggleRow(label: "Enable smart alarm", help: "Arms the strap to buzz at your wake time.",
                           isOn: $behavior.smartAlarmEnabled)
@@ -150,7 +154,8 @@ struct AutomationsView: View {
 
     private var illnessCard: some View {
         Section2(icon: "waveform.path.ecg", title: "Illness early-warning",
-                 blurb: "Watches your resting HR, HRV, skin temperature and respiration against your own 28-day baseline. On-device and approximate — informational only, not a diagnosis.") {
+                 blurb: "Watches your resting HR, HRV, skin temperature and respiration against your own 28-day baseline. On-device and approximate — informational only, not a diagnosis.",
+                 active: behavior.illnessWatch) {
             ToggleRow(label: "Watch for early-illness signs",
                       help: "Needs at least 14 days of history. When two or more signals drift together you get a banner on the dashboard and a notification — at most once a day.",
                       isOn: $behavior.illnessWatch)
@@ -175,6 +180,17 @@ struct AutomationsView: View {
 
     /// Wear & presence blurb. macOS mentions the auto-lock affordance (and the Apple-Watch unlock
     /// caveat); iOS, where that toggle is hidden, describes the Shortcut-driven presence reactions.
+    /// Wear & presence is "active" when any of its reactions are configured: a wrist-on/off Shortcut,
+    /// or (macOS) the auto-lock toggle. Presentation-only — drives the card's accent state.
+    private var wearActive: Bool {
+        let shortcuts = !behavior.wristOffShortcut.isEmpty || !behavior.wristOnShortcut.isEmpty
+        #if os(macOS)
+        return shortcuts || behavior.autoLockOnWristOff
+        #else
+        return shortcuts
+        #endif
+    }
+
     private var wearBlurb: String {
         #if os(macOS)
         "React when the strap comes off or goes on. Note: macOS reserves true auto-UNLOCK for Apple Watch — this can lock, not unlock."
@@ -224,13 +240,28 @@ struct AutomationsView: View {
 
 private struct Section2<Content: View>: View {
     let icon: String; let title: String; var blurb: String? = nil
+    /// When this automation is enabled the card carries a brighter brand-green wash; otherwise a
+    /// faint one — so an active automation reads at a glance. Presentation-only.
+    var active: Bool = false
     @ViewBuilder var content: () -> Content
     var body: some View {
-        StrandCard(padding: 20) {
+        StrandCard(padding: 20, tint: StrandPalette.accent) {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Image(systemName: icon).foregroundStyle(StrandPalette.accent).accessibilityHidden(true)
-                    Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text("Automation").strandOverline()
+                        if active {
+                            Text("ON").font(StrandFont.overline)
+                                .tracking(StrandFont.overlineTracking)
+                                .foregroundStyle(StrandPalette.accent)
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        Image(systemName: icon)
+                            .foregroundStyle(active ? StrandPalette.accent : StrandPalette.textSecondary)
+                            .accessibilityHidden(true)
+                        Text(title).font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+                    }
                 }
                 if let blurb {
                     Text(blurb).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)

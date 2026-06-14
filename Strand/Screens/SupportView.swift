@@ -9,47 +9,87 @@ struct SupportView: View {
     var body: some View {
         ScreenScaffold(title: "Support",
                        subtitle: "\(ProjectInfo.appName) is free and always will be. If it's useful to you, you can chip in to help with development and testing costs. Totally optional.") {
-            builtOnCard
-            donateCard
-            contactCard
-            disclaimerCard
-        }
-    }
-
-    private var contactCard: some View {
-        StrandCard(padding: 20) {
-            HStack(spacing: 12) {
-                Image(systemName: "envelope.fill").foregroundStyle(StrandPalette.accent).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Get in touch").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-                    Text("Questions, feedback, bugs — \(ProjectInfo.contactEmail)")
-                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                    SectionHeader("Support the build", overline: "Optional")
+                    donateCard
                 }
-                Spacer(minLength: 8)
-                Button {
-                    if let url = URL(string: "mailto:\(ProjectInfo.contactEmail)") { PlatformOpen.url(url) }
-                } label: { Label("Email", systemImage: "paperplane.fill") }
-                .buttonStyle(.bordered).tint(StrandPalette.accent)
-                .help("Email \(ProjectInfo.contactEmail)")
+                VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                    SectionHeader("Help & Contact", overline: "Get in touch")
+                    contactCard
+                    builtOnCard
+                }
+                disclaimerCard
             }
         }
     }
 
+    /// One hairline-divided row inside a grouped frosted card: a tinted leading glyph, a title +
+    /// detail stack, and a trailing accent chevron when the row taps through to an action.
+    @ViewBuilder
+    private func groupedRow(icon: String, tint: Color, title: LocalizedStringKey,
+                            detail: String, showsChevron: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
+                Text(detail).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(StrandPalette.accent)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var contactCard: some View {
+        NoopCard {
+            Button {
+                if let url = URL(string: "mailto:\(ProjectInfo.contactEmail)") { PlatformOpen.url(url) }
+            } label: {
+                groupedRow(icon: "envelope.fill", tint: StrandPalette.accent,
+                           title: "Get in touch",
+                           detail: "Questions, feedback, bugs — \(ProjectInfo.contactEmail)",
+                           showsChevron: true)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Email \(ProjectInfo.contactEmail)")
+            .help("Email \(ProjectInfo.contactEmail)")
+        }
+    }
+
     private var builtOnCard: some View {
-        StrandCard(padding: 20) {
+        NoopCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Image(systemName: "hands.clap.fill").foregroundStyle(StrandPalette.accent).accessibilityHidden(true)
+                    Image(systemName: "hands.clap.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(StrandPalette.accent)
+                        .frame(width: 28, height: 28)
+                        .background(StrandPalette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .accessibilityHidden(true)
                     Text("Built on").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                 }
                 Text("This stands on community reverse-engineering. Huge thanks:")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                ForEach(ProjectInfo.attributions, id: \.repo) { a in
+                ForEach(Array(ProjectInfo.attributions.enumerated()), id: \.element.repo) { index, a in
+                    if index > 0 { Divider().overlay(StrandPalette.hairline) }
                     HStack(spacing: 8) {
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(StrandPalette.accent).accessibilityHidden(true)
                         Text(a.repo).font(StrandFont.mono(12)).foregroundStyle(StrandPalette.textPrimary)
                         Text("· \(a.note)").font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -57,10 +97,15 @@ struct SupportView: View {
     }
 
     private var donateCard: some View {
-        StrandCard(padding: 20) {
+        NoopCard(tint: StrandPalette.metricRose) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
-                    Image(systemName: "heart.fill").foregroundStyle(StrandPalette.metricRose).accessibilityHidden(true)
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(StrandPalette.metricRose)
+                        .frame(width: 28, height: 28)
+                        .background(StrandPalette.metricRose.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .accessibilityHidden(true)
                     Text("Support the build").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                     Spacer()
                 }
@@ -140,7 +185,7 @@ struct SupportView: View {
     }
 
     private var disclaimerCard: some View {
-        StrandCard(padding: 18) {
+        NoopCard(padding: 18) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "info.circle.fill").foregroundStyle(StrandPalette.textTertiary)
                     .font(.system(size: 13)).accessibilityHidden(true)

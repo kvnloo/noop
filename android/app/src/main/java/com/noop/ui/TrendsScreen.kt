@@ -1,5 +1,6 @@
 package com.noop.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -110,16 +113,22 @@ fun TrendsScreen(vm: AppViewModel) {
             )
         }
 
-        // --- Hero — charge over time ---
+        // --- Hero — charge over time. Charge (green) world: domain card wash, a glowing line with a
+        // bright "now" end-cap, and a TrendChip for the window's move. ---
         val recAvg = recovery.values.averageOrNull()
         ChartCard(
             title = "Charge",
             subtitle = recovery.caption,
             trailing = recAvg?.let { "${it.roundToInt()}" },
             color = Palette.accent,
+            tipColor = Palette.chargeBright,
+            tint = Palette.chargeColor,
             values = recovery.values,
             dates = recovery.dates,
             formatY = { "${it.roundToInt()}" },
+            change = periodChange(recovery.values),
+            higherIsBetter = true,
+            changeFmt = { "${it.roundToInt()}" },
             footer = listOf(
                 "Avg" to (recAvg?.let { "${it.roundToInt()}" } ?: EM_DASH),
                 "Peak" to (recovery.values.maxOrNull()?.let { "${it.roundToInt()}" } ?: EM_DASH),
@@ -128,17 +137,22 @@ fun TrendsScreen(vm: AppViewModel) {
             ),
         )
 
-        // --- Small multiples — HRV / Resting HR / Effort ---
+        // --- Small multiples — HRV / Resting HR / Effort. HRV/RHR are Charge sub-signals → the green
+        // card world (each line keeps its metric hue); Effort sits in its amber world. ---
         SectionHeader("Daily signals", overline = "Trends", trailing = range.subtitle)
         MetricTrendCard(
             title = "Heart rate variability", unit = "ms",
             color = Palette.metricPurple,
+            tint = Palette.chargeColor,
+            higherIsBetter = true,
             resolved = hrv,
             fmt = { "${it.roundToInt()}" },
         )
         MetricTrendCard(
             title = "Resting heart rate", unit = "bpm",
             color = Palette.metricRose,
+            tint = Palette.chargeColor,
+            higherIsBetter = false,
             resolved = rhr,
             fmt = { "${it.roundToInt()}" },
         )
@@ -147,6 +161,9 @@ fun TrendsScreen(vm: AppViewModel) {
             // numbers + unit follow the Effort-scale toggle, converted inside `fmt`. (#268)
             title = "Effort", unit = "/ ${UnitFormatter.effortScaleMax(effortScale)}",
             color = Palette.strain066,
+            tint = Palette.effortColor,
+            tipColor = Palette.effortBright,
+            higherIsBetter = null,
             resolved = strain,
             fmt = { UnitFormatter.effortDisplay(it, effortScale) },
         )
@@ -272,8 +289,14 @@ private fun ChartCard(
     modifier: Modifier = Modifier,
     dates: List<String> = emptyList(),
     formatY: (Double) -> String = { "${it.roundToInt()}" },
+    // Bevel: a domain card wash, a bright end-cap "now" colour, and an optional window-change TrendChip.
+    tint: Color? = null,
+    tipColor: Color = color,
+    change: Double? = null,
+    higherIsBetter: Boolean? = null,
+    changeFmt: (Double) -> String = { "${it.roundToInt()}" },
 ) {
-    NoopCard(modifier = modifier, padding = Metrics.cardPadding) {
+    NoopCard(modifier = modifier, padding = Metrics.cardPadding, tint = tint) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // Header.
             Row(verticalAlignment = Alignment.Top) {
@@ -290,15 +313,30 @@ private fun ChartCard(
             // Y-axis column on the left and a first/mid/last date X-axis row underneath, so the
             // line reads against real numbers and dates instead of a bare unlabelled curve.
             if (values.size >= 2) {
-                ChartWithAxes(values = values, dates = dates, color = color, formatY = formatY)
+                ChartWithAxes(values = values, dates = dates, color = color, tipColor = tipColor, formatY = formatY)
             } else {
                 SparsePlaceholder()
             }
 
-            // Footer stats.
-            ChartFooter(footer)
+            // Footer stats + a window-change chip aligned to the trailing edge.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.weight(1f)) { ChartFooter(footer) }
+                ChangeChip(change, higherIsBetter, changeFmt)
+            }
         }
     }
+}
+
+/** A TrendChip for a window's period change — green/rose by whether the move is good for THIS metric. */
+@Composable
+private fun ChangeChip(change: Double?, higherIsBetter: Boolean?, fmt: (Double) -> String) {
+    if (change == null || kotlin.math.abs(change) <= 0.0001) return
+    val sign = if (change >= 0) "+" else "−"
+    val color = when (higherIsBetter) {
+        null -> Palette.textTertiary
+        else -> if ((change > 0) == higherIsBetter) Palette.statusPositive else Palette.metricRose
+    }
+    TrendChip(text = "$sign${fmt(kotlin.math.abs(change))}", color = color)
 }
 
 /**
@@ -313,6 +351,7 @@ private fun ChartWithAxes(
     dates: List<String>,
     color: Color,
     formatY: (Double) -> String,
+    tipColor: Color = color,
 ) {
     val maxV = values.max()
     val avgV = values.average()
@@ -330,13 +369,19 @@ private fun ChartWithAxes(
                 Text(formatY(avgV), style = NoopType.footnote, color = Palette.textTertiary, maxLines = 1)
                 Text(formatY(minV), style = NoopType.footnote, color = Palette.textTertiary, maxLines = 1)
             }
-            LineChart(
-                values = values,
-                modifier = Modifier.weight(1f).height(Metrics.chartHeight),
-                color = color,
-                fill = true,
-                selectionEnabled = true,
-            )
+            // The shared LineChart with a glowing "now" end-cap drawn on top — the Bevel idiom from
+            // Today's OverviewHRChart. The cap reproduces LineChart's own point geometry (same
+            // strokePx/topPad/bottomPad) so the dot lands exactly on the line's final sample.
+            Box(modifier = Modifier.weight(1f).height(Metrics.chartHeight)) {
+                LineChart(
+                    values = values,
+                    modifier = Modifier.fillMaxSize(),
+                    color = color,
+                    fill = true,
+                    selectionEnabled = true,
+                )
+                GlowEndCap(values = values, tipColor = tipColor)
+            }
         }
         if (dates.size >= 2) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -370,6 +415,9 @@ private fun MetricTrendCard(
     color: Color,
     resolved: ResolvedMetric,
     fmt: (Double) -> String,
+    tint: Color? = null,
+    tipColor: Color = color,
+    higherIsBetter: Boolean? = null,
 ) {
     val avg = resolved.values.averageOrNull()
     ChartCard(
@@ -377,15 +425,33 @@ private fun MetricTrendCard(
         subtitle = resolved.caption,
         trailing = avg?.let { fmt(it) },
         color = color,
+        tint = tint,
+        tipColor = tipColor,
         values = resolved.values,
         dates = resolved.dates,
         formatY = fmt,
+        change = periodChange(resolved.values),
+        higherIsBetter = higherIsBetter,
+        changeFmt = fmt,
         footer = listOf(
             "Mean $unit" to (avg?.let { fmt(it) } ?: EM_DASH),
             "Min" to (resolved.values.minOrNull()?.let { fmt(it) } ?: EM_DASH),
             "Max" to (resolved.values.maxOrNull()?.let { fmt(it) } ?: EM_DASH),
         ),
     )
+}
+
+/**
+ * The window's trend as a signed mean-of-recent-half minus mean-of-earlier-half — drives the card's
+ * TrendChip so a glance reads the direction, like Today's deltas. null for a window too short to split.
+ */
+private fun periodChange(values: List<Double>): Double? {
+    if (values.size < 4) return null
+    val mid = values.size / 2
+    val earlier = values.take(mid)
+    val recent = values.drop(mid)
+    if (earlier.isEmpty() || recent.isEmpty()) return null
+    return recent.average() - earlier.average()
 }
 
 /** Evenly-spaced labelled stats under a chart, separated by a hairline rule. */
@@ -424,7 +490,7 @@ private fun RecoveryHistoryCard(days: List<DailyMetric>, range: TrendsRange) {
         "Charge — past year"
     }
 
-    NoopCard {
+    NoopCard(tint = Palette.chargeColor) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionHeader(title, overline = "Calendar", trailing = "${recovery.size} days")
             if (recovery.size >= 2) {
@@ -448,6 +514,34 @@ private fun RecoveryHistoryCard(days: List<DailyMetric>, range: TrendsRange) {
 }
 
 // MARK: - Shared bits
+
+/**
+ * A glowing dot pinned to a LineChart's latest sample — the Bevel "now" end-cap (a soft halo + bright
+ * core + white centre), matching Today's OverviewHRChart. Drawn as a sibling overlay so the shared
+ * LineChart stays untouched; it reproduces that chart's point geometry exactly (strokePx 2.5, top/
+ * bottom pad strokePx+4, finite-value min/max) so the cap sits on the curve's final point.
+ */
+@Composable
+private fun GlowEndCap(values: List<Double>, tipColor: Color) {
+    val clean = remember(values) { values.filter { it.isFinite() } }
+    if (clean.size < 2) return
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val strokePx = 2.5f
+        val topPad = strokePx + 4f
+        val bottomPad = strokePx + 4f
+        val minV = clean.min()
+        val maxV = clean.max()
+        val span = (maxV - minV).takeIf { it > 0.0 } ?: 1.0
+        val usableH = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+        val x = size.width  // the latest point sits at the right edge
+        val norm = ((clean.last() - minV) / span).toFloat().coerceIn(0f, 1f)
+        val y = topPad + (1f - norm) * usableH
+        val center = Offset(x, y)
+        drawCircle(color = tipColor.copy(alpha = 0.30f), radius = 9f, center = center)
+        drawCircle(color = tipColor.copy(alpha = 0.65f), radius = 5.5f, center = center)
+        drawCircle(color = Color.White, radius = 2.4f, center = center)
+    }
+}
 
 /** Inset well shown when a window has too few points to plot, mirroring sparsePlaceholder. */
 @Composable

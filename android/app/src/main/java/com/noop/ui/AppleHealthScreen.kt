@@ -227,7 +227,7 @@ private fun RangeControl(data: AppleData, range: AppleRange, onSelect: (AppleRan
 
 @Composable
 private fun LoadingCard() {
-    NoopCard {
+    NoopCard(tint = Palette.metricCyan) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ConnectionDot(tone = StrandTone.Accent, pulsing = true)
             Text(
@@ -443,7 +443,7 @@ private fun MetricChartCard(
         else "$n $unit · ${range.windowName}"
     }
 
-    NoopCard {
+    NoopCard(tint = accent) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {

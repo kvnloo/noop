@@ -107,7 +107,7 @@ struct BreathingView: View {
             statusRow
             orbCard
             controlRow
-            if let line = outcomeLine { outcomeFootnote(line) }
+            if let line = outcomeLine { outcomeCard(line) }
             readoutRow
             coherenceCard
             if !live.bonded { hapticHint }
@@ -164,7 +164,7 @@ struct BreathingView: View {
     // MARK: - The orb
 
     private var orbCard: some View {
-        StrandCard(padding: 24) {
+        StrandCard(padding: 24, tint: StrandPalette.restColor) {
             VStack(spacing: 18) {
                 HStack {
                     Text(pace.label.uppercased()).strandOverline()
@@ -174,13 +174,21 @@ struct BreathingView: View {
                         .foregroundStyle(StrandPalette.textSecondary)
                 }
 
-                breathingOrb
-                    .frame(height: 300)
-                    .frame(maxWidth: .infinity)
+                // The breathing orb is the immersive hero: it floats over a calm Rest-world
+                // starfield, the scenic bloom deepening as the orb expands so the whole field
+                // breathes with the pace.
+                ZStack {
+                    ScenicHeroBackground(domain: .rest, starCount: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
+                    breathingOrb
+                        .padding(.vertical, 6)
+                }
+                .frame(height: 320)
+                .frame(maxWidth: .infinity)
 
                 Text(running ? phaseWord : pace.tagline)
                     .font(StrandFont.subhead)
-                    .foregroundStyle(running ? StrandPalette.accent : StrandPalette.textSecondary)
+                    .foregroundStyle(running ? StrandPalette.restBright : StrandPalette.textSecondary)
                     .animation(.easeInOut(duration: 0.2), value: phaseWord)
                     .animation(.easeInOut(duration: 0.2), value: running)
 
@@ -208,15 +216,15 @@ struct BreathingView: View {
             ZStack {
                 // Static guide ring at the inhale extent.
                 Circle()
-                    .strokeBorder(StrandPalette.hairline, lineWidth: 1)
+                    .strokeBorder(StrandPalette.restColor.opacity(0.28), lineWidth: 1)
                     .frame(width: maxDiameter, height: maxDiameter)
 
-                // Outer breathing halo.
+                // Outer breathing halo — a Rest-world bloom that brightens as the orb expands.
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [StrandPalette.accent.opacity(0.22),
-                                     StrandPalette.accent.opacity(0.0)],
+                            colors: [StrandPalette.restBright.opacity(0.30),
+                                     StrandPalette.restGlow.opacity(0.0)],
                             center: .center,
                             startRadius: diameter * 0.20,
                             endRadius: diameter * 0.70
@@ -224,24 +232,25 @@ struct BreathingView: View {
                     )
                     .frame(width: diameter * 1.35, height: diameter * 1.35)
                     .blur(radius: 18)
+                    .opacity(0.55 + 0.45 * Double(orbProgress))
 
-                // The orb body — soft accent gradient fill.
+                // The orb body — soft indigo→periwinkle Rest gradient fill.
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [StrandPalette.accentHover.opacity(0.85),
-                                     StrandPalette.accent.opacity(0.55),
-                                     StrandPalette.accentMuted.opacity(0.85)],
+                            colors: [StrandPalette.restBright.opacity(0.90),
+                                     StrandPalette.restColor.opacity(0.62),
+                                     StrandPalette.restDeep.opacity(0.85)],
                             center: .init(x: 0.4, y: 0.35),
                             startRadius: 2,
                             endRadius: diameter * 0.62
                         )
                     )
                     .overlay(
-                        Circle().strokeBorder(StrandPalette.accent.opacity(0.45), lineWidth: 1)
+                        Circle().strokeBorder(StrandPalette.restBright.opacity(0.50), lineWidth: 1)
                     )
                     .frame(width: diameter, height: diameter)
-                    .shadow(color: StrandPalette.accent.opacity(0.30 * orbProgress), radius: 24)
+                    .shadow(color: StrandPalette.restGlow.opacity(0.40 * orbProgress), radius: 26)
 
                 // Centre readout — live HR sits inside the breath.
                 VStack(spacing: 2) {
@@ -303,11 +312,49 @@ struct BreathingView: View {
         return nil
     }
 
-    private func outcomeFootnote(_ line: String) -> some View {
-        Text(line)
-            .font(StrandFont.footnote)
-            .foregroundStyle(StrandPalette.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .center)
+    /// The session's HRV outcome as a frosted Rest-tinted card: a TrendChip for the
+    /// vs-start RMSSD change (when the core carries a signed %) beside the full read-out.
+    /// Presentation-only — the underlying `outcomeLine` String and bindings are unchanged.
+    private func outcomeCard(_ line: String) -> some View {
+        StrandCard(padding: 14, tint: StrandPalette.restColor) {
+            HStack(spacing: 10) {
+                Image(systemName: "wind")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(StrandPalette.restBright)
+                    .accessibilityHidden(true)
+                Text(line)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if let chip = outcomeTrend {
+                    TrendChip(text: chip.text, color: chip.color)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The signed RMSSD-vs-start change pulled from the outcome core (e.g. "+18%"), for a
+    /// TrendChip. A rise in paced HRV reads positive; nil when no signed % is present
+    /// (abandoned / "—" / a "Last session:" line without a parseable lead). Display-only —
+    /// it parses the same String `outcomeLine` already shows, never new data.
+    private var outcomeTrend: (text: String, color: Color)? {
+        guard let source = endedOutcome ?? (lastStoredOutcome.isEmpty ? nil : lastStoredOutcome),
+              source != "—",
+              let pct = Self.leadingSignedPercent(source) else { return nil }
+        let sign = pct >= 0 ? "+" : "−"
+        let color = pct >= 0 ? StrandPalette.statusPositive : StrandPalette.textTertiary
+        return ("\(sign)\(abs(pct))% HRV", color)
+    }
+
+    /// Parse a leading "+18%"/"-7%" from an outcome core, returning the integer percent.
+    private static func leadingSignedPercent(_ s: String) -> Int? {
+        guard let pctRange = s.range(of: "%") else { return nil }
+        let head = s[s.startIndex..<pctRange.lowerBound]
+            .replacingOccurrences(of: "+", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return Int(head)
     }
 
     // MARK: - Readouts
@@ -329,14 +376,14 @@ struct BreathingView: View {
             readoutTile(label: "Pace",
                         value: String(format: "%.1f", pace.bpm),
                         unit: "br/min",
-                        accent: StrandPalette.accent,
+                        accent: StrandPalette.restBright,
                         caption: String(format: "%.0f / %.0fs", pace.inhale, pace.exhale))
         }
     }
 
     private func readoutTile(label: String, value: String, unit: String,
                              accent: Color, caption: String) -> some View {
-        StrandCard(padding: 14) {
+        StrandCard(padding: 14, tint: StrandPalette.restColor) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(label.uppercased()).strandOverline()
                 Spacer(minLength: 6)
@@ -364,7 +411,7 @@ struct BreathingView: View {
     // MARK: - Coherence estimate
 
     private var coherenceCard: some View {
-        StrandCard {
+        StrandCard(tint: StrandPalette.restColor) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Coherence estimate").strandOverline()
@@ -372,7 +419,7 @@ struct BreathingView: View {
                     StatePill("\(coherenceLabel)", tone: coherenceTone, showsDot: true)
                 }
 
-                // A simple normalized bar — RMSSD mapped 0…120ms → 0…1.
+                // A simple normalized bar — RMSSD mapped 0…120ms → 0…1, tinted with the Rest world.
                 GeometryReader { geo in
                     let frac = coherenceFraction
                     ZStack(alignment: .leading) {
@@ -380,8 +427,8 @@ struct BreathingView: View {
                         Capsule()
                             .fill(
                                 LinearGradient(
-                                    colors: [StrandPalette.accent.opacity(0.7),
-                                             StrandPalette.accentHover],
+                                    colors: [StrandPalette.restDeep,
+                                             StrandPalette.restBright],
                                     startPoint: .leading, endPoint: .trailing)
                             )
                             .frame(width: max(6, geo.size.width * frac))
