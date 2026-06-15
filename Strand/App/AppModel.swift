@@ -40,6 +40,15 @@ final class AppModel: ObservableObject {
     /// Opt-in AI coach (bring-your-own-key) — the one networked feature, off until the user enables it.
     let coach: AICoachEngine
 
+    /// Observable cache over the paired-device registry; `activeDeviceId` drives the source coordinator.
+    /// Built lazily once the store opens (see `wireSourceCoordinator`). nil until then — with no generic
+    /// strap paired the active id stays "my-whoop", so this never affects the WHOOP startup path.
+    private(set) var deviceRegistry: DeviceRegistry?
+    /// Runs exactly one device's live BLE at a time. DORMANT whenever WHOOP is active (the default and
+    /// every no-strap case): it only acts when a non-WHOOP generic strap becomes the active device,
+    /// pausing WHOOP and running the isolated `StandardHRSource`. nil until wired (post store-open).
+    private(set) var sourceCoordinator: SourceCoordinator?
+
     /// Timestamps of moments marked via a double-tap (persisted).
     @Published var moments: [Date] = []
 
@@ -195,6 +204,7 @@ final class AppModel: ObservableObject {
             }
             #endif
             await self.repo.refresh()                          // surface any imported data at once
+            await self.wireSourceCoordinator()                 // dormant unless a generic strap is active
             try? await Task.sleep(nanoseconds: 6_000_000_000)  // give the first offload a moment
             // One-shot on-upgrade Effort rescore (#313): recompute strain from source across the FULL
             // history once, so any deep-history rows an older build left on the 0–21 axis regenerate on
@@ -205,6 +215,27 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 900_000_000_000)  // 15 min, matches the offload cadence
             }
         }
+    }
+
+    /// Build the device registry + source coordinator once the store is open, then start observing.
+    /// Tiny and guarded: with no generic strap paired the active id is "my-whoop", so the coordinator
+    /// observes WHOOP-active and stays a NO-OP — the existing `scan()`/`disconnect()` WHOOP flow is
+    /// untouched. The coordinator only acts if/when a non-WHOOP strap becomes the active device.
+    /// `startWhoop`/`stopWhoop` are thin closures over BLEManager's EXISTING public methods (via the
+    /// model's `scan()` / `disconnect()`), so the coordinator never references BLEManager directly.
+    private func wireSourceCoordinator() async {
+        guard sourceCoordinator == nil, let store = await repo.storeHandle() else { return }
+        let registry = DeviceRegistry(store: DeviceRegistryStore(dbQueue: store.registryQueue))
+        registry.reload()
+        let coordinator = SourceCoordinator(
+            registry: registry,
+            live: live,
+            storeHandle: { [weak self] in await self?.repo.storeHandle() },
+            startWhoop: { [weak self] in self?.scan() },
+            stopWhoop: { [weak self] in self?.disconnect() })
+        coordinator.start()
+        self.deviceRegistry = registry
+        self.sourceCoordinator = coordinator
     }
 
     private func refreshAfterCompletedBackfill() async {
