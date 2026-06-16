@@ -17,8 +17,21 @@ class HistoricalStreamsClockCorrectionTest {
     private val wornV18 =
         "aa01740001003fb12f1280733d8401b69f266a66460066025a0265020000000000007b0a8d656463ff0012163cf6a439bf2924fd3ed763fe3e3200aa000000000000000000f7000901f10b0007010c020c00000000000000000000000000000000000000000000000100656f1e1e0000009d61a7c00000003e862817"
 
+    @Test fun zeroedStrapRtcKeepsRealUnixInsteadOfFutureDating() {
+        // FIELD BUG (#471): a fully-drained strap whose RTC reset to ~epoch reports a near-zero device
+        // clock while its frames still carry the true-unix rawTs. clockOffset is then ~decades and the
+        // naive correction hurled every sample to year 2081 — silently killing sleep & recovery. The
+        // guard must keep the already-correct rawTs rather than date it into the future.
+        val rawTs = 1_780_916_150L
+        val wall = rawTs + 7 * 86_400                            // offloaded a week later
+        val st = extractHistoricalStreams(listOf(bytes(wornV18)), 31_500_000, wall.toInt(), DeviceFamily.WHOOP5) // RTC ~1971
+        assertEquals(rawTs, st.hr.first().ts)                   // kept; not rawTs + ~55 years
+    }
+
     @Test fun staleClockShiftsHistoricalTimestampForwardAndSnaps() {
-        val device = 1_770_000_000
+        // device >= rawTs keeps the record in the strap's past (corrected <= wall), so the
+        // never-date-into-the-future guard leaves this genuine stale-clock correction unchanged.
+        val device = 1_780_920_000
         val wall = device + 60 * 86_400 + 137                    // ~60 days ahead, +137s exercises snapping
         val st = extractHistoricalStreams(listOf(bytes(wornV18)), device, wall, DeviceFamily.WHOOP5)
         val rawTs = 1_780_916_150L
@@ -29,7 +42,7 @@ class HistoricalStreamsClockCorrectionTest {
 
     @Test fun staleClockCorrectionIsDedupStableAcrossResync() {
         // Realistic re-sync jitter (~seconds, same 5-min bucket) → identical corrected ts → dedupes.
-        val device = 1_770_000_000
+        val device = 1_780_920_000
         val a = extractHistoricalStreams(listOf(bytes(wornV18)), device, device + 60 * 86_400 + 10, DeviceFamily.WHOOP5)
         val b = extractHistoricalStreams(listOf(bytes(wornV18)), device, device + 60 * 86_400 + 13, DeviceFamily.WHOOP5)
         assertEquals(a.hr.first().ts, b.hr.first().ts)

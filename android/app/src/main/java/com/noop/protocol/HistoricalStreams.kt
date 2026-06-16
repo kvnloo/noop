@@ -422,7 +422,16 @@ fun extractHistoricalStreams(
         if (kotlin.math.abs(clockOffset) <= staleThreshold) return rawTs
         val snapped = (if (clockOffset >= 0) clockOffset + snapGranularity / 2
                        else clockOffset - snapGranularity / 2) / snapGranularity * snapGranularity
-        return rawTs + snapped.toLong()
+        val corrected = rawTs + snapped.toLong()
+        // A fully-drained strap whose RTC reset to ~epoch (year ~1971) reports a near-zero
+        // deviceClockRef while its frames still carry the true-unix rawTs; clockOffset is then
+        // ~decades and this "correction" hurls every historical sample into the future (field: year
+        // 2081), silently breaking sleep & recovery because the night never lands on the right day.
+        // A record can't post-date its own capture, so when corrected overshoots wall time the offset
+        // was bogus — keep the raw ts. Genuine stale (strap behind real time) has corrected <= wall,
+        // so this is a no-op there. (PR #471, @cataboysbusiness-debug)
+        if (corrected > wallClockRef + snapGranularity) return rawTs
+        return corrected
     }
 
     val hr = ArrayList<HrRow>()

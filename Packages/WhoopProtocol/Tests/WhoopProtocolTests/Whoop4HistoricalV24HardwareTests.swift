@@ -104,10 +104,25 @@ final class Whoop4HistoricalV24HardwareTests: XCTestCase {
 
     // MARK: - FIX #72: stale-strap-RTC clock correction (snapped, dedup-stable)
 
+    func testZeroedStrapRtcKeepsRealUnixInsteadOfFutureDating() {
+        // FIELD BUG (#471): a fully-drained strap whose RTC reset to ~epoch reports a near-zero
+        // deviceClockRef while its frames still carry the true-unix rawTs. clockOffset is then
+        // ~decades, and the naive correction hurled every historical sample to year 2081 — silently
+        // killing sleep & recovery (the night never lands on the right day). The guard must keep the
+        // already-correct rawTs rather than date it into the future.
+        let out = parseFrame(bytes(realV24Hex))
+        let rawTs = 1_780_928_574                                // real unix in the frame (2026-06-08)
+        let wall = rawTs + 7 * 86_400                            // offloaded a week later
+        let st = extractHistoricalStreams([out], deviceClockRef: 31_500_000, wallClockRef: wall) // RTC ~1971
+        XCTAssertEqual(st.hr.first?.ts, rawTs)                   // kept; not rawTs + ~55 years
+    }
+
     func testStaleClockShiftsHistoricalTimestampForwardAndSnaps() {
         // Strap RTC reads ~60 days behind real phone time. offset = wall - device must be ADDED to the
         // raw record ts, snapped to a 5-min grid so re-syncs land on the same corrected ts.
-        let device = 1_770_000_000
+        // device >= rawTs keeps the record in the strap's past (corrected <= wall), so the
+        // never-date-into-the-future guard leaves this genuine stale-clock correction unchanged.
+        let device = 1_780_930_000
         let wall   = device + 60 * 86_400 + 137                  // ~60 days ahead, +137s exercises snapping
         let out = parseFrame(bytes(realV24Hex))
         let st = extractHistoricalStreams([out], deviceClockRef: device, wallClockRef: wall)
@@ -123,7 +138,7 @@ final class Whoop4HistoricalV24HardwareTests: XCTestCase {
         // ~1s. The 5-min snap absorbs that jitter, so the same record re-syncs to the SAME corrected ts
         // and the re-offload dedupes by (deviceId, ts). (Records whose offset sits within ~1s of a snap
         // boundary are the only residual edge — accepted; they'd re-insert a few HR samples, not corrupt.)
-        let device = 1_770_000_000
+        let device = 1_780_930_000
         let out = parseFrame(bytes(realV24Hex))
         let a = extractHistoricalStreams([out], deviceClockRef: device, wallClockRef: device + 60*86_400 + 10)
         let b = extractHistoricalStreams([out], deviceClockRef: device, wallClockRef: device + 60*86_400 + 13)
