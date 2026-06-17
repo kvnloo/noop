@@ -17,6 +17,10 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## 4.5.4 — Find your strap log in Settings (macOS)
+
+- **macOS: a Strap log shortcut in Settings.** The strap log — the thing the maintainer needs when you report a bug — lived only on the Live screen, and people kept hunting for it (#507, #17). It's now also in **Settings → Strap**, with **Copy** and **Save…**, building the exact same text as the Live screen's log card (shared via `LiveState.exportableLogText()`, so the two can't drift). No behaviour change beyond the new shortcut; iPhone and Android are unchanged (Android already had it in Settings).
+
 ## 4.5.3 — Sleep fix for WHOOP 4.0 + accurate WHOOP 5/MG steps (all platforms)
 
 - **#507 REGRESSION FIX — the off-wrist guard no longer drops real WHOOP 4.0 nights.** The v4.5.0 off-wrist guard treats a long heart-rate gap as a proxy for the strap being off the wrist. But a WHOOP 4.0's *synced* night is reconstructed mostly from motion with sparse, derived heart-rate — so a real 4.0 night is naturally full of >20-min HR gaps, which the guard read as ~100% off-wrist and dropped the whole night. The HR-gap proxy is now gated on **HR density**: it only fires when the stream averages at least one sample per `hrDenseSpacingS` (10 min), measured over the whole window so a genuine off-wrist *hole* in an otherwise dense, worn day (#500) is still caught. Self-consistent — a night sparse enough to be falsely >50%-covered is, by definition, below the density floor, so it's spared. Explicit `WRIST_OFF` events remain authoritative regardless of density. Swift + Android, with a "sparse-HR real night is kept" test on both. Thanks @Mindfulpaths (#507).

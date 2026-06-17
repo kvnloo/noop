@@ -937,34 +937,14 @@ struct LiveView: View {
 
     // MARK: - Strap-log export (issue #17 — let macOS users share the log for bug reports)
 
-    private func strapLogText() -> String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        #if os(iOS)
-        let osName = "iOS"
-        #else
-        let osName = "macOS"
-        #endif
-        var header = "NOOP strap log — \(osName)\nApp: \(v)\n\(osName): "
-            + ProcessInfo.processInfo.operatingSystemVersionString + "\n"
-        #if os(iOS)
-        // The iOS variables that actually cause iOS issues — device/beta, Data Protection lock state
-        // (#222), background-refresh, low-power, sideload + cert expiry — so a shared log carries them.
-        // Reached only from the Copy/Save button taps, i.e. on the main thread.
-        let diagLines = IOSDiagnostics.capture().summaryLines()
-        if !diagLines.isEmpty {
-            header += diagLines.joined(separator: "\n") + "\n"
-        }
-        #endif
-        header += String(repeating: "-", count: 40) + "\n"
-        return header + live.log.joined(separator: "\n")
-    }
-
+    // The strap-log text builder now lives on LiveState (`exportableLogText()`) so the macOS Settings
+    // shortcut shares the exact same output (#17 / #507). These stay as thin wrappers.
     private func copyStrapLog() {
-        PlatformPasteboard.copy(strapLogText())
+        PlatformPasteboard.copy(live.exportableLogText())
     }
 
     private func saveStrapLog() {
-        FileExport.exportText(strapLogText(), suggestedName: "noop-strap-log.txt")
+        FileExport.exportText(live.exportableLogText(), suggestedName: "noop-strap-log.txt")
     }
 }
 

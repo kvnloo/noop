@@ -591,6 +591,27 @@ struct SettingsView: View {
                     .disabled(!live.connected && !live.bonded)
                 }
 
+                #if os(macOS)
+                Divider().overlay(StrandPalette.hairline)
+                // MARK: Strap log (macOS) — a Settings shortcut so people don't have to hunt for it on the
+                // Live screen (#507: a 4.0 owner couldn't find it). Same text as the Live screen's log card.
+                HStack(spacing: 12) {
+                    Text("STRAP LOG").font(StrandFont.overline).tracking(StrandFont.overlineTracking)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                    Spacer()
+                    Button("Copy") { PlatformPasteboard.copy(live.exportableLogText()) }
+                        .buttonStyle(.plain).font(StrandFont.mono).foregroundStyle(StrandPalette.accent)
+                    Button("Save…") {
+                        FileExport.exportText(live.exportableLogText(), suggestedName: "noop-strap-log.txt")
+                    }
+                    .buttonStyle(.plain).font(StrandFont.mono).foregroundStyle(StrandPalette.accent)
+                }
+                Text("Grab this when you report a bug — it tells me what the app saw. (The full live log is also on the Live screen.)")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                #endif
+
                 Divider().overlay(StrandPalette.hairline)
 
                 // MARK: Continuous HRV capture — keep the dense beat-to-beat (R-R) stream armed 24/7.
