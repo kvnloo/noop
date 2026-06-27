@@ -154,9 +154,13 @@ object StepsEstimateEngineTrace {
         } else {
             0
         }
+        // L7: production analyzeDay returns `scaled > 0 ? scaled : null`, so a tiny rawTotal that rounds to 0
+        // yields NO steps_est for the day. Render "none" (not 0) so the trace matches the null headline rather
+        // than implying a real zero-step measurement.
+        val scaledText = if (scaled > 0) scaled.toString() else "none"
         lines.add(
             "stepsRaw total rawTicks=$rawTotal ticksPerStep=${r2(ticksPerStep)} " +
-                "scaledSteps=$scaled (steps_est for the day)",
+                "scaledSteps=$scaledText (steps_est for the day)",
         )
         return lines
     }

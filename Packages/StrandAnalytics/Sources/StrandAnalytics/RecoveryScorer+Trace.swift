@@ -72,15 +72,18 @@ extension RecoveryScorer {
         var terms: [(name: String, z: Double, w: Double)] = []
 
         // HRV term: higher is better. (Always present once usable; the cold-start guard above returned.)
+        // L9: every WEIGHT / SCALE / centre constant goes through r2() too (not just the z-scores), so a
+        // future non-round weight (e.g. 0.333) renders identically on Swift and Kotlin and the parity
+        // fixture cannot silently desync. The values render the same as before today.
         let hrvZ = zScore(hrv, mean: hrvBaseline.baseline, spread: hrvBaseline.spread)
         terms.append(("hrv", hrvZ, wHRV))
-        lines.append("charge term hrv z=\(r2(hrvZ)) w=\(wHRV) (higher HRV is better)")
+        lines.append("charge term hrv z=\(r2(hrvZ)) w=\(r2(wHRV)) (higher HRV is better)")
 
         // RHR term: lower is better -> (mu - x) / sigma.
         if let b = rhrBaseline {
             let z = zScore(b.baseline, mean: rhr, spread: b.spread)
             terms.append(("rhr", z, wRHR))
-            lines.append("charge term rhr z=\(r2(z)) w=\(wRHR) (lower RHR is better)")
+            lines.append("charge term rhr z=\(r2(z)) w=\(r2(wRHR)) (lower RHR is better)")
         } else {
             nilTerms.append("rhr")
         }
@@ -89,7 +92,7 @@ extension RecoveryScorer {
         if let r = resp, let b = respBaseline {
             let z = zScore(b.baseline, mean: r, spread: b.spread)
             terms.append(("resp", z, wResp))
-            lines.append("charge term resp z=\(r2(z)) w=\(wResp) (lower resp is better)")
+            lines.append("charge term resp z=\(r2(z)) w=\(r2(wResp)) (lower resp is better)")
         } else {
             nilTerms.append("resp")
         }
@@ -98,8 +101,8 @@ extension RecoveryScorer {
         if let sp = sleepPerf {
             let z = (sp - sleepPerfCenter) / sleepPerfScale
             terms.append(("sleepPerf", z, wSleep))
-            lines.append("charge term sleepPerf z=\(r2(z)) w=\(wSleep) "
-                + "(rest=\(r2(sp)) center=\(sleepPerfCenter))")
+            lines.append("charge term sleepPerf z=\(r2(z)) w=\(r2(wSleep)) "
+                + "(rest=\(r2(sp)) center=\(r2(sleepPerfCenter)))")
         } else {
             nilTerms.append("sleepPerf")
         }
@@ -108,8 +111,8 @@ extension RecoveryScorer {
         if let dev = skinTempDev {
             let z = -abs(dev) / skinTempScaleC
             terms.append(("skinTempDev", z, wSkinTemp))
-            lines.append("charge term skinTempDev z=\(r2(z)) w=\(wSkinTemp) "
-                + "(dev=\(r2(dev))C penalty=-|dev|/\(skinTempScaleC))")
+            lines.append("charge term skinTempDev z=\(r2(z)) w=\(r2(wSkinTemp)) "
+                + "(dev=\(r2(dev))C penalty=-|dev|/\(r2(skinTempScaleC)))")
         } else {
             nilTerms.append("skinTempDev")
         }
@@ -130,7 +133,7 @@ extension RecoveryScorer {
         // Final logistic score + band, read from recovery(...) verbatim.
         if let s = score {
             lines.append("charge score=\(r2(s)) band=\(band(s)) "
-                + "(logistic k=\(logisticK) z0=\(logisticZ0))")
+                + "(logistic k=\(r2(logisticK)) z0=\(r2(logisticZ0)))")
         } else {
             lines.append("charge nilScore reason=noValidTerms (no driver produced a usable term)")
         }

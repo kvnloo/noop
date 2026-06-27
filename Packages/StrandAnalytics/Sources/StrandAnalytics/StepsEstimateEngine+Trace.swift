@@ -134,8 +134,12 @@ extension StepsEstimateEngine {
         let scaled = rawTotal > 0
             ? Int((Double(rawTotal) / Swift.max(ticksPerStep, 0.5)).rounded())
             : 0
+        // L7: production analyzeDay returns `scaled > 0 ? scaled : nil`, so a tiny rawTotal that rounds to 0
+        // yields NO steps_est for the day. Render "none" (not 0) so the trace matches the nil headline rather
+        // than implying a real zero-step measurement.
+        let scaledText = scaled > 0 ? String(scaled) : "none"
         lines.append("stepsRaw total rawTicks=\(rawTotal) ticksPerStep=\((ticksPerStep * 100).rounded() / 100) "
-            + "scaledSteps=\(scaled) (steps_est for the day)")
+            + "scaledSteps=\(scaledText) (steps_est for the day)")
         return lines
     }
 }

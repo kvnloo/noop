@@ -73,6 +73,23 @@ class StepsEstimateEngineTraceTest {
         assertTrue(lines.first { it.startsWith("stepsRaw total ") }.contains("scaledSteps=$production"))
     }
 
+    @Test fun tinyTotalRoundingToZeroRendersNoneNotZero() {
+        // L7: a rawTotal that scales below 0.5 (here 1 tick / ticksPerStep 3.0 = 0.33 -> rounds to 0) makes
+        // production analyzeDay return NULL (scaled>0 ? scaled : null). The trace must read "scaledSteps=none",
+        // not "scaledSteps=0", so it matches the missing headline instead of implying a real zero measurement.
+        val tinyProfile = UserProfile(stepTicksPerStep = 3.0)
+        val samples = listOf(step(0, 100), step(60, 101)) // one kept delta of 1 tick
+        val production = AnalyticsEngine.analyzeDay(day = dayUtc, steps = samples, profile = tinyProfile).daily.steps
+        assertNull("a sub-0.5 scaled total is null in production", production)
+        val lines = StepsEstimateEngineTrace.rawCounterTrace(
+            daySteps = samples, dayKey = dayUtc, tzOffsetSeconds = 0L, ticksPerStep = tinyProfile.stepTicksPerStep,
+        )
+        val total = lines.first { it.startsWith("stepsRaw total ") }
+        assertTrue(total, total.contains("rawTicks=1"))
+        assertTrue(total, total.contains("scaledSteps=none"))
+        assertFalse(total.contains("scaledSteps=0"))
+    }
+
     @Test fun fewerThanTwoSamplesReportsNoDelta() {
         val lines = StepsEstimateEngineTrace.rawCounterTrace(
             daySteps = listOf(step(0, 100)), dayKey = dayUtc, tzOffsetSeconds = 0L, ticksPerStep = 1.0,

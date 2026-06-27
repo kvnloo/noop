@@ -69,6 +69,22 @@ final class StepsEstimateEngineTraceTests: XCTestCase {
         XCTAssertTrue(lines.first { $0.hasPrefix("stepsRaw total ") }!.contains("scaledSteps=\(production!)"))
     }
 
+    func testTinyTotalRoundingToZeroRendersNoneNotZero() {
+        // L7: a rawTotal that scales below 0.5 (here 1 tick / ticksPerStep 3.0 = 0.33 -> rounds to 0) makes
+        // production analyzeDay return NIL (scaled>0 ? scaled : nil). The trace must read "scaledSteps=none",
+        // not "scaledSteps=0", so it matches the missing headline instead of implying a real zero measurement.
+        let tinyProfile = UserProfile(stepTicksPerStep: 3.0)
+        let samples = [step(0, 100), step(60, 101)]   // one kept delta of 1 tick
+        let production = AnalyticsEngine.analyzeDay(day: dayUtc, steps: samples, profile: tinyProfile).daily.steps
+        XCTAssertNil(production, "a sub-0.5 scaled total is nil in production")
+        let lines = StepsEstimateEngine.rawCounterTrace(
+            daySteps: samples, dayKey: dayUtc, tzOffsetSeconds: 0, ticksPerStep: tinyProfile.stepTicksPerStep)
+        let totalLine = lines.first { $0.hasPrefix("stepsRaw total ") }!
+        XCTAssertTrue(totalLine.contains("rawTicks=1"))
+        XCTAssertTrue(totalLine.contains("scaledSteps=none"), "got \(totalLine)")
+        XCTAssertFalse(totalLine.contains("scaledSteps=0"))
+    }
+
     func testFewerThanTwoSamplesReportsNoDelta() {
         let lines = StepsEstimateEngine.rawCounterTrace(
             daySteps: [step(0, 100)], dayKey: dayUtc, tzOffsetSeconds: 0, ticksPerStep: 1.0)
