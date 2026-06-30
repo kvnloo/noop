@@ -278,6 +278,17 @@ struct TodayView: View {
     // the axis silently starting at the first sample (#overview-hr gap clarity).
     @State private var hrAxis: ClosedRange<Date>?
 
+    // #829 - the Today HR chart's pinch/drag ZOOM window. nil falls back to the full `hrAxis` day (the
+    // chart uses its xRange). Unlike the Deep Timeline, this never re-reads the DB: the day's 5-minute
+    // buckets are already loaded, so pinch/pan only narrows the visible x-domain over the points in hand,
+    // which keeps it cheap (no per-frame query) and never touches the read layer. A double-tap on the
+    // chart (or the Reset link below it) drops it back to nil. Cleared on day change / fresh load so a new
+    // day always opens at full scale, never inheriting the prior day's zoom. `zoomBounds: hrAxis` clamps
+    // it to the loaded day, and a non-nil bound also tells OverviewHRChart to keep full point resolution.
+    @State private var hrZoomDomain: ClosedRange<Date>?
+    /// Reduce Motion gates the Today HR reset animation (the pinch/pan frames are never animated).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // Day navigation — 0 = today (the logical day), 1 = yesterday, … The DayNavBar chevrons and date
     // jump drive this, and every day-scoped read-out (hero synthesis, the Key-Metrics tiles, the HR
     // trend and Rest score) resolves to the selected day instead of always showing today. Mirrors the
@@ -2748,6 +2759,11 @@ struct TodayView: View {
                         valueRange: hrRange(v),
                         xRange: hrAxis,
                         height: NoopMetrics.chartHeight,
+                        // #829 - pinch/drag zoom over the loaded day. The bound window narrows the visible
+                        // x-domain only (no DB re-read); zoomBounds clamps it to the loaded day and keeps the
+                        // points at full resolution while zoomed.
+                        zoomDomain: $hrZoomDomain,
+                        zoomBounds: hrAxis,
                         valueFormat: { "\(Int($0.rounded())) bpm" },
                         dateFormat: { Self.hrTimeFmt.string(from: $0) }
                     )
@@ -2758,6 +2774,10 @@ struct TodayView: View {
                         ("Max", "\(Int((v.max() ?? 0).rounded()))"),
                     ])
                 }
+                // #829 - pinch/drag hint + Reset, OUTSIDE the card (the card force-fits its chart() closure
+                // to chartHeight, so an in-card hint would be squashed; the Deep Timeline places its hint
+                // outside the card for the same reason).
+                hrZoomHint
             }
         } else {
             // #863: an empty / single-bucket day. A calibrating 4.0 banks HR slowly, so an empty curve early
@@ -2784,6 +2804,59 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    /// #829 - the affordance row under the Today HR chart: teaches pinch/drag, and (once zoomed) shows a
+    /// Reset link beside it that mirrors the chart's own double-tap reset. Decorative icon hidden from
+    /// VoiceOver; the Reset button stays a real focusable control. Only the wording differs by platform
+    /// (macOS has drag-pan + double-tap here, no pinch).
+    @ViewBuilder private var hrZoomHint: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            Image(systemName: hrZoomDomain == nil
+                  ? "arrow.up.left.and.arrow.down.right"
+                  : "arrow.down.right.and.arrow.up.left")
+                .font(StrandFont.footnote.weight(.semibold))
+                .accessibilityHidden(true)
+            #if os(macOS)
+            Text(hrZoomDomain == nil ? "Drag to pan · double-tap to reset" : "Zoomed in · drag to pan")
+            #else
+            Text(hrZoomDomain == nil ? "Pinch to zoom · drag to pan" : "Zoomed in · drag to pan")
+            #endif
+            Spacer()
+            if hrZoomDomain != nil {
+                Button("Reset") { resetHrZoom() }
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.accent)
+                    .buttonStyle(.plain)
+            }
+        }
+        .font(StrandFont.footnote)
+        .foregroundStyle(StrandPalette.textTertiary)
+        .padding(.top, NoopMetrics.space1 / 2)
+    }
+
+    /// Drop the Today HR zoom back to the full day, snapping when Reduce Motion is on (#829).
+    private func resetHrZoom() {
+        withAnimation(NoopMotion.gated(StrandMotion.interactive, reduced: reduceMotion)) {
+            hrZoomDomain = nil
+        }
+    }
+
+    /// #829 - keep a Today HR zoom window valid as the loaded axis changes across reloads. Pure +
+    /// unit-testable so the rule can't drift. nil zoom stays nil. When the day's START moves (a day step =
+    /// a genuinely different day), the zoom is dropped (nil) so the new day opens at full scale. When only
+    /// the END extended on the SAME day (today's window growing toward `now`), the existing zoom is kept but
+    /// re-clamped into the grown bounds preserving its span, so a live refresh never yanks the user out of
+    /// their zoom and the window can never sit outside the day. `oldAxis == nil` (first load) keeps the zoom
+    /// re-clamped into the new bounds. Reuses `OverviewHRChart.panned(deltaSeconds: 0)` as the pure clamp.
+    static func reclampHrZoom(_ zoom: ClosedRange<Date>?,
+                              oldAxis: ClosedRange<Date>?,
+                              newAxis: ClosedRange<Date>) -> ClosedRange<Date>? {
+        guard let zoom else { return nil }
+        // A moved start means we stepped to a different day, so open it un-zoomed.
+        if let oldAxis, oldAxis.lowerBound != newAxis.lowerBound { return nil }
+        // Same day (or first load): re-clamp the kept window into the current bounds, span preserved.
+        return OverviewHRChart.panned(zoom, deltaSeconds: 0, bounds: newAxis)
     }
 
     /// Padded HR axis range so the line never sits flush against an edge (mirrors MetricExplorer.valueRange).
@@ -3642,8 +3715,15 @@ struct TodayView: View {
         }
         // Pin the chart axis to the loaded window — today midnight→now, a past day the full 24h — so
         // a gap (e.g. a morning the strap wasn't banking) shows as empty space, not a late start.
-        hrAxis = Date(timeIntervalSince1970: TimeInterval(windowStart))
+        let newAxis = Date(timeIntervalSince1970: TimeInterval(windowStart))
             ... Date(timeIntervalSince1970: TimeInterval(windowEnd))
+        // #829 - keep the HR zoom VALID across reloads. The window changes on a day step (a whole new day)
+        // and, on today, each refresh nudges the end to a fresh `now`. A day step clears the zoom so the new
+        // day opens at full scale; a same-day end-extension keeps the user's zoom but RE-CLAMPS it into the
+        // grown bounds (preserving its span) so a live sync never yanks them out of their zoom yet the window
+        // can never sit outside the day. `panned(deltaSeconds: 0)` is the pure re-clamp.
+        hrZoomDomain = Self.reclampHrZoom(hrZoomDomain, oldAxis: hrAxis, newAxis: newAxis)
+        hrAxis = newAxis
 
         // Sleep session overlapping the window. Uses `allSleepSessions` (BOTH the imported and the
         // on-device COMPUTED source) — a Bluetooth-only user's sleep lives under the computed source,

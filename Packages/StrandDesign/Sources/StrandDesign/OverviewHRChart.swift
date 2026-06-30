@@ -400,14 +400,17 @@ public struct OverviewHRChart: View {
             }
         }
         .frame(height: height)
-        // Deep-Timeline zoom/pan: only active when a zoom binding is supplied (the Deep Timeline). Every
-        // other call site passes the default `.constant(nil)`, so the static chart keeps its exact gestures.
+        // Zoom/pan: active whenever a zoom binding is supplied (the Deep Timeline and the Today HR chart).
+        // Every other call site passes the default `.constant(nil)`, so those static charts keep their exact
+        // gestures. The modifier itself reads Reduce Motion, so the double-tap reset snaps when it's on.
         .modifier(ZoomPanModifier(
             isActive: zoomDomain != nil,
+            isZoomed: { zoomDomain != nil },
             current: { xDomain },
             bounds: zoomClampBounds,
             anchor: $gestureAnchorDomain,
             apply: { newDomain in zoomDomain = newDomain },
+            reset: { zoomDomain = nil },
             zoom: { base, scale, frac, bounds in Self.zoomed(base, scale: scale, anchorFraction: frac, bounds: bounds) },
             pan: { base, dx, plotWidth, bounds in
                 // Map a horizontal drag (points) to seconds across the current visible span.
@@ -522,14 +525,28 @@ private struct SleepBandLabel: View {
 
 private struct ZoomPanModifier: ViewModifier {
     let isActive: Bool
+    /// True while the window is zoomed in (a reset is meaningful). Read at double-tap time so a tap on the
+    /// already-full-day chart does nothing rather than re-triggering a no-op animation.
+    let isZoomed: () -> Bool
     let current: () -> ClosedRange<Date>
     let bounds: ClosedRange<Date>
     @Binding var anchor: ClosedRange<Date>?
     let apply: (ClosedRange<Date>) -> Void
+    /// Drop the zoom window back to the full extent (sets the bound `zoomDomain` to nil).
+    let reset: () -> Void
     let zoom: (ClosedRange<Date>, Double, Double, ClosedRange<Date>) -> ClosedRange<Date>
     let pan: (ClosedRange<Date>, CGFloat, CGFloat, ClosedRange<Date>) -> ClosedRange<Date>
 
     @State private var plotWidth: CGFloat = 1
+    // Reduce Motion: the reset snaps instantly when on, otherwise it eases out (the gesture frames
+    // themselves are never animated, per the per-frame apply below, so only the reset honours this).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Reset the window, snapping when Reduce Motion is on and easing otherwise.
+    private func resetZoom() {
+        guard isZoomed() else { return }
+        withAnimation(NoopMotion.gated(StrandMotion.interactive, reduced: reduceMotion)) { reset() }
+    }
 
     func body(content: Content) -> some View {
         guard isActive else { return AnyView(content) }
@@ -550,6 +567,12 @@ private struct ZoomPanModifier: ViewModifier {
             }
             .onEnded { _ in anchor = nil }
 
+        // Double-tap anywhere on the plot resets to the full window: the discoverable "back out" affordance
+        // both platforms share (alongside the explicit Reset button the host shows). It does NOT add an
+        // accessibility action: the chart collapses to one labelled VoiceOver element with a static value, so
+        // a hidden tap gesture here is invisible to VoiceOver and never steals its double-tap-to-activate.
+        let doubleTapReset = TapGesture(count: 2).onEnded { resetZoom() }
+
         let measured = content.background(
             GeometryReader { geo in
                 Color.clear.onAppear { plotWidth = geo.size.width }
@@ -559,10 +582,12 @@ private struct ZoomPanModifier: ViewModifier {
 
         #if os(macOS)
         // macOS has no pinch in this context; drag pans. Scroll-to-zoom is handled by the Deep Timeline
-        // host's scroll modifier (it owns the NSEvent monitor); here we wire pan + a double-tap reset.
-        return AnyView(measured.gesture(drag))
+        // host's scroll modifier (it owns the NSEvent monitor); here we wire pan + the double-tap reset.
+        return AnyView(measured.gesture(drag).simultaneousGesture(doubleTapReset))
         #else
-        return AnyView(measured.gesture(magnify).simultaneousGesture(drag))
+        return AnyView(measured.gesture(magnify)
+            .simultaneousGesture(drag)
+            .simultaneousGesture(doubleTapReset))
         #endif
     }
 }
