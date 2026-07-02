@@ -201,7 +201,9 @@ struct MetricExplorerView: View {
                 let metrics = MetricCatalog.inCategory(category)
                 if !metrics.isEmpty {
                     VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-                        SectionHeader("\(category)", overline: "Category",
+                        // Localized at the render site only; `category` itself stays the raw
+                        // English identifier that `inCategory` filters on.
+                        SectionHeader("\(MetricCatalog.categoryDisplayName(category))", overline: "Category",
                                       trailing: "\(metrics.count)")
                         NoopCard(padding: 0) {
                             VStack(spacing: 0) {
@@ -365,8 +367,8 @@ private struct MetricRow: View {
         .accessibilityElement(children: .combine)
         // Whole-string key per variant (never a concatenated localized tail on an a11y label).
         .accessibilityLabel(isEmpty
-            ? "\(metric.title), \(unitLabel.isEmpty ? metric.category : unitLabel), no data"
-            : "\(metric.title), \(unitLabel.isEmpty ? metric.category : unitLabel)")
+            ? "\(metric.title), \(unitLabel.isEmpty ? MetricCatalog.categoryDisplayName(metric.category) : unitLabel), no data"
+            : "\(metric.title), \(unitLabel.isEmpty ? MetricCatalog.categoryDisplayName(metric.category) : unitLabel)")
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -438,6 +440,37 @@ struct MetricDetailView: View {
         return .all
     }
 
+    /// Whole days between the first and last reading (0 for a single point). The
+    /// UTC-fixed day parser makes the Int truncation exact.
+    private var historySpanDays: Int {
+        guard let firstDay = series.first?.day, let lastDay = series.last?.day,
+              let first = parseDay(firstDay), let last = parseDay(lastDay) else { return 0 }
+        return Int(last.timeIntervalSince(first) / 86_400)
+    }
+
+    /// Whether a range chip is selectable (#943, reimplemented from ryanbr's PR): a longer
+    /// range only unlocks once the history span EXCEEDS the previous window, i.e. once it
+    /// would actually show more than the range below it. Before that, every window is taken
+    /// relative to the latest point, so thin history sat inside all of them and the six chips
+    /// drew byte-identical charts (a week of data stretched full-width under a 1Y label).
+    /// W (the shortest) and ALL (the honest everything view) are never gated, so a calibrating
+    /// user always has a selectable range; until the series loads (or with no history at all)
+    /// nothing is gated, since the empty state deliberately keeps the full range bar for context.
+    private func isUnlocked(_ r: ExploreRange) -> Bool {
+        guard loaded, !series.isEmpty else { return true }
+        switch r {
+        case .week, .all: return true
+        case .month:   return historySpanDays > ExploreRange.week.rawValue
+        case .quarter: return historySpanDays > ExploreRange.month.rawValue
+        case .half:    return historySpanDays > ExploreRange.quarter.rawValue
+        case .year:    return historySpanDays > ExploreRange.half.rawValue
+        }
+    }
+
+    /// True when at least one range chip is locked; drives the one-line unlock hint under
+    /// the caption, so the dimmed chips read as "not yet" rather than broken.
+    private var hasLockedRanges: Bool { !ExploreRange.allCases.allSatisfy(isUnlocked) }
+
     /// The window immediately preceding the active one (equal length, by day count).
     private func previousWindow(effectiveRange: ExploreRange,
                                 windowed: [(day: String, value: Double)]) -> [(day: String, value: Double)] {
@@ -483,7 +516,10 @@ struct MetricDetailView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 if loaded && series.isEmpty {
                     // No data in the entire history — keep the range bar for context, then the
-                    // honest empty state (no scenic hero floating over nothing).
+                    // honest empty state (no scenic hero floating over nothing). Deliberately
+                    // NOT gated by the #943 chip locking: with zero data there is no chart for
+                    // the ranges to misrepresent, and hiding the bar here would regress this
+                    // "for context" intent.
                     rangeBar(effectiveRange: effRange, windowed: win, windowFellBack: fellBack)
                     ComingSoon(what: "Import your history first. A WHOOP export in Data Sources fills every metric you can explore here in about a minute.")
                 } else if !loaded {
@@ -519,6 +555,15 @@ struct MetricDetailView: View {
         }
         others = loadedOthers
         loaded = true
+        // #943 selection seam: the selection defaults to .month, so with under a week of
+        // history the caption would read "· month" while the month chip below sits locked.
+        // Coerce a locked selection down to the longest unlocked range so the caption, chart,
+        // stats and correlations all describe a window the chips actually offer. Re-runs on
+        // every reload (refreshSeq), so a shrinking history re-coerces too.
+        if !isUnlocked(range) {
+            range = [ExploreRange.year, .half, .quarter, .month, .week]
+                .first { $0.rawValue <= range.rawValue && isUnlocked($0) } ?? .week
+        }
         // First correlation build, now that `series`/`others` exist.
         recomputeCorrelations()
     }
@@ -550,13 +595,14 @@ struct MetricDetailView: View {
                 // Title + range control over the starfield.
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(metric.category.uppercased()).strandOverline()
+                        Text(MetricCatalog.categoryDisplayName(metric.category).uppercased()).strandOverline()
                         Text(metric.title)
                             .font(StrandFont.title2)
                             .foregroundStyle(StrandPalette.textPrimary)
                     }
                     Spacer()
-                    SegmentedPillControl(ExploreRange.allCases, selection: $range) { $0.label }
+                    SegmentedPillControl(ExploreRange.allCases, selection: $range,
+                                         isEnabled: isUnlocked) { $0.label }
                 }
 
                 // The headline read-out: a ring gauge for 0–100 scores, else a big number.
@@ -601,6 +647,13 @@ struct MetricDetailView: View {
                     .accessibilityLabel(rangeCaption(effectiveRange: effectiveRange,
                                                      windowed: windowed,
                                                      windowFellBack: windowFellBack))
+                // The subtle reason the dimmed chips exist (#943); shown only while some are locked.
+                // Byte-identical wording to the Android HealthScreen's unlock hint.
+                if hasLockedRanges {
+                    Text("Longer ranges unlock as more history builds.")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
             }
             .padding(NoopMetrics.cardPadding)
         }
@@ -624,13 +677,14 @@ struct MetricDetailView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(metric.category.uppercased()).strandOverline()
+                    Text(MetricCatalog.categoryDisplayName(metric.category).uppercased()).strandOverline()
                     Text(metric.title)
                         .font(StrandFont.title2)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 Spacer()
-                SegmentedPillControl(ExploreRange.allCases, selection: $range) { $0.label }
+                SegmentedPillControl(ExploreRange.allCases, selection: $range,
+                                     isEnabled: isUnlocked) { $0.label }
             }
             Text(caption)
                 .font(StrandFont.footnote)
@@ -824,7 +878,7 @@ struct MetricDetailView: View {
                 Text(row.metric.title)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("\(row.metric.category) · n = \(row.n)")
+                Text("\(MetricCatalog.categoryDisplayName(row.metric.category)) · n = \(row.n)")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }

@@ -190,6 +190,23 @@ enum MetricCatalog {
 
     static func inCategory(_ c: String) -> [MetricDescriptor] { all.filter { $0.category == c } }
 
+    /// Localized display name for a catalog category, mapped AT THE RENDER SITE only. The
+    /// catalog's `category` VALUES stay English identifiers on purpose (`inCategory` and the
+    /// colour-world / gradient switches compare them raw), so screens must never feed this
+    /// function's output back into matching logic. Unknown values pass through untranslated.
+    static func categoryDisplayName(_ category: String) -> String {
+        switch category {
+        case "Heart":     return String(localized: "Heart")
+        case "Charge":    return String(localized: "Charge")
+        case "Rest":      return String(localized: "Rest")
+        case "Effort":    return String(localized: "Effort")
+        case "Health":    return String(localized: "Health")
+        case "Nutrition": return String(localized: "Nutrition")
+        case "Mind":      return String(localized: "Mind")
+        default:          return category
+        }
+    }
+
     private static func d(_ key: String, _ title: String, _ category: String, _ unit: String,
                           _ source: String, _ icon: String, _ decimals: Int,
                           _ higherIsBetter: Bool?, _ description: String? = nil) -> MetricDescriptor {

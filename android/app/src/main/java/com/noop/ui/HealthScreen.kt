@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +72,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 // MARK: - Health Monitor (ported from Strand/Screens/HealthView.swift)
 //
@@ -990,6 +992,24 @@ private fun synthesiseSeries(values: List<Double>): List<LiveHrSample> {
     }
 }
 
+/** The live-HR hero's rolling buffer cap: 180 samples at the 1 Hz tick (#941) is a strict ~3 minutes. */
+internal const val LIVE_HR_BUFFER_CAP = 180
+
+/** One 1 Hz tick of the hero buffer (#941): bank the latest smoothed HR when it is present and
+ *  physiologically plausible (30..220, the same range guard the old on-change append used), then trim
+ *  the buffer to the rolling cap. Pure so the guard + cap behaviour is JVM-testable. */
+internal fun appendLiveHrSample(
+    history: MutableList<LiveHrSample>,
+    bpm: Int?,
+    timeMs: Long,
+    cap: Int = LIVE_HR_BUFFER_CAP,
+) {
+    val v = bpm ?: return
+    if (v !in 30..220) return
+    history.add(LiveHrSample(timeMs = timeMs, bpm = v.toDouble()))
+    while (history.size > cap) history.removeAt(0)
+}
+
 // MARK: - Heart rate hero (live)
 
 @Composable
@@ -1009,12 +1029,21 @@ private fun HeartRateSection(vm: AppViewModel, hrMax: Int) {
     // Accumulate the streamed HR over time so the hero chart actually moves (issue #18 — it used to
     // derive from sparse R-R and flat-line). Each sample now carries its arrival time so the hero can
     // render a real time x-axis (#198). Lives in UI state; resets when you leave the screen.
+    // #941 (ryanbr): sample at a FIXED 1 Hz wall clock, not on value change. The smoothed bpm is a
+    // StateFlow, which conflates duplicate emissions, so a steady stretch banked ZERO points; with a
+    // real-time x-axis the next change was then joined to the last point across the whole quiet
+    // interval, drawing a phantom ramp where HR was actually flat. A clock tick banks the latest
+    // (already spike-filtered) value every second, so steady HR draws flat and the 180-sample cap
+    // finally means a strict rolling ~3 minutes. rememberUpdatedState lets the loop read the CURRENT
+    // value without restarting the effect; the loop cancels when the hero leaves composition, and on
+    // disconnect the smoothed bpm nils upstream so the tick stops banking rather than flat-lining.
     val hrHistory = remember { mutableStateListOf<LiveHrSample>() }
-    LaunchedEffect(displayHr) {
-        displayHr?.let { if (it in 30..220) {
-            hrHistory.add(LiveHrSample(timeMs = System.currentTimeMillis(), bpm = it.toDouble()))
-            if (hrHistory.size > 180) hrHistory.removeAt(0)
-        } }
+    val latestDisplayHr by rememberUpdatedState(displayHr)
+    LaunchedEffect(Unit) {
+        while (true) {
+            appendLiveHrSample(hrHistory, latestDisplayHr, System.currentTimeMillis())
+            delay(1000)
+        }
     }
     val series = hrSeries(hrHistory, live, displayHr)
     val zoneColor = Palette.hrZoneColor(zone)
@@ -1673,7 +1702,12 @@ fun VitalDetailScreen(vm: AppViewModel, key: String) {
             return@ScreenScaffold
         }
 
-        val filteredPoints = remember(detail, range) { filterVitalPoints(detail.points, range) }
+        // #943 (ryanbr): gate the range chips by available history so short history can't draw six
+        // byte-identical charts. A locked selection (e.g. the MONTH default during the first week)
+        // coerces DOWN to the largest unlocked range so a calibrating user always has a live chart.
+        val unlockedRanges = remember(detail) { unlockedVitalRanges(vitalHistorySpanDays(detail.points)) }
+        val effectiveRange = if (range in unlockedRanges) range else unlockedRanges.last()
+        val filteredPoints = remember(detail, effectiveRange) { filterVitalPoints(detail.points, effectiveRange) }
         if (filteredPoints.size < 2) {
             DataPendingNote(
                 title = "Not enough history in this range",
@@ -1708,10 +1742,18 @@ fun VitalDetailScreen(vm: AppViewModel, key: String) {
                 }
                 SegmentedPillControl(
                     items = VitalDetailRange.entries,
-                    selection = range,
+                    selection = effectiveRange,
                     label = { it.label },
                     onSelect = { range = it },
+                    enabled = { it in unlockedRanges },
                 )
+                if (unlockedRanges.size < VitalDetailRange.entries.size) {
+                    Text(
+                        "Longer ranges unlock as more history builds.",
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                    )
+                }
                 LineChart(
                     values = values,
                     modifier = Modifier.height(Metrics.chartHeight),
@@ -1799,7 +1841,7 @@ private fun asOfLabel(day: String?): String? {
     }
 }
 
-private enum class VitalDetailRange(val label: String, val days: Long?) {
+internal enum class VitalDetailRange(val label: String, val days: Long?) {
     WEEK("W", 7),
     MONTH("M", 30),
     THREE_MONTH("3M", 90),
@@ -1808,7 +1850,37 @@ private enum class VitalDetailRange(val label: String, val days: Long?) {
     ALL("ALL", null),
 }
 
-private fun filterVitalPoints(
+/** Days spanned by a vital's history: last point's day minus first point's day in epoch days (0 for
+ *  a single day or unparseable bounds). Points arrive oldest-first from buildVitalDetail. */
+internal fun vitalHistorySpanDays(points: List<Pair<String, Double>>): Long {
+    val first = points.firstOrNull()?.first?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return 0L
+    val last = points.lastOrNull()?.first?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return 0L
+    return (last.toEpochDay() - first.toEpochDay()).coerceAtLeast(0L)
+}
+
+/** #943 (ryanbr): which range chips have anything NEW to show. filterVitalPoints windows off the
+ *  LATEST reading, so with under a week of history every window returned the identical full point set
+ *  and all six chips drew the same line (a week of data stretched full-width under a "1Y" label). A
+ *  range only differs from its predecessor once the data span EXCEEDS the predecessor's window, so the
+ *  unlocked set is a contiguous prefix: W always, M once span > 7 days, 3M once > 30, 6M once > 90,
+ *  1Y once > 180, ALL once > 365. Locked chips render disabled rather than hidden so a calibrating
+ *  user still learns the longer views exist; W staying unconditional means nobody is ever stranded
+ *  with zero ranges. */
+internal fun unlockedVitalRanges(spanDays: Long): List<VitalDetailRange> {
+    val ranges = VitalDetailRange.entries
+    val unlocked = mutableListOf(ranges.first())
+    for (i in 1 until ranges.size) {
+        val previousWindow = ranges[i - 1].days ?: break
+        if (spanDays > previousWindow) unlocked += ranges[i] else break
+    }
+    // ALL is never gated (Swift parity): a calibrating user can always see their full history,
+    // even when it happens to draw the same points as a shorter window.
+    val all = ranges.last()
+    if (all.days == null && all !in unlocked) unlocked += all
+    return unlocked
+}
+
+internal fun filterVitalPoints(
     points: List<Pair<String, Double>>,
     range: VitalDetailRange,
 ): List<Pair<String, Double>> {

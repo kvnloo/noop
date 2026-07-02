@@ -340,7 +340,9 @@ struct CompareView: View {
             ForEach(MetricCatalog.categories, id: \.self) { category in
                 let metrics = MetricCatalog.inCategory(category)
                 if !metrics.isEmpty {
-                    Section(category) {
+                    // Section title localized at the render site only; `category` stays the
+                    // raw English identifier that `inCategory` filters on.
+                    Section(MetricCatalog.categoryDisplayName(category)) {
                         ForEach(metrics) { metric in
                             let isOn = selected.contains(metric)
                             Button {

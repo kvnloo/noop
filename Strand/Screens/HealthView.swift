@@ -217,8 +217,18 @@ private struct HeartRateSection: View {
     /// but little/no R-R (the #105 case — Live HR works, but the Health graph showed only 2 samples).
     /// Each sample now carries the wall-clock time it arrived so the hero renders a real time x-axis
     /// (#198 — the chart had no time axis, so an iPhone user with no hover had no time context).
-    /// Capped to ~3 min @ ~1 Hz; resets when the view is recreated, which is fine for a live trace.
+    /// Sampled on a fixed 1 Hz clock (#941), so the 180-sample cap is a strict rolling 3 minutes;
+    /// resets when the view is recreated, which is fine for a live trace.
     @State private var hrHistory: [LiveHRSample] = []
+
+    /// The 1 Hz sampling clock for the hero trace (#941, reimplemented from ryanbr's PR). The buffer
+    /// used to append only when `displayHR` CHANGED, but AppModel deliberately republishes `bpm` only
+    /// when the smoothed median actually moves, so a steady heart rate banked ZERO points and the
+    /// time-axis chart drew one long phantom ramp from the last change to the next. Banking the current
+    /// median once a second draws steady HR flat. Same let-property pattern as HRVSnapshotView's
+    /// `secondTimer` (parent re-init resetting the tick phase is a non-issue here: this section is
+    /// isolated and observes via @EnvironmentObject, per the perf note above).
+    private let sampleTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
     /// HR to display: the spike-filtered median (model.bpm, #39) when available — raw live.heartRate
     /// carries PPG harmonic spikes (real ~92 read as 170+); AppModel.bpm's doc mandates "every screen
@@ -306,11 +316,14 @@ private struct HeartRateSection: View {
                 ])
             }
         }
-        .onChangeCompat(of: displayHR) { newHR in
-            // Append each new live HR reading (with its arrival time) so the hero graph grows a
-            // continuous, time-stamped series — feeding the time x-axis (#198) and the #105 trace.
-            guard let v = newHR else { return }
-            hrHistory.append(LiveHRSample(date: Date(), bpm: Double(v)))
+        .onReceive(sampleTimer) { now in
+            // Bank the CURRENT spike-filtered HR once a second, stamped with the tick's real wall-clock
+            // time: this feeds the time x-axis (#198) and the #105 trace without the phantom ramp that
+            // on-change sampling drew through steady stretches (#941). The 30...220 physiological guard
+            // mirrors the Android chart's existing range check; nil banks nothing (disconnect clears the
+            // median on both platforms), so a stale value never flat-lines a dead trace.
+            guard let v = displayHR, (30...220).contains(v) else { return }
+            hrHistory.append(LiveHRSample(date: now, bpm: Double(v)))
             if hrHistory.count > 180 { hrHistory.removeFirst(hrHistory.count - 180) }
         }
     }
@@ -377,8 +390,8 @@ struct LiveHRSample: Identifiable, Equatable {
 /// The live HR hero chart: a zone-gradient line + soft area over a real **time** x-axis
 /// (hour:minute:second), so the trace visibly scrolls as new samples arrive. Replaces the
 /// axis-less Sparkline on this hero (#198) — an iPhone user has no hover, so the visible
-/// clock axis is the fix. Built on Swift Charts; the rolling ~90–180 s window comes from the
-/// caller's capped buffer (HeartRateSection.hrHistory).
+/// clock axis is the fix. Built on Swift Charts; the strict rolling 3-minute window comes
+/// from the caller's 1 Hz-sampled, 180-capped buffer (HeartRateSection.hrHistory, #941).
 private struct LiveTimeChart: View {
     var samples: [LiveHRSample]
     /// The gradient the line/area is stroked with (the current HR-zone band).
