@@ -18,10 +18,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -34,7 +32,7 @@ import com.noop.R
  * `Terms.currentVersion`. The full text ships in TERMS.md.
  */
 object Terms {
-    const val CURRENT_VERSION = "1.1"
+    const val CURRENT_VERSION = "2.0"
 
     /**
      * Plain-English summary of TERMS.md §1–§6 — kept identical to the macOS `Terms.points`. Each is
@@ -50,6 +48,20 @@ object Terms {
         R.string.terms_point_medical_head to R.string.terms_point_medical_body,
         R.string.terms_point_warranty_head to R.string.terms_point_warranty_body,
     )
+
+    /**
+     * The affirmative attestations the user must EACH tick before Accept enables (clickwrap). Kept as
+     * separate, conspicuous consents rather than one blanket box so each is a distinct, knowing
+     * acknowledgment — the load-bearing ones being the non-affiliation attestation and the liability
+     * waiver. Mirrors macOS `Terms.attestations`; the English source lives in values/strings.xml.
+     * NOTE: the exact legal phrasing should be reviewed by a solicitor before this ships publicly.
+     */
+    val attestations: List<Int> = listOf(
+        R.string.terms_attest_not_affiliated,
+        R.string.terms_attest_own_device,
+        R.string.terms_attest_asis,
+        R.string.terms_attest_liability,
+    )
 }
 
 /**
@@ -60,7 +72,9 @@ object Terms {
  */
 @Composable
 fun TermsGateScreen(onAccept: () -> Unit) {
-    var checked by remember { mutableStateOf(false) }
+    // One flag per Terms.attestations entry; every one must be ticked before Accept enables.
+    val checks = remember { mutableStateListOf(*Array(Terms.attestations.size) { false }) }
+    val allChecked = checks.all { it }
     Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
             Spacer(Modifier.height(40.dp))
@@ -82,6 +96,27 @@ fun TermsGateScreen(onAccept: () -> Unit) {
                         Text(stringResource(body), style = NoopType.footnote, color = Palette.textSecondary)
                     }
                 }
+
+                Text(
+                    stringResource(R.string.terms_attest_head),
+                    style = NoopType.subhead, color = Palette.textSecondary,
+                )
+                Terms.attestations.forEachIndexed { idx, resId ->
+                    Row(verticalAlignment = Alignment.Top) {
+                        Checkbox(
+                            checked = checks[idx],
+                            onCheckedChange = { checks[idx] = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Palette.accent),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(resId),
+                            style = NoopType.footnote, color = Palette.textPrimary,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                }
+
                 Text(
                     stringResource(R.string.terms_footer),
                     style = NoopType.footnote, color = Palette.textTertiary,
@@ -89,23 +124,9 @@ fun TermsGateScreen(onAccept: () -> Unit) {
             }
 
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.Top) {
-                Checkbox(
-                    checked = checked,
-                    onCheckedChange = { checked = it },
-                    colors = CheckboxDefaults.colors(checkedColor = Palette.accent),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(R.string.terms_checkbox),
-                    style = NoopType.footnote, color = Palette.textPrimary,
-                    modifier = Modifier.padding(top = 14.dp),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onAccept,
-                enabled = checked,
+                enabled = allChecked,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.accent),
             ) {
