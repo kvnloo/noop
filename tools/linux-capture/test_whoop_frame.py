@@ -62,6 +62,59 @@ class PuffinCommandTests(unittest.TestCase):
         self.assertEqual(wf.build_puffin_command(145, seq=1, payload=bytes([0x01])),
                          wf.WHOOP5_CLIENT_HELLO)
 
+    def test_issue423_probe_commands_are_bounded_toggle_frames(self):
+        arm = wf.build_puffin_command(wf.PUFFIN_CMD_START_RAW_DATA, seq=0x41, payload=b"\x01")
+        stop = wf.build_puffin_command(wf.PUFFIN_CMD_STOP_RAW_DATA, seq=0x42, payload=b"\x00")
+        self.assertTrue(wf.verify_whoop5_frame(arm))
+        self.assertTrue(wf.verify_whoop5_frame(stop))
+        self.assertEqual(arm[8:12], bytes([wf.COMMAND_TYPE, 0x41, 81, 1]))
+        self.assertEqual(stop[8:12], bytes([wf.COMMAND_TYPE, 0x42, 82, 0]))
+
+
+class Whoop5RawTripletCandidateTests(unittest.TestCase):
+    """Pins only the issue-#423 candidate byte mechanics, never sensor semantics.
+
+    These fixtures are synthetic by design: no public CRC-valid WHOOP 5/MG type-43 capture exists
+    in-tree yet. The production helper must keep raw integer channels, trailing bytes, and CRC gates
+    intact until a real capture can promote an axis/scale/sample-rate schema.
+    """
+
+    def test_decodes_signed_i16_triplets_without_sensor_labels(self):
+        payload = (
+            (1).to_bytes(2, "little", signed=True)
+            + (-2).to_bytes(2, "little", signed=True)
+            + (32767).to_bytes(2, "little", signed=True)
+            + (-32768).to_bytes(2, "little", signed=True)
+            + (0).to_bytes(2, "little", signed=True)
+            + (42).to_bytes(2, "little", signed=True)
+        )
+        frame = wf.build_puffin_command(0xA5, seq=7, payload=payload,
+                                        type_=wf.PACKET_REALTIME_RAW_DATA)
+        got = wf.decode_whoop5_raw_triplet_candidate(frame)
+        self.assertIsNotNone(got)
+        self.assertEqual(got.seq, 7)
+        self.assertEqual(got.record_byte, 0xA5)
+        self.assertEqual(got.payload, payload)
+        self.assertEqual(got.triplets, ((1, -2, 32767), (-32768, 0, 42)))
+        self.assertEqual(got.trailing, b"")
+
+    def test_preserves_possible_alignment_padding_as_trailing_bytes(self):
+        payload = bytes.fromhex("010002000300aabbcc")
+        frame = wf.build_puffin_command(0x00, seq=1, payload=payload,
+                                        type_=wf.PACKET_REALTIME_RAW_DATA)
+        got = wf.decode_whoop5_raw_triplet_candidate(frame)
+        self.assertEqual(got.triplets, ((1, 2, 3),))
+        self.assertEqual(got.trailing, bytes.fromhex("aabbcc"))
+
+    def test_rejects_crc_failure_and_wrong_packet_type(self):
+        frame = wf.build_puffin_command(0, seq=1, payload=bytes(6),
+                                        type_=wf.PACKET_REALTIME_RAW_DATA)
+        corrupt = bytearray(frame)
+        corrupt[11] ^= 0x01
+        self.assertIsNone(wf.decode_whoop5_raw_triplet_candidate(bytes(corrupt)))
+        self.assertIsNone(wf.decode_whoop5_raw_triplet_candidate(
+            wf.build_puffin_command(0, seq=1, payload=bytes(6), type_=40)))
+
 
 class HistoryAckTests(unittest.TestCase):
     # Real CRC-valid frames captured from a worn WHOOP 5 (capture_hist2.json).

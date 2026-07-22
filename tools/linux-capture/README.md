@@ -23,6 +23,7 @@ no second decoder to drift.
 | WHOOP 5.0 — historical offload trigger (`SEND_HISTORICAL_DATA`) | ✅ verified (full burst, same trim-cursor mechanism as 4.0) |
 | WHOOP 5.0 — historical **biometrics** (type-47 v18) | ✅ unix + HR + R-R + gravity decoded (`parseFrameWhoop5`); cross-validated vs a 4C on the same person/window (HR corr 0.96, ±1 bpm at rest) |
 | WHOOP 5.0 — optical channels (PPG/SpO₂/skin-temp) + v26 layout | ◑ partial — v26 channel-0 PPG validated as **real** cardiac PPG (HR-locked, corr +0.907 over 14 bursts) → a **spot HRV** is derivable from it (`whoop_spot_hrv.py`); SpO₂/skin-temp still raw (AC-coupled PPG has no DC) |
+| WHOOP 5/MG — command-81 live raw accel candidate (#423) | ◔ probed, **not decoded** — MG `WS50_r00` fw `50.33.2.0` returned command responses but emitted 0 type-43 frames across two 30 s windows; axis/scale/rate remain unverified |
 
 See [`../../docs/BLE_REVERSE_ENGINEERING.md`](../../docs/BLE_REVERSE_ENGINEERING.md) §3 for the
 protocol details these tools exercise.
@@ -80,6 +81,7 @@ the Python capture side does not require Swift.
 | File | Role |
 |---|---|
 | `whoop_capture.py` | Scan → connect → bond → subscribe → reassemble → write `capture.json`. `--probe` drives the post-hello command sequence. The RE workbench (whoop5-focused). |
+| `whoop_raw_accel_probe.py` | **Issue #423 gated probe.** WHOOP 5/MG only: passive baseline → command 81 for 5–60 s → command 82 in `finally` → post-stop census. Stores model/firmware provenance and raw frames; asserts no axis/scale/rate semantics. |
 | `whoop_sync.py` | **WHOOP 4.0 durable historical offload.** Connect → drain the on-device store (cmd 22 + `HISTORY_END` ack loop) into a device-scoped SQLite DB with **persist-before-ack** + auto-reconnect/resume. Subcommands: `sync` / `status` / `devices` / `export` / `label`. See [Historical sync](#historical-sync-whoop_syncpy). |
 | `whoop_buzz.py` | **Find a misplaced strap.** Connect → vibrate the strap on repeat (and `--locate` to home in by signal strength). See [Find a lost strap](#find-a-lost-strap-whoop_buzzpy). |
 | `whoop_setclock.py` | **Read/fix the strap clock.** Reads the RTC, and sets it to now if it has drifted past a threshold (`--if-drift`). See [Strap clock](#strap-clock-whoop_setclockpy). |
@@ -92,6 +94,7 @@ the Python capture side does not require Swift.
 | `analyze_v25_waveform.py` | **WHOOP 4.0 v25 PPG → HR span-pinning harness ([#194](https://github.com/ryanbr/noop/issues/194)).** Sweeps the unpinned PPG span (start + sample-count) across a corpus of captures at *known* HRs and reports the span where recovered HR **tracks** ground truth instead of the `1440/N` autocorrelation artifact — or, on resting-only data, exactly what capture is still needed. `--selftest` proves it on synthetic pulses; no args runs the bundled-frames demo. Stdlib only. |
 | `whoop_spot_hrv.py` | **Spot HRV (RMSSD) from the sparse PPG bursts.** Reads the v26 `feat_ppg` channel-0 24 Hz waveform (read-only), detects beats, computes RMSSD per PPG-covered window with a GOOD/COARSE/POOR quality label. See [Spot HRV](#spot-hrv-from-sparse-ppg-whoop_spot_hrvpy). Stdlib only. |
 | `test_whoop_frame.py` | Unit tests for framing / reassembly / HR parsing / buzz frames (no `bleak` needed). |
+| `test_whoop_raw_accel_probe.py` | Fake-BLE safety tests for command-82 cleanup on cancellation/failure, truthful exit/census outcomes, non-target redaction, and owner-only report permissions. Never touches hardware. |
 | `test_hci_extract.py` | Unit tests for the btsnoop/pklg parsers, L2CAP/ATT reassembly, and WHOOP-frame extraction (synthetic fixtures; stdlib only). |
 | `test_correlate_ground_truth.py` | Unit tests for the CSV/alias loading and the known-plaintext field search (planted-value recovery + false-positive rejection; stdlib only). |
 | `test_whoop_spot_hrv.py` | Unit tests for the spot-HRV DSP (synthetic-signal HR/RMSSD recovery, ectopic rejection, grid reconstruction; stdlib only). |
@@ -147,6 +150,54 @@ python3 whoop_capture.py --model whoop5 --address $WHOOP_MAC --probe --duration 
 
 `--probe` sends the (4.0) command numbers re-framed for puffin after `CLIENT_HELLO`;
 `SEND_HISTORICAL_DATA` triggers a full historical offload. Without it you get only the hello response.
+
+### WHOOP 5/MG: bounded raw-accelerometer candidate probe (#423)
+
+Use this narrower probe instead of the broad `whoop_capture.py --probe` when investigating command
+81. It changes exactly one stream toggle, requires an explicit research acknowledgement, caps the
+armed window at 60 seconds, and always attempts command 82 from a `finally` block. It does **not**
+send the unverified IMU commands 105/106, enable R10/R11, alter device config, or trim history.
+
+```bash
+python3 whoop_raw_accel_probe.py \
+  --address "$WHOOP_MAC" \
+  --hardware-model "WHOOP 5.0 MG" \
+  --firmware "50.38.1.0" \
+  --duration 30 \
+  --acknowledge-research-only \
+  --out whoop5-mg-raw-probe.json
+```
+
+The report contains a baseline/active/disarm/post packet census, GATT model/firmware/hardware
+revision when readable, and privacy-preserving address/serial hashes. Full frame bytes are retained
+only for target type-43 frames and the corresponding command-81/82 responses; other frames contribute
+to the census but are stored only as SHA-256 hashes so GET_HELLO/session material and unrelated health
+events are not copied into the report. For a CRC-valid type-43 frame it additionally records only:
+
+- the third inner-header byte (`record_byte`), without assigning meaning;
+- the number of consecutive signed-i16 LE triplets;
+- any trailing bytes, preserved as hex rather than discarded;
+- arrival cadence, which is **frame cadence**, not a claimed sensor sample rate.
+
+**Sensitive-data warning:** target type-43 bytes may contain motion/physiological data. The writer
+creates the report as owner-only mode `0600` from its first byte and repeats the warning in the report
+metadata and CLI output. Keep it local; review and scrub it before sharing. File permissions reduce
+accidental local disclosure but do not make a published raw capture anonymous.
+
+Exit `0` means at least one CRC-valid type-43 frame arrived while command 81 was armed; `3` means the
+bounded probe completed but none arrived; `2` means discovery/connect/probe was incomplete. A `0`
+still does not establish x/y/z order, ±g range, calibration, or effective sample rate. Promote those
+fields only after a worn/rotated/resting hardware capture makes the mapping falsifiable and the real
+frame is added as a scrubbed test fixture.
+
+Hardware result on 2026-07-14: an MG identified by GATT as model `MG`, hardware `WS50_r00`, firmware
+`50.33.2.0` completed two independent 30-second windows plus one 5-second smoke window. Each command
+81 and command 82 write produced a CRC-valid type-36 response naming the corresponding opcode; all
+three windows produced **zero type-43 frames**. This is a firmware/model-specific negative result,
+not proof that no WHOOP 5 variant can emit the stream. It does mean the public whoop-vault candidate
+decoder—whose checked-in test is synthetic and includes no captured type-43 fixture—must not be
+promoted into NOOP's production schema on that claim alone. The health-sensitive reports remain local
+and uncommitted; only this device/firmware/count provenance is recorded here.
 
 ## Find a lost strap (`whoop_buzz.py`)
 

@@ -16,7 +16,9 @@ WHOOP 5.0 ("puffin") envelope:
     total on wire = declaredLength + 8 ;  inner record starts at offset 8
 """
 
+import struct
 import zlib
+from dataclasses import dataclass
 
 # COMMAND packet type byte (PacketType.COMMAND).
 COMMAND_TYPE = 35
@@ -102,6 +104,12 @@ PUFFIN_CMD_HISTORICAL_DATA_RESULT = 23
 PUFFIN_CMD_GET_CLOCK = 11
 PUFFIN_CMD_GET_DATA_RANGE = 34
 PUFFIN_CMD_SEND_R10_R11_REALTIME = 63
+# WHOOP 5/MG candidate raw-accelerometer probe commands (issue #423). These are deliberately NOT
+# part of whoop_capture.py's broad --probe sequence: command 81 must be exercised alone in a bounded,
+# research-only window so a resulting packet census can be attributed to one change. Command 82 is
+# always sent on exit to reverse that transient stream toggle.
+PUFFIN_CMD_START_RAW_DATA = 81
+PUFFIN_CMD_STOP_RAW_DATA = 82
 # Read-only "GET" commands that elicit a COMMAND_RESPONSE (type 36) — used to map the WHOOP 5
 # command-response payloads at the +4 offsets. All are non-destructive reads; the response echoes the
 # command number in its cmd byte (frame[10] on 5.0), which selects the payload layout.
@@ -250,6 +258,7 @@ def command_response_cmd(frame: bytes, family: str):
 # Packet types (PacketType enum, wire byte at the inner-record start, offset 8 on 5.0).
 PACKET_METADATA = 49
 PACKET_HISTORICAL_DATA = 47
+PACKET_REALTIME_RAW_DATA = 43
 # MetadataType enum values (the meta_type byte).
 META_HISTORY_START = 1
 META_HISTORY_END = 2
@@ -281,6 +290,50 @@ def verify_whoop5_frame(frame: bytes) -> bool:
     inner = bytes(frame[8:total - 4])
     wire = int.from_bytes(frame[total - 4:total], "little")
     return crc32(inner) == wire
+
+
+@dataclass(frozen=True)
+class Whoop5RawTripletCandidate:
+    """A CRC-valid type-43 frame interpreted under the *candidate* issue-#423 layout.
+
+    This intentionally stops below sensor semantics. `triplets` are only three consecutive signed
+    i16-LE channels after the standard `[type, seq, record_byte]` inner header. They are NOT named
+    x/y/z, assigned a physical unit, scaled to g, or given a sample rate until a real WHOOP 5/MG
+    capture establishes those facts. `trailing` preserves bytes that do not make a complete 6-byte
+    tuple (including possible puffin alignment padding) instead of silently discarding them.
+    """
+
+    seq: int
+    record_byte: int
+    payload: bytes
+    triplets: tuple[tuple[int, int, int], ...]
+    trailing: bytes
+
+
+def decode_whoop5_raw_triplet_candidate(frame: bytes):
+    """Return a conservative candidate decode for a CRC-valid WHOOP 5/MG type-43 frame.
+
+    Community code cited by issue #423 treats the type-43 payload as packed `<hhh>` tuples, but its
+    public tests use synthetic bytes and publish no captured type-43 fixture. This helper therefore
+    exposes raw integer channels only. It returns `None` for a bad envelope/CRC, the wrong packet
+    type, or a truncated inner header. Callers must retain the full frame for later archaeology.
+    """
+
+    if not verify_whoop5_frame(frame):
+        return None
+    inner = bytes(frame[WHOOP5_INNER_OFF:-4])
+    if len(inner) < 3 or inner[0] != PACKET_REALTIME_RAW_DATA:
+        return None
+    payload = inner[3:]
+    complete = len(payload) - (len(payload) % 6)
+    triplets = tuple(struct.unpack_from("<hhh", payload, off) for off in range(0, complete, 6))
+    return Whoop5RawTripletCandidate(
+        seq=inner[1],
+        record_byte=inner[2],
+        payload=payload,
+        triplets=triplets,
+        trailing=payload[complete:],
+    )
 
 
 def history_end_data(frame: bytes):
