@@ -485,6 +485,7 @@ fun SettingsScreen(
     vm: AppViewModel,
     onOpenTestCentre: () -> Unit = {},
     onOpenBackupSync: () -> Unit = {},
+    onOpenStepsCalibration: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -556,11 +557,6 @@ fun SettingsScreen(
     // that feeds Charge from tonight onward; the standing analyze loop picks it up on its next pass.
     // Fixes a baseline poisoned by a bad first week (worn sick, or early nights that anchored too high).
     var showRecalibrateConfirm by remember { mutableStateOf(false) }
-
-    // Steps-estimate calibration screen (WHOOP 4.0), reached from the Profile card's "Steps estimate"
-    // tap-through. Mirrors the macOS StepsCalibrationSheet: honest explainer + current fit + a recent
-    // estimated-vs-phone table + a manual coefficient override. Full-screen Dialog like the guide above.
-    var showStepsCalibration by remember { mutableStateOf(false) }
 
     // Whether the "Advanced" disclosure (experimental probes, diagnostics, raw-sensor export, Trends
     // report) is expanded. Default FALSE so a first-run user lands on the everyday sections instead of
@@ -1129,7 +1125,7 @@ fun SettingsScreen(
                         .clickable(
                             interactionSource = stepsRowInteraction,
                             indication = null,
-                        ) { showStepsCalibration = true }
+                        ) { onOpenStepsCalibration() }
                         .semantics {
                             contentDescription =
                                 uiString(R.string.l10n_settings_screen_steps_estimate_calibration_stepssummary_opens_the_d6fbf995, stepsSummary)
@@ -1214,6 +1210,49 @@ fun SettingsScreen(
                         },
                     )
                 }
+                // #1545: sits directly under the Effort SCALE row on purpose. It shipped in the
+                // experimental block beside the sleep-staging toggles, where @dofimn could not find it —
+                // a setting built for a specific report is no use if the person who asked for it cannot
+                // locate it. The two rows are different concepts (that one is the display AXIS, this one
+                // is the computation RECIPE) but a user asking "how is my Effort worked out" reaches for
+                // the same place for both, and each row's own caption separates them.
+                // #1545: Effort on Banister's EXPONENTIAL TRIMP instead of Edwards' heart-rate zones.
+                // Edwards pays nothing below 50% HRR, so an hour of lifting — hard sets averaged against
+                // the rests — can score near zero. Default OFF: it re-scores the whole window against a
+                // different recipe. Both scales top out at 100 via their own log denominator. Mirrors iOS.
+                SettingsRowDivider()
+                var banisterEffort by remember { mutableStateOf(NoopPrefs.banisterEffort(context)) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        uiString(R.string.l10n_settings_screen_effort_exponential_scale),
+                        style = NoopType.subhead,
+                        color = Palette.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = banisterEffort,
+                        onCheckedChange = {
+                            banisterEffort = it
+                            vm.setBanisterEffort(it)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Palette.surfaceBase,
+                            checkedTrackColor = Palette.accent,
+                            uncheckedThumbColor = Palette.textSecondary,
+                            uncheckedTrackColor = Palette.surfaceInset,
+                            uncheckedBorderColor = Palette.hairline,
+                        ),
+                    )
+                }
+                Text(
+                    uiString(R.string.l10n_settings_screen_effort_exponential_scale_desc),
+                    style = NoopType.caption,
+                    color = Palette.textTertiary,
+                )
             }
         }
 
@@ -2725,43 +2764,6 @@ fun SettingsScreen(
                     )
                 }
 
-                // #1545: Effort on Banister's EXPONENTIAL TRIMP instead of Edwards' heart-rate zones.
-                // Edwards pays nothing below 50% HRR, so an hour of lifting — hard sets averaged against
-                // the rests — can score near zero. Default OFF: it re-scores the whole window against a
-                // different recipe. Both scales top out at 100 via their own log denominator. Mirrors iOS.
-                SettingsRowDivider()
-                var banisterEffort by remember { mutableStateOf(NoopPrefs.banisterEffort(context)) }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Text(
-                        uiString(R.string.l10n_settings_screen_effort_exponential_scale),
-                        style = NoopType.subhead,
-                        color = Palette.textPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = banisterEffort,
-                        onCheckedChange = {
-                            banisterEffort = it
-                            vm.setBanisterEffort(it)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Palette.surfaceBase,
-                            checkedTrackColor = Palette.accent,
-                            uncheckedThumbColor = Palette.textSecondary,
-                            uncheckedTrackColor = Palette.surfaceInset,
-                            uncheckedBorderColor = Palette.hairline,
-                        ),
-                    )
-                }
-                Text(
-                    uiString(R.string.l10n_settings_screen_effort_exponential_scale_desc),
-                    style = NoopType.caption,
-                    color = Palette.textTertiary,
-                )
                 Text(
                     "Scores today's hour-by-hour stress timeline against YOUR own cross-day baseline " +
                         "(how your days usually run, Oura-style) instead of the day's own calm hours. The " +
@@ -3606,26 +3608,6 @@ fun SettingsScreen(
             ) {
                 Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
                     WhoopModelComparisonScreen(onClose = { showModelComparison = false })
-                }
-            }
-        }
-
-
-        // Steps-estimate calibration, opened from the Profile card's "Steps estimate" row. Same
-        // full-screen Dialog idiom; a manual-coefficient write bumps `rev` so the Profile summary
-        // row reflects the new state on dismiss.
-        if (showStepsCalibration) {
-            Dialog(
-                onDismissRequest = { showStepsCalibration = false },
-                properties = DialogProperties(usePlatformDefaultWidth = false),
-            ) {
-                Surface(modifier = Modifier.fillMaxSize(), color = Palette.surfaceBase) {
-                    StepsCalibrationScreen(
-                        vm = vm,
-                        profile = profile,
-                        onProfileChanged = { rev++ },
-                        onClose = { showStepsCalibration = false },
-                    )
                 }
             }
         }

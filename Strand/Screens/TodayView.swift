@@ -4021,16 +4021,14 @@ struct TodayView: View {
     /// calibration" affordance so a user whose strap reports real steps (5/MG) or who has no strap at all
     /// never sees a steps-calibration prompt on a blank tile.
     ///
-    /// #1491: the three profile fields below are all OUTPUTS of calibration — a fitted coefficient, a
-    /// manual one, or a count of overlapping phone-counted days. Testing only those made the affordance
-    /// unreachable for the exact user it was written for: a fresh 4.0 owner with no phone step history has
-    /// all three at zero, so the tile went blank with no explanation and no way through to the sheet that
-    /// would let them set a coefficient by hand. The prompt was gated on evidence that only exists once
-    /// the thing it is prompting for has already started.
+    /// #1491: a fresh 4.0 owner has no calibration state yet, so the strap family itself must activate the
+    /// pipeline on a day with data. A fitted or manual coefficient remains a second path because calibration
+    /// is profile-global: someone who moved from a 4.0 to a 5.0 can keep using their working estimate.
     ///
-    /// The strap itself answers the question that gate was reaching for — a 4.0 sends no step count, so it
-    /// always estimates — and it answers it on day one. The calibration state it is OR-ed with is
-    /// profile-global rather than per-strap, so both halves are measuring the same user either way.
+    /// #1523: a partial sample-day count is not equivalent to a working calibration. WHOOP 5.0 records feed
+    /// the same motion-volume fitter, so a 5.0 can accumulate sample days before any coefficient exists.
+    /// Letting that counter activate the gate showed the 4.0-only calibration prompt on a strap that reports
+    /// steps natively. Only an actual coefficient is evidence that the profile should keep the estimate path.
     ///
     /// Read off the persisted selection rather than through `BLEManager.isWhoop4`: `TodayView` holds no
     /// `AppModel`, and `BLEManager` writes this same key whenever the model changes
@@ -4047,12 +4045,47 @@ struct TodayView: View {
     /// [hasDayData] stays as the second guard: it is what keeps the prompt off a date with nothing scored
     /// on it, which is a different question from whether a strap is known.
     private func stepsPipelineActive(hasDayData: Bool) -> Bool {
+        Self.stepsPipelineActive(
+            selectedModelRaw: selectedWhoopModelRaw,
+            hasDayData: hasDayData,
+            calibrationCoefficient: profile.stepsCalibrationCoefficient,
+            manualCoefficient: profile.stepsManualCoefficient,
+            calibrationSampleDays: profile.stepsCalibrationSampleDays)
+    }
+
+    /// Pure gate used by the Steps tile and its state-matrix tests. `calibrationSampleDays` is accepted so
+    /// the regression is explicit: partial fitter progress alone must never activate a strap-family feature.
+    static func stepsPipelineActive(selectedModelRaw: String,
+                                    hasDayData: Bool,
+                                    calibrationCoefficient: Double,
+                                    manualCoefficient: Double,
+                                    calibrationSampleDays: Int) -> Bool {
         // Optional-chained deliberately: an unset (or unparseable) key is NOT a 4.0. The key only ever
         // holds a `WhoopModel` rawValue, so nil here means "no strap has been identified", not "4.0".
-        (WhoopModel(rawValue: selectedWhoopModelRaw)?.deviceFamily == .whoop4 && hasDayData)
-            || profile.stepsCalibrationCoefficient > 0
-            || profile.stepsManualCoefficient > 0
-            || profile.stepsCalibrationSampleDays > 0
+        let family = WhoopModel(rawValue: selectedModelRaw)?.deviceFamily
+        // #1523 follow-up: a POSITIVELY identified 5/MG never sees this, whatever calibration state the
+        // profile carries from an earlier strap. #1579 stopped a partial sample-day count activating the
+        // affordance but left the coefficient paths able to, and those are profile-global — so a user who
+        // calibrated a 4.0 and then moved to a 5.0 still got the 4.0 prompt on any day the 5.0 logged no
+        // steps and no estimate existed. That is the same complaint #1523 opened, on a narrower trigger.
+        //
+        // The justification for the coefficient paths was preserving estimate behaviour across that
+        // migration, but this gate does not control the estimate: `estSteps` comes from `stepsEstByDay`
+        // and is computed independently. All this gate decides is whether a BLANK tile offers to
+        // calibrate — and a strap that reports steps natively has nothing to calibrate.
+        //
+        // Android has been immune by construction all along: `stepsCalibrationPrompt` returns early on
+        // `model != WhoopModel.WHOOP4.name` before reading any calibration state — and this is written the
+        // same way round, "positively identified and NOT a 4.0", rather than "is a 5". Those are the same
+        // set today because `WhoopModel` has exactly two cases, but they stop being the same the moment a
+        // third is added, and the version that would then be wrong is the one naming a specific family.
+        if let family, family != .whoop4 { return false }
+        // The coefficient paths stay for everything else, and are NOT redundant with the family check: a
+        // legacy 4.0 owner whose `selectedWhoopModel` was never written still has a coefficient, and
+        // dropping these would silently take the gear away from them.
+        return (family == .whoop4 && hasDayData)
+            || calibrationCoefficient > 0
+            || manualCoefficient > 0
     }
 
     /// #589, the honest one-liner for a blank, not-yet-calibrated Steps tile: how many more days the
