@@ -8,15 +8,35 @@ import WhoopProtocol
 /// can't be unit-tested.
 ///
 /// A chest strap (Polar / Wahoo / Coospo / Garmin HRM / Amazfit Helio broadcast) only ever
-/// reports HR and (optionally) R-R intervals over 0x2A37; every other stream (spo2, skin temp,
-/// resp, gravity, steps, ppgHr, events, battery) is left empty.
+/// reports HR, (optionally) R-R intervals, and its standard contact flags over 0x2A37; every other
+/// stream (spo2, skin temp, resp, gravity, steps, ppgHr, battery) is left empty.
 public enum StandardHRMapping {
+    /// `event.kind` used for a standard BLE sensor-contact reading. The generic event table is the
+    /// established durable stream for additive decoded signals, so this needs no schema migration.
+    public static let contactEventKind = "STANDARD_HR_CONTACT"
+
     /// Build a `Streams` carrying one HR sample and zero-or-more R-R intervals, all stamped at the
     /// same wall-clock `ts` (unix seconds). Pure → unit-testable.
-    public static func samples(fromHR hr: Int, rr: [Int], at ts: Int) -> Streams {
-        Streams(
+    public static func samples(fromHR hr: Int, rr: [Int], contact: StandardHRContact? = nil,
+                               at ts: Int) -> Streams {
+        let events = contact.map { [
+            WhoopEvent(ts: ts, kind: contactEventKind, payload: ["contact": .string($0.rawValue)])
+        ] } ?? []
+        return Streams(
             hr: [HRSample(ts: ts, bpm: hr)],
-            rr: rr.map { RRInterval(ts: ts, rrMs: $0) }
+            rr: rr.map { RRInterval(ts: ts, rrMs: $0) },
+            events: events
         )
+    }
+}
+
+/// One persisted standard-BLE sensor-contact reading. Legacy HR rows have no companion event and are
+/// therefore absent from this stream instead of being guessed as any contact state.
+public struct StandardHRContactSample: Equatable, Sendable {
+    public let ts: Int
+    public let contact: StandardHRContact
+    public init(ts: Int, contact: StandardHRContact) {
+        self.ts = ts
+        self.contact = contact
     }
 }

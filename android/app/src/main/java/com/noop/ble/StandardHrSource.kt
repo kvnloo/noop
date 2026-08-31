@@ -21,8 +21,10 @@ import android.os.Looper
 import android.os.ParcelUuid
 import com.noop.data.HrRow
 import com.noop.data.RrRow
+import com.noop.data.StandardHrMapping
 import com.noop.data.StreamBatch
 import com.noop.polar.PolarModel
+import com.noop.protocol.StandardHrContact
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -148,7 +150,12 @@ class StandardHrSource(
 
     // MARK: - Sample buffer (flushed in batches off the per-notification hot loop)
 
-    private data class Sample(val hr: Int, val rr: List<Int>, val ts: Long)
+    private data class Sample(
+        val hr: Int,
+        val rr: List<Int>,
+        val contact: StandardHrContact,
+        val ts: Long,
+    )
     private val bufferLock = Any()
     private val buffer = ArrayList<Sample>()
     private var lastFlushMs = System.currentTimeMillis()
@@ -243,9 +250,9 @@ class StandardHrSource(
 
     // MARK: - Buffer / persistence
 
-    private fun enqueue(hr: Int, rr: List<Int>) {
+    private fun enqueue(hr: Int, rr: List<Int>, contact: StandardHrContact) {
         val shouldFlush = synchronized(bufferLock) {
-            buffer.add(Sample(hr, rr, System.currentTimeMillis() / 1000L))
+            buffer.add(Sample(hr, rr, contact, System.currentTimeMillis() / 1000L))
             buffer.size >= flushCount ||
                 System.currentTimeMillis() - lastFlushMs >= flushIntervalMs
         }
@@ -262,12 +269,13 @@ class StandardHrSource(
         // R-R is gated to physiologically plausible beat-to-beat ms, matching ingestStandardHr.
         val hrRows = ArrayList<HrRow>()
         val rrRows = ArrayList<RrRow>()
+        val contactEvents = snapshot.map { StandardHrMapping.contactEvent(it.ts, it.contact) }
         for (s in snapshot) {
             if (s.hr in 30..220) hrRows.add(HrRow(s.ts, s.hr))
             for (r in s.rr) if (r in 250..3000) rrRows.add(RrRow(s.ts, r))
         }
-        if (hrRows.isNotEmpty() || rrRows.isNotEmpty()) {
-            persist(StreamBatch(hr = hrRows, rr = rrRows), deviceId)
+        if (hrRows.isNotEmpty() || rrRows.isNotEmpty() || contactEvents.isNotEmpty()) {
+            persist(StreamBatch(hr = hrRows, rr = rrRows, events = contactEvents), deviceId)
         }
     }
 
@@ -529,7 +537,7 @@ class StandardHrSource(
         }
         // Surface live HR on the main looper (the UI's StateFlow expects main-thread updates).
         handler.post { guardedCallback("live-sink") { liveSink(parsed.hr, parsed.rr) } }
-        enqueue(parsed.hr, parsed.rr)
+        enqueue(parsed.hr, parsed.rr, parsed.contact)
     }
 
     companion object {
