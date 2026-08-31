@@ -65,6 +65,78 @@ final class PreSleepHeartRateFeedbackTests: XCTestCase {
         XCTAssertEqual(feedback.comparison?.baselineNights, 4)
     }
 
+    func testRecentImplausibleHistoryDoesNotRefreshMatureStaleBaseline() {
+        let sleep = SleepSession(start: 10_000, end: 36_000, efficiency: 0.9,
+                                 stages: [], restingHR: nil, avgHRV: nil)
+        var history = (1...14).map {
+            PreSleepHeartRateFeedback.HistoricalReading(
+                day: String(format: "2024-02-%02d", $0), meanBpm: 60
+            )
+        }
+        history += [
+            .init(day: "2024-02-28", meanBpm: .nan),
+            .init(day: "2024-02-28", meanBpm: 70),
+            .init(day: "2024-02-29", meanBpm: PreSleepHeartRateFeedback.baselineCfg.maxVal + 1),
+        ]
+
+        let journal = JournalEntry(day: "2024-03-01", question: "Late meal",
+                                   answeredYes: true, notes: nil)
+        let feedback = PreSleepHeartRateFeedback.evaluate(
+            enabled: true, sessions: [sleep], hr: samples(8_800, bpm: 70, count: 12),
+            history: history, journalEntries: [journal], day: "2024-03-01",
+            minimumValidSamples: 10, preSleepWindowSeconds: 1_800
+        )
+
+        XCTAssertEqual(feedback.eligibility, .staleBaseline(daysSinceUpdate: 16))
+        XCTAssertEqual(feedback.observation?.meanBpm, 70)
+        XCTAssertNil(feedback.comparison)
+        XCTAssertEqual(feedback.uncertainty, [.staleBaseline(daysSinceUpdate: 16)])
+        XCTAssertEqual(feedback.journalContext, [
+            .init(day: "2024-03-01", question: "Late meal", answeredYes: true, numericValue: nil)
+        ])
+    }
+
+    func testBaselineAtExactStaleDaysBoundaryRemainsTrustedAcrossYearBoundary() {
+        let sleep = SleepSession(start: 10_000, end: 36_000, efficiency: 0.9,
+                                 stages: [], restingHR: nil, avgHRV: nil)
+        let history = (1...13).map {
+            PreSleepHeartRateFeedback.HistoricalReading(
+                day: String(format: "2023-01-%02d", $0), meanBpm: 60
+            )
+        } + [.init(day: "2023-12-18", meanBpm: 60)]
+
+        let feedback = PreSleepHeartRateFeedback.evaluate(
+            enabled: true, sessions: [sleep], hr: samples(8_800, bpm: 70, count: 12),
+            history: history, journalEntries: [], day: "2024-01-01",
+            minimumValidSamples: 10, preSleepWindowSeconds: 1_800
+        )
+
+        XCTAssertEqual(feedback.eligibility, .eligible)
+        XCTAssertEqual(feedback.comparison?.baselineStatus, .trusted)
+        XCTAssertTrue(feedback.uncertainty.isEmpty)
+    }
+
+    func testBaselineOneDayPastStaleBoundaryIsExplicitlyStaleAcrossLeapDay() {
+        let sleep = SleepSession(start: 10_000, end: 36_000, efficiency: 0.9,
+                                 stages: [], restingHR: nil, avgHRV: nil)
+        let history = (1...13).map {
+            PreSleepHeartRateFeedback.HistoricalReading(
+                day: String(format: "2024-01-%02d", $0), meanBpm: 60
+            )
+        } + [.init(day: "2024-02-15", meanBpm: 60)]
+
+        let feedback = PreSleepHeartRateFeedback.evaluate(
+            enabled: true, sessions: [sleep], hr: samples(8_800, bpm: 70, count: 12),
+            history: history, journalEntries: [], day: "2024-03-01",
+            minimumValidSamples: 10, preSleepWindowSeconds: 1_800
+        )
+
+        XCTAssertEqual(feedback.eligibility, .staleBaseline(daysSinceUpdate: 15))
+        XCTAssertNotNil(feedback.observation)
+        XCTAssertNil(feedback.comparison)
+        XCTAssertEqual(feedback.uncertainty, [.staleBaseline(daysSinceUpdate: 15)])
+    }
+
     func testRepeatedPriorDayCannotSatisfyMinimumBaselineNights() {
         let sleep = SleepSession(start: 10_000, end: 36_000, efficiency: 0.9,
                                  stages: [], restingHR: nil, avgHRV: nil)
