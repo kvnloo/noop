@@ -44,6 +44,7 @@ public enum PreSleepHeartRateFeedback {
         case missingPrimarySleep
         case insufficientPreSleepSamples(valid: Int, required: Int)
         case insufficientBaseline(validNights: Int, required: Int)
+        case staleBaseline(daysSinceUpdate: Int)
         case eligible
     }
 
@@ -93,6 +94,8 @@ public enum PreSleepHeartRateFeedback {
         case provisionalBaseline
         /// There are not yet enough valid historical nights to make any personal comparison.
         case noPersonalComparison
+        /// A mature personal baseline has not received a plausible value recently enough to compare.
+        case staleBaseline(daysSinceUpdate: Int)
     }
 
     /// This slice intentionally makes no causal inference from a single observation or its journal facts.
@@ -154,7 +157,7 @@ public enum PreSleepHeartRateFeedback {
             return Feedback(eligibility: .disabled, observation: nil, comparison: nil, uncertainty: [],
                             inference: noInference, recommendation: unsupported, journalContext: [])
         }
-        guard isCanonicalDay(day) else {
+        guard let evaluationDate = canonicalDay(day) else {
             return Feedback(eligibility: .invalidDay, observation: nil, comparison: nil, uncertainty: [],
                             inference: noInference, recommendation: unsupported, journalContext: [])
         }
@@ -187,15 +190,33 @@ public enum PreSleepHeartRateFeedback {
         let observation = Observation(primarySleepStartTs: primary.start, primarySleepEndTs: primary.end,
                                       windowStartTs: start, windowEndTs: primary.start, meanBpm: mean,
                                       validSamples: valid.count, totalTimestampSamples: inWindow.count)
-        // Canonical local day keys sort chronologically. Baselines use prior nights only and
+        // Baselines use prior nights only and
         // `rollingMeanSD` requires oldest-to-newest input. Retain the first caller-supplied reading
         // for a repeated canonical day; one day contributes at most one night and no synthetic average
         // is invented.
         var seenDays = Set<String>()
         let priorHistory = history
-            .filter { isCanonicalDay($0.day) && $0.day < day && seenDays.insert($0.day).inserted }
-            .sorted { $0.day < $1.day }
-        let baseline = Baselines.rollingMeanSD(priorHistory.map(\.meanBpm), cfg: baselineCfg)
+            .compactMap { reading -> (reading: HistoricalReading, date: Date)? in
+                guard let date = canonicalDay(reading.day), date < evaluationDate,
+                      seenDays.insert(reading.day).inserted else { return nil }
+                return (reading, date)
+            }
+            .sorted { $0.date < $1.date }
+        let rollingBaseline = Baselines.rollingMeanSD(priorHistory.map(\.reading.meanBpm), cfg: baselineCfg)
+        let latestContributingDate = priorHistory.last {
+            baselineCfg.minVal <= $0.reading.meanBpm && $0.reading.meanBpm <= baselineCfg.maxVal
+        }?.date
+        let nightsSinceUpdate = latestContributingDate.flatMap {
+            gregorianUTC.dateComponents([.day], from: $0, to: evaluationDate).day
+        }.map { max(0, $0) } ?? 0
+        let baseline = BaselineState(
+            baseline: rollingBaseline.baseline,
+            spread: rollingBaseline.spread,
+            nValid: rollingBaseline.nValid,
+            nightsSinceUpdate: nightsSinceUpdate,
+            status: Baselines.computeStatus(nValid: rollingBaseline.nValid,
+                                            nightsSinceUpdate: nightsSinceUpdate)
+        )
         let context = journalEntries.filter { $0.day == day }.map {
             JournalFact(day: $0.day, question: $0.question, answeredYes: $0.answeredYes,
                         numericValue: $0.numericValue)
@@ -204,6 +225,12 @@ public enum PreSleepHeartRateFeedback {
             return Feedback(eligibility: .insufficientBaseline(validNights: baseline.nValid,
                                                                  required: minimumBaselineNights),
                             observation: observation, comparison: nil, uncertainty: [.noPersonalComparison],
+                            inference: noInference, recommendation: unsupported, journalContext: context)
+        }
+        guard baseline.usable else {
+            return Feedback(eligibility: .staleBaseline(daysSinceUpdate: baseline.nightsSinceUpdate),
+                            observation: observation, comparison: nil,
+                            uncertainty: [.staleBaseline(daysSinceUpdate: baseline.nightsSinceUpdate)],
                             inference: noInference, recommendation: unsupported, journalContext: context)
         }
 
@@ -215,24 +242,30 @@ public enum PreSleepHeartRateFeedback {
                         journalContext: context)
     }
 
-    private static func isCanonicalDay(_ day: String) -> Bool {
+    private static var gregorianUTC: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private static func canonicalDay(_ day: String) -> Date? {
         let bytes = Array(day.utf8)
-        guard bytes.count == 10, bytes[4] == 45, bytes[7] == 45 else { return false }
+        guard bytes.count == 10, bytes[4] == 45, bytes[7] == 45 else { return nil }
         let digitPositions = [0, 1, 2, 3, 5, 6, 8, 9]
-        guard digitPositions.allSatisfy({ (48...57).contains(bytes[$0]) }) else { return false }
+        guard digitPositions.allSatisfy({ (48...57).contains(bytes[$0]) }) else { return nil }
 
         let year = Int(bytes[0] - 48) * 1_000 + Int(bytes[1] - 48) * 100
             + Int(bytes[2] - 48) * 10 + Int(bytes[3] - 48)
         let month = Int(bytes[5] - 48) * 10 + Int(bytes[6] - 48)
         let dayOfMonth = Int(bytes[8] - 48) * 10 + Int(bytes[9] - 48)
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let calendar = gregorianUTC
         guard let date = calendar.date(from: DateComponents(year: year, month: month, day: dayOfMonth)) else {
-            return false
+            return nil
         }
         let roundTrip = calendar.dateComponents([.era, .year, .month, .day], from: date)
-        return roundTrip.era == 1 && roundTrip.year == year && roundTrip.month == month
-            && roundTrip.day == dayOfMonth
+        guard roundTrip.era == 1 && roundTrip.year == year && roundTrip.month == month
+            && roundTrip.day == dayOfMonth else { return nil }
+        return date
     }
 
     private static func deduplicated(_ hr: [HRSample]) -> [HRSample] {
