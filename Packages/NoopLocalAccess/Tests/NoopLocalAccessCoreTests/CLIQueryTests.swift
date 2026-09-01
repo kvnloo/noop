@@ -14,6 +14,7 @@ final class CLIQueryTests: XCTestCase {
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
+            ("rr_series", ["--from-ts", "100", "--to-ts", "103", "--limit", "50"]),
         ]
 
         for (tool, flags) in queries {
@@ -74,6 +75,14 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["sleep_stages", "--kind", "ALPHA"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--max-points", "10"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--bucket-seconds", "1"])
+        assertUsageError(["rr_series", "--from-ts", "100"])
+        assertUsageError(["rr_series", "--to-ts", "102"])
+        assertUsageError(["rr_series", "--unknown", "x"])
+        assertUsageError(["rr_series", "--kind", "ALPHA"])
+        assertUsageError(["rr_series", "--bucket-seconds", "1"])
+        assertUsageError(["rr_series", "--max-points", "10"])
+        assertUsageError(["health_snapshot", "--from-ts", "100", "--to-ts", "102"])
+        assertUsageError(["sleep_stages", "--hours", "1"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -414,6 +423,119 @@ final class CLIQueryTests: XCTestCase {
             toolName: parsed.toolName,
             arguments: parsed.arguments,
             configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withEvents().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
+    }
+
+    func testRRSeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "rr_series",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "103",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "rr_series")
+        XCTAssertEqual(parsed.arguments, [
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(103),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testRRSeriesMatchesWhoopStoreFiltersAndSuffixLimit() throws {
+        let url = try TemporaryDatabase.withRRIntervals()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "rr_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(103),
+            ],
+            configuration: configuration
+        ))
+        let object = try XCTUnwrap(payload.objectValue)
+        XCTAssertEqual(object["returned"], .int(4))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(103))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 4)
+        XCTAssertEqual(points.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 101, 101, 103])
+        XCTAssertEqual(points.compactMap { $0.objectValue?["rrMs"]?.intValue }, [800, 790, 810, 840])
+        XCTAssertEqual(points[0].objectValue?["seq"], .int(0))
+        XCTAssertEqual(points[1].objectValue?["ord"], .int(0))
+        XCTAssertEqual(points[2].objectValue?["ord"], .int(1))
+        XCTAssertEqual(points[2].objectValue?["seq"], .int(1))
+        XCTAssertNotNil(points[0].objectValue?["iso"])
+        XCTAssertNil(points[0].objectValue?["srcChannel"])
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "rr_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(103),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 103])
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["rrMs"]?.intValue }, [810, 840])
+
+        let missingTable = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "rr_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(103),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withoutRRInterval().path)
+        ))
+        XCTAssertEqual(missingTable.objectValue?["returned"], .int(0))
+        XCTAssertEqual(missingTable.objectValue?["truncated"], .bool(false))
+        guard case .array(let emptyMissing) = missingTable.objectValue?["points"] else {
+            return XCTFail("Expected empty points when rrInterval table is missing")
+        }
+        XCTAssertEqual(emptyMissing.count, 0)
+
+        let legacy = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "rr_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(103),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(legacy.objectValue?["returned"], .int(1))
+        guard case .array(let legacyPoints) = legacy.objectValue?["points"] else {
+            return XCTFail("Expected legacy points")
+        }
+        XCTAssertEqual(legacyPoints[0].objectValue?["ts"], .int(101))
+        XCTAssertEqual(legacyPoints[0].objectValue?["rrMs"], .int(850))
+        XCTAssertNil(legacyPoints[0].objectValue?["seq"])
+        XCTAssertNil(legacyPoints[0].objectValue?["ord"])
+    }
+
+    func testRRSeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["rr_series", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withRRIntervals().path)
         ))
         XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
     }

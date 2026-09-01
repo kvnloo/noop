@@ -23,6 +23,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(names.contains("hr_series"))
         XCTAssertTrue(names.contains("sleep_stages"))
         XCTAssertTrue(names.contains("event_series"))
+        XCTAssertTrue(names.contains("rr_series"))
         for tool in values {
             let annotations = try XCTUnwrap(tool.objectValue?["annotations"]?.objectValue)
             XCTAssertEqual(annotations["readOnlyHint"], .bool(true))
