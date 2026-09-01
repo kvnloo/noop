@@ -38,7 +38,11 @@ Pass only if all of these hold:
 - `--version` stdout is non-empty and exit 0
 - `query --list-tools` exits 0 and stdout parses as a JSON array
 
-Fail (do not drive) if Swift is missing, the package will not build, or `--version` is empty.
+Verdicts:
+
+- PASS (exit 0): all four checks above.
+- INCONCLUSIVE (exit 2): `swift` is missing or the host is not macOS 13+. This is not a pass and not a product fail. Do not drive. Do not invent a Linux binary. Wait for a macOS 13+ Swift 5.9 host.
+- FAIL (exit 1): Swift is present but the package does not build, the binary is missing, or `--version` is empty.
 
 ## Drive
 
