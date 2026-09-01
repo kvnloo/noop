@@ -30,6 +30,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(names.contains("sleep_state_series"))
         XCTAssertTrue(names.contains("sleep_stages"))
         XCTAssertTrue(names.contains("event_series"))
+        XCTAssertTrue(names.contains("event_kinds"))
         XCTAssertTrue(names.contains("rr_series"))
         XCTAssertTrue(names.contains("workout_summary"))
         XCTAssertTrue(names.contains("sleep_summary"))
@@ -108,6 +109,7 @@ final class MCPServerTests: XCTestCase {
         let payload = try dispatcher.resourcePayload(uri: "noop://tools/catalog")
         XCTAssertEqual(payload, .array(NoopToolDispatcher.toolNames.map { .string($0) }))
         XCTAssertTrue(NoopToolDispatcher.toolNames.contains("sleep_state_series"))
+        XCTAssertTrue(NoopToolDispatcher.toolNames.contains("event_kinds"))
         XCTAssertFalse(NoopToolDispatcher.toolNames.contains("nzt"))
         XCTAssertFalse(NoopToolDispatcher.toolNames.contains("scores"))
     }

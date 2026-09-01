@@ -361,6 +361,15 @@ public func toolsList() -> JSONValue {
                 required: ["kind"]
             ),
             tool(
+                name: "event_kinds",
+                title: "Event Kinds",
+                description: "Return distinct stored event.kind values for one device. Read-only catalog; does not dump payloads or event rows. Missing event table returns empty kinds. Optional limit default 100, max 500.",
+                properties: [
+                    "limit": integerProperty("Maximum returned kinds, default 100, max 500."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
                 name: "rr_series",
                 title: "R-R Interval Series",
                 description: "Return a bounded intra-day R-R series matching WhoopStore.rrIntervals filters (srcChannel != spo2Ibi, tsSuspect != 1; NULLs kept). Not a 1Hz dump: suffix limit is the cap. Missing rrInterval table returns empty points.",

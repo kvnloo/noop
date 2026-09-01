@@ -74,7 +74,7 @@ public enum NoopCLIQuery {
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["to_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--limit":
-                guard toolName == "metric_series" || toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "sleep_stages" || toolName == "event_series" || toolName == "rr_series" else {
+                guard toolName == "metric_series" || toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "sleep_stages" || toolName == "event_series" || toolName == "event_kinds" || toolName == "rr_series" else {
                     throw unsupported(flag, toolName: toolName)
                 }
                 toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
@@ -94,7 +94,7 @@ public enum NoopCLIQuery {
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["bucket_seconds"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--device-id":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "event_kinds" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["device_id"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--include-zones":
                 guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }

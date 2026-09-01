@@ -3,8 +3,8 @@
 `noop-local-access` exposes bounded, read-only NOOP health data locally. It has no network or
 write/control path. Same names for MCP and `query`.
 
-Sixteen tools: `health_snapshot`, `metric_series`, `data_freshness`, `sleep_summary`,
-`workout_summary`, `hr_series`, `rr_series`, `event_series`, `sleep_stages`, `spo2_series`,
+Seventeen tools: `health_snapshot`, `metric_series`, `data_freshness`, `sleep_summary`,
+`workout_summary`, `hr_series`, `rr_series`, `event_series`, `event_kinds`, `sleep_stages`, `spo2_series`,
 `skin_temp_series`, `resp_series`, `step_series`, `gravity_series`, `battery_series`,
 `sleep_state_series`.
 
@@ -44,6 +44,7 @@ noop-local-access query battery_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query sleep_state_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query sleep_stages --days 14 --limit 7 --max-points 120
 noop-local-access query event_series --kind ALPHA --hours 6 --limit 50
+noop-local-access query event_kinds --limit 100
 noop-local-access query rr_series --hours 6 --limit 50
 ```
 
@@ -109,6 +110,9 @@ Arguments reuse the MCP defaults and bounds:
   `--from-ts` and `--to-ts` together, `--limit` (default 500, clamped to 1...2000), and
   `--device-id`. One kind per call. Unknown kinds and a missing `event` table return empty
   points. Stored `payloadJSON` is parsed as JSON when valid, otherwise returned as a string.
+- `event_kinds`: optional `--limit` (default 100, clamped to 1...500) and `--device-id`.
+  Distinct `event.kind` values for one device, ordered by kind. A missing `event` table
+  returns empty kinds. Does not dump payloads or event rows.
 - `rr_series`: optional `--hours` (default 6, clamped to 1...24), `--from-ts` and `--to-ts`
   together, `--limit` (default 500, clamped to 1...2000), and `--device-id`. Filters match
   WhoopStore.rrIntervals (`srcChannel != spo2Ibi`, `tsSuspect != 1`; NULLs kept). A missing

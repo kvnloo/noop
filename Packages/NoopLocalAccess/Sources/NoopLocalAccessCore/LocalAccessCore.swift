@@ -676,6 +676,19 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func eventKinds(deviceId: String, limit: Int) throws -> [String] {
+        guard tableNames.contains("event") else { return [] }
+        let cap = max(1, limit)
+        return try dbQueue.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT DISTINCT kind FROM event
+                WHERE deviceId = ?
+                ORDER BY kind ASC
+                LIMIT ?
+                """, arguments: [deviceId, cap])
+        }
+    }
+
     /// Bounded WhoopStore.rrIntervals twin: exclude spo2Ibi and tsSuspect==1, keep NULLs.
     /// Suffix-capped (newest first in SQL, then reversed) so this is never an unbounded 1Hz dump.
     public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) throws -> [RRIntervalRow] {
@@ -1456,6 +1469,21 @@ public final class NoopDataAccess {
                     "payload": parseEventPayloadJSON(row.payloadJSON),
                 ])
             }),
+        ])
+    }
+
+    public func eventKinds(
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let rows = try store.eventKinds(deviceId: resolvedDeviceId, limit: limit + 1)
+        let truncated = rows.count > limit
+        let kinds = Array(rows.prefix(limit))
+        return .object([
+            "returned": .int(kinds.count),
+            "truncated": .bool(truncated),
+            "kinds": .array(kinds.map { .string($0) }),
         ])
     }
 

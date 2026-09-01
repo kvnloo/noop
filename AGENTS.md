@@ -17,7 +17,7 @@ adds no policy.
 ## NoopLocalAccess tools
 
 `Packages/NoopLocalAccess` (`noop-local-access` MCP/CLI): bounded, read-only, no
-network, no write/control. Same names for MCP and `query`. Sixteen tools:
+network, no write/control. Same names for MCP and `query`. Seventeen tools:
 
 - `health_snapshot`
 - `metric_series`
@@ -27,6 +27,7 @@ network, no write/control. Same names for MCP and `query`. Sixteen tools:
 - `hr_series`
 - `rr_series`
 - `event_series`
+- `event_kinds`
 - `sleep_stages`
 - `spo2_series`
 - `skin_temp_series`

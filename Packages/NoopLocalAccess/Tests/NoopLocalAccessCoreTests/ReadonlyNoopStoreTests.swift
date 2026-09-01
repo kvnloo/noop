@@ -63,6 +63,20 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(stats.decodedRows, 9)
     }
 
+    func testReadsDistinctEventKindsWithoutOpeningWritableHandle() throws {
+        let url = try TemporaryDatabase.withEvents()
+        let store = try ReadonlyNoopStore(path: url.path)
+
+        XCTAssertTrue(try store.isReadOnlyForTest())
+        XCTAssertEqual(try store.eventKinds(deviceId: "my-whoop", limit: 10), ["ALPHA", "BETA"])
+        XCTAssertEqual(try store.eventKinds(deviceId: "my-whoop", limit: 1), ["ALPHA"])
+        XCTAssertEqual(try store.eventKinds(deviceId: "other-device", limit: 10), ["ALPHA"])
+        XCTAssertEqual(try store.eventKinds(deviceId: "no-such", limit: 10), [])
+
+        let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
+        XCTAssertEqual(try missing.eventKinds(deviceId: "my-whoop", limit: 10), [])
+    }
+
     func testReadsRRIntervalsMatchingWhoopStoreFilters() throws {
         let url = try TemporaryDatabase.withRRIntervals()
         let store = try ReadonlyNoopStore(path: url.path)

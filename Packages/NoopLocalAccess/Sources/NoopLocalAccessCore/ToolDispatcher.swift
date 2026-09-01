@@ -25,6 +25,7 @@ public final class NoopToolDispatcher {
         "sleep_state_series",
         "sleep_stages",
         "event_series",
+        "event_kinds",
         "rr_series",
     ]
 
@@ -193,6 +194,11 @@ public final class NoopToolDispatcher {
                 fromTs: fromTs,
                 toTs: toTs,
                 limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "event_kinds":
+            return try data().eventKinds(
+                limit: boundedLimit(arguments["limit"], default: 100, max: 500),
                 deviceId: arguments["device_id"]?.stringValue
             )
         case "rr_series":
