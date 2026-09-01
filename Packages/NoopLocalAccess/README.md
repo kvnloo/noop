@@ -13,7 +13,8 @@ Optional flags: `include_zones` and `include_notes` on `workout_summary`; `inclu
 
 `data_freshness` last-ts keys (missing tables stay `null`): `latestHeartRateSample`,
 `latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`, `latestBattery`,
-`latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`.
+`latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`,
+`latestSleepState`.
 
 MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
 `noop-local-access query --list-tools` and `noop-local-access tools` print that same JSON array.
@@ -58,7 +59,7 @@ Arguments reuse the MCP defaults and bounds:
 - `data_freshness`: no tool arguments. Same object as before, plus nullable
   `latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`,
   `latestBattery`, `latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`,
-  and `latestGravity` last-ts fields (missing tables are `null`).
+  `latestGravity`, and `latestSleepState` last-ts fields (missing tables are `null`).
   `latestHeartRateSample` is unchanged. New last-ts keys use the same
   `{ts, iso, ageSeconds}` shape as the other last-ts keys.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000), `--include-motion` (default off), `--include-sleep-state` (default off), and `--include-start-adjusted` (default off). Default rows still return `hasStages` only. When `--include-motion` is set, each row gets a bounded `motion` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-sleep-state` is set, each row gets a bounded `sleepState` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-start-adjusted` is set, a row includes `startTsAdjusted` only if that column is present and non-null (pre-v14 tables omit the key).

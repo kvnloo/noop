@@ -68,6 +68,7 @@ final class CLIQueryTests: XCTestCase {
             "latestHeartRateSample", "latestRrInterval", "latestEvent", "latestSleepSession",
             "latestWorkout", "latestBattery",
             "latestStep", "latestResp", "latestSkinTemp", "latestSpo2", "latestGravity",
+            "latestSleepState",
             "storage", "coverage", "metricKeys",
         ]
         for key in requiredKeys {
@@ -85,6 +86,7 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(seededObject["latestSkinTemp"], .null)
         XCTAssertEqual(seededObject["latestSpo2"], .null)
         XCTAssertEqual(seededObject["latestGravity"], .null)
+        XCTAssertEqual(seededObject["latestSleepState"], .null)
         XCTAssertEqual(
             Set(seededObject["latestWorkout"]?.objectValue?.keys ?? []),
             Set(seededObject["latestHeartRateSample"]?.objectValue?.keys ?? [])
@@ -235,6 +237,28 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertNil(gravity.objectValue?["analysisFingerprint"])
         XCTAssertNil(gravity.objectValue?["score"])
         XCTAssertNil(gravity.objectValue?["recoveryScore"])
+        XCTAssertEqual(gravity.objectValue?["latestSleepState"], .null)
+
+        let sleepState = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSleepStateSamples().path)
+        ))
+        XCTAssertEqual(sleepState.objectValue?["latestSleepState"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(sleepState.objectValue?["latestSleepState"]?.objectValue?.keys ?? []),
+            Set(sleepState.objectValue?["latestHeartRateSample"]?.objectValue?.keys ?? [])
+        )
+        XCTAssertEqual(
+            Set(sleepState.objectValue?["latestSleepState"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+        XCTAssertEqual(sleepState.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(sleepState.objectValue?["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+        XCTAssertEqual(sleepState.objectValue?["latestGravity"], .null)
+        XCTAssertNil(sleepState.objectValue?["analysisFingerprint"])
+        XCTAssertNil(sleepState.objectValue?["score"])
+        XCTAssertNil(sleepState.objectValue?["recoveryScore"])
     }
 
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {

@@ -47,7 +47,8 @@ Optional flags (MCP names; CLI uses `--include-*`):
 `data_freshness` last-ts keys (missing tables stay `null`):
 `latestHeartRateSample`, `latestRrInterval`, `latestEvent`,
 `latestSleepSession`, `latestWorkout`, `latestBattery`,
-`latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`.
+`latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`,
+`latestSleepState`.
 
 `sleep_summary` still returns `hasStages` only unless `include_motion`,
 `include_sleep_state`, or `include_start_adjusted` is set. Motion and sleep

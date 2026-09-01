@@ -462,6 +462,13 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func latestSleepStateTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("sleepStateSample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM sleepStateSample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -858,6 +865,7 @@ public final class NoopDataAccess {
         let latestSkinTemp = try store.latestSkinTempTs(deviceId: deviceId)
         let latestSpo2 = try store.latestSpo2Ts(deviceId: deviceId)
         let latestGravity = try store.latestGravityTs(deviceId: deviceId)
+        let latestSleepState = try store.latestSleepStateTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -883,6 +891,7 @@ public final class NoopDataAccess {
             "latestSkinTemp": timestampJSON(latestSkinTemp, now: now),
             "latestSpo2": timestampJSON(latestSpo2, now: now),
             "latestGravity": timestampJSON(latestGravity, now: now),
+            "latestSleepState": timestampJSON(latestSleepState, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),
