@@ -30,8 +30,8 @@ BIN="$PKG/.build/debug/noop-local-access"
 
 build() {
   if ! command -v swift >/dev/null 2>&1; then
-    echo "nla-verify: swift not on PATH. macOS 13+ required. inconclusive on this host." >&2
-    return 2
+    echo "nla-verify doctor: INCONCLUSIVE host lacks Swift 5.9 / macOS 13+" >&2
+    exit 2
   fi
   swift build --package-path "$PKG" --product noop-local-access
 }
