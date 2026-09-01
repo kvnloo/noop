@@ -222,10 +222,11 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "workout_summary",
                 title: "Workout Summary",
-                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data. Default keeps hasZones only and omits zonesJSON. include_zones attaches a bounded decoded zones payload with a truncated flag.",
+                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data. Default keeps hasZones/hasNotes only and omits zonesJSON and notes text. include_zones and include_notes attach bounded payloads with a truncated flag.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 90, max 4000."),
                     "include_zones": booleanProperty("When true, attach a bounded zones payload per workout. Default false; response shape is otherwise unchanged."),
+                    "include_notes": booleanProperty("When true, attach a bounded notes payload per workout. Default false; response shape is otherwise unchanged."),
                 ]
             ),
             tool(

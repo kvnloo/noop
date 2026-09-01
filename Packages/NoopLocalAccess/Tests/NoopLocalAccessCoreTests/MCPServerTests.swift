@@ -31,6 +31,11 @@ final class MCPServerTests: XCTestCase {
             workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_zones"]?.objectValue?["type"],
             .string("boolean")
         )
+        XCTAssertNotNil(workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_notes"])
+        XCTAssertEqual(
+            workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_notes"]?.objectValue?["type"],
+            .string("boolean")
+        )
         for tool in values {
             let annotations = try XCTUnwrap(tool.objectValue?["annotations"]?.objectValue)
             XCTAssertEqual(annotations["readOnlyHint"], .bool(true))

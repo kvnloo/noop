@@ -99,6 +99,9 @@ public enum NoopCLIQuery {
             case "--include-zones":
                 guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["include_zones"] = .bool(true)
+            case "--include-notes":
+                guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["include_notes"] = .bool(true)
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }

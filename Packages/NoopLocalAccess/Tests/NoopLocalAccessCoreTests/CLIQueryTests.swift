@@ -12,6 +12,7 @@ final class CLIQueryTests: XCTestCase {
             ("sleep_summary", ["--days", "30"]),
             ("workout_summary", ["--days", "90"]),
             ("workout_summary", ["--days", "90", "--include-zones"]),
+            ("workout_summary", ["--days", "90", "--include-notes"]),
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
@@ -147,6 +148,10 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["sleep_summary", "--include-zones"])
         assertUsageError(["hr_series", "--include-zones"])
         assertUsageError(["workout_summary", "--include-zones", "--include-zones"])
+        assertUsageError(["health_snapshot", "--include-notes"])
+        assertUsageError(["sleep_summary", "--include-notes"])
+        assertUsageError(["hr_series", "--include-notes"])
+        assertUsageError(["workout_summary", "--include-notes", "--include-notes"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -689,6 +694,8 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNotNil(object["hasZones"])
             XCTAssertNil(object["zones"])
             XCTAssertNil(object["zonesJSON"])
+            XCTAssertNotNil(object["hasNotes"])
+            XCTAssertNil(object["notes"])
             if object["hasZones"] == .bool(true) { sawZones = true }
             if object["hasZones"] == .bool(false) { sawNoZones = true }
         }
@@ -760,6 +767,115 @@ final class CLIQueryTests: XCTestCase {
                 "arguments": .object([
                     "days": .int(3),
                     "include_zones": .bool(true),
+                ]),
+            ])
+        )))
+        XCTAssertEqual(
+            mcp.objectValue?["result"]?.objectValue?["structuredContent"],
+            payload
+        )
+    }
+
+    func testWorkoutSummaryParsesIncludeNotesFlag() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["workout_summary", "--days", "14"])
+        XCTAssertEqual(omitted.toolName, "workout_summary")
+        XCTAssertEqual(omitted.arguments, ["days": .int(14)])
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "workout_summary",
+            "--days", "14",
+            "--include-notes",
+            "--include-zones",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "workout_summary")
+        XCTAssertEqual(parsed.arguments, [
+            "days": .int(14),
+            "include_notes": .bool(true),
+            "include_zones": .bool(true),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testWorkoutSummaryDefaultOmitsNotesText() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "workout_summary",
+            arguments: ["days": .int(3)],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withWorkoutNotes(now: now).path)
+        ))
+        XCTAssertEqual(payload.objectValue?["count"], .int(4))
+        guard case .array(let workouts) = payload.objectValue?["workouts"] else {
+            return XCTFail("Expected workouts")
+        }
+        XCTAssertEqual(workouts.count, 4)
+        var sawNotes = false
+        var sawNoNotes = false
+        for workout in workouts {
+            let object = try XCTUnwrap(workout.objectValue)
+            XCTAssertNotNil(object["hasNotes"])
+            XCTAssertNil(object["notes"])
+            if object["hasNotes"] == .bool(true) { sawNotes = true }
+            if object["hasNotes"] == .bool(false) { sawNoNotes = true }
+        }
+        XCTAssertTrue(sawNotes)
+        XCTAssertTrue(sawNoNotes)
+    }
+
+    func testWorkoutSummaryIncludeNotesAttachesBoundedPayload() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let shortStart = now - 3_600
+        let noneStart = now - 7_200
+        let hugeStart = now - 10_800
+        let emptyStart = now - 14_400
+        let configuration = LocalAccessConfiguration(databasePath: try TemporaryDatabase.withWorkoutNotes(now: now).path)
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "workout_summary",
+            arguments: [
+                "days": .int(3),
+                "include_notes": .bool(true),
+            ],
+            configuration: configuration
+        ))
+        guard case .array(let workouts) = payload.objectValue?["workouts"] else {
+            return XCTFail("Expected workouts")
+        }
+        XCTAssertEqual(workouts.count, 4)
+
+        let short = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(shortStart) }?.objectValue)
+        XCTAssertEqual(short["hasNotes"], .bool(true))
+        XCTAssertEqual(short["notes"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(short["notes"]?.objectValue?["payload"], .string("easy tempo"))
+        XCTAssertNil(short["zones"])
+
+        let none = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(noneStart) }?.objectValue)
+        XCTAssertEqual(none["hasNotes"], .bool(false))
+        XCTAssertEqual(none["notes"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(none["notes"]?.objectValue?["payload"], .null)
+
+        let huge = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(hugeStart) }?.objectValue)
+        XCTAssertEqual(huge["hasNotes"], .bool(true))
+        XCTAssertEqual(huge["notes"]?.objectValue?["truncated"], .bool(true))
+        guard case .string(let noteText) = huge["notes"]?.objectValue?["payload"] else {
+            return XCTFail("Expected truncated notes payload")
+        }
+        XCTAssertEqual(noteText.count, 2048)
+        XCTAssertTrue(noteText.allSatisfy { $0 == "x" })
+
+        let empty = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(emptyStart) }?.objectValue)
+        XCTAssertEqual(empty["hasNotes"], .bool(true))
+        XCTAssertEqual(empty["notes"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(empty["notes"]?.objectValue?["payload"], .string(""))
+
+        let mcp = try XCTUnwrap(try NoopMCPServer(configuration: configuration).handle(RPCRequest(
+            id: .int(1),
+            method: "tools/call",
+            params: .object([
+                "name": .string("workout_summary"),
+                "arguments": .object([
+                    "days": .int(3),
+                    "include_notes": .bool(true),
                 ]),
             ])
         )))

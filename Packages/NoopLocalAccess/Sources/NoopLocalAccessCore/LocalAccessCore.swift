@@ -733,7 +733,7 @@ public final class NoopDataAccess {
         ])
     }
 
-    public func workoutSummary(days: Int, includeZones: Bool = false) throws -> JSONValue {
+    public func workoutSummary(days: Int, includeZones: Bool = false, includeNotes: Bool = false) throws -> JSONValue {
         let (fromTs, toTs) = timestampRange(days: days)
         let imported = try store.workouts(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
         let apple = try store.workouts(deviceId: "apple-health", from: fromTs, to: toTs, limit: 5000)
@@ -751,7 +751,7 @@ public final class NoopDataAccess {
             "totalDurationMin": .double(durationMin),
             "totalEnergyKcal": .double(calories),
             "totalStrain": .double(strain),
-            "workouts": .array(rows.suffix(300).map { workoutJSON($0, includeZones: includeZones) }),
+            "workouts": .array(rows.suffix(300).map { workoutJSON($0, includeZones: includeZones, includeNotes: includeNotes) }),
         ])
     }
 
@@ -1051,7 +1051,7 @@ private func sleepJSON(_ row: SleepSessionRow) -> JSONValue {
     ])
 }
 
-private func workoutJSON(_ row: WorkoutRow, includeZones: Bool = false) -> JSONValue {
+private func workoutJSON(_ row: WorkoutRow, includeZones: Bool = false, includeNotes: Bool = false) -> JSONValue {
     var object: [String: JSONValue] = [
         "startTs": .int(row.startTs),
         "endTs": .int(row.endTs),
@@ -1071,6 +1071,13 @@ private func workoutJSON(_ row: WorkoutRow, includeZones: Bool = false) -> JSONV
     if includeZones {
         let decoded = decodeWorkoutZones(row.zonesJSON)
         object["zones"] = .object([
+            "truncated": .bool(decoded.truncated),
+            "payload": decoded.payload,
+        ])
+    }
+    if includeNotes {
+        let decoded = boundWorkoutNotes(row.notes)
+        object["notes"] = .object([
             "truncated": .bool(decoded.truncated),
             "payload": decoded.payload,
         ])
@@ -1244,10 +1251,25 @@ private func jsonDouble(_ value: Any?) -> Double? {
 
 private let workoutZonesMaxEntries = 32
 private let workoutZonesMaxStringChars = 2048
+private let workoutNotesMaxStringChars = 2048
 
 private struct WorkoutZonesDecode {
     let payload: JSONValue
     let truncated: Bool
+}
+
+private struct WorkoutNotesDecode {
+    let payload: JSONValue
+    let truncated: Bool
+}
+
+private func boundWorkoutNotes(_ notes: String?) -> WorkoutNotesDecode {
+    guard let notes else {
+        return WorkoutNotesDecode(payload: .null, truncated: false)
+    }
+    let truncated = notes.count > workoutNotesMaxStringChars
+    let kept = truncated ? String(notes.prefix(workoutNotesMaxStringChars)) : notes
+    return WorkoutNotesDecode(payload: .string(kept), truncated: truncated)
 }
 
 private func decodeWorkoutZones(_ zonesJSON: String?) -> WorkoutZonesDecode {

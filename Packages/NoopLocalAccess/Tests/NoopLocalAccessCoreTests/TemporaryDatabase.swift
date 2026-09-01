@@ -229,6 +229,27 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withWorkoutNotes(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            func insertWorkout(start: Int, sport: String, notes: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO workout(deviceId, startTs, endTs, sport, source, durationS, energyKcal, avgHr, maxHr, strain, notes)
+                    VALUES (?, ?, ?, ?, 'whoop', 1800, 310, 140, 171, 8.5, ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sport, notes]
+                )
+            }
+            try insertWorkout(start: now - 3_600, sport: "run", notes: "easy tempo")
+            try insertWorkout(start: now - 7_200, sport: "bike", notes: nil)
+            try insertWorkout(start: now - 10_800, sport: "row", notes: String(repeating: "x", count: 3000))
+            try insertWorkout(start: now - 14_400, sport: "yoga", notes: "")
+        }
+        return url
+    }
+
     static func withoutSleepSession() throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

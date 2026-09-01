@@ -44,7 +44,8 @@ public final class NoopToolDispatcher {
         case "workout_summary":
             return try data().workoutSummary(
                 days: boundedDays(arguments["days"], default: 90, max: 4000),
-                includeZones: arguments["include_zones"]?.boolValue ?? false
+                includeZones: arguments["include_zones"]?.boolValue ?? false,
+                includeNotes: arguments["include_notes"]?.boolValue ?? false
             )
         case "hr_series":
             let fromTs = arguments["from_ts"]?.intValue
