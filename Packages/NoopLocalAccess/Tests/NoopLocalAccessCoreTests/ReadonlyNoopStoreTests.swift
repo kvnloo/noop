@@ -159,6 +159,27 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(try missing.stepBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
     }
 
+    func testReadsGravityBucketsAndReturnsEmptyWhenTableMissing() throws {
+        let url = try TemporaryDatabase.withGravitySamples()
+        let store = try ReadonlyNoopStore(path: url.path)
+
+        XCTAssertTrue(try store.isReadOnlyForTest())
+        let buckets = try store.gravityBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
+        XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
+        XCTAssertEqual(buckets.map(\.x), [1.0, 3.0, 5.0])
+        XCTAssertEqual(buckets.map(\.y), [2.0, 4.0, 6.0])
+        XCTAssertEqual(buckets.map(\.z), [9.0, 7.0, 5.0])
+
+        let grouped = try store.gravityBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 2)
+        XCTAssertEqual(grouped.map(\.ts), [100, 102])
+        XCTAssertEqual(grouped.map(\.x), [2.0, 5.0])
+        XCTAssertEqual(grouped.map(\.y), [3.0, 6.0])
+        XCTAssertEqual(grouped.map(\.z), [8.0, 5.0])
+
+        let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
+        XCTAssertEqual(try missing.gravityBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+    }
+
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
         let url = try TemporaryDatabase.foreignNoopLike()
 

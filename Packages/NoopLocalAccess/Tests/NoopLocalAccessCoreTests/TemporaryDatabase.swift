@@ -294,6 +294,28 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withGravitySamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE gravitySample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    x DOUBLE NOT NULL, y DOUBLE NOT NULL, z DOUBLE NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO gravitySample(deviceId, ts, x, y, z) VALUES
+                    ('my-whoop', 100, 1.0, 2.0, 9.0),
+                    ('my-whoop', 101, 3.0, 4.0, 7.0),
+                    ('my-whoop', 102, 5.0, 6.0, 5.0),
+                    ('other-device', 102, 0.5, 0.5, 0.5)
+                """)
+        }
+        return url
+    }
+
     static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)
