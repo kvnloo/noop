@@ -16,6 +16,16 @@ public struct NoopCLIQueryRequest: Equatable, Sendable {
     }
 }
 
+public struct NoopCLIResourceRequest: Equatable, Sendable {
+    public let uri: String
+    public let configuration: LocalAccessConfiguration
+
+    public init(uri: String, configuration: LocalAccessConfiguration = .environment()) {
+        self.uri = uri
+        self.configuration = configuration
+    }
+}
+
 public enum NoopCLIQueryError: Error, CustomStringConvertible, Equatable {
     case usage(String)
 
@@ -220,6 +230,48 @@ public enum NoopCLIQuery {
         }
     }
 
+    public static let resourceURIs: [String] = [
+        "noop://health/snapshot",
+        "noop://data/freshness",
+        "noop://metrics/catalog",
+        "noop://sources",
+        "noop://tools/catalog",
+    ]
+
+    public static func parseResourceCommand(arguments: [String]) throws -> NoopCLIResourceRequest {
+        guard let raw = arguments.first, !raw.hasPrefix("-") else {
+            throw NoopCLIQueryError.usage("resource requires one uri")
+        }
+        guard let uri = canonicalizeResourceURI(raw) else {
+            throw NoopCLIQueryError.usage("unknown resource uri")
+        }
+
+        var configuration = LocalAccessConfiguration.environment()
+        var seenFlags = Set<String>()
+        var index = 1
+        while index < arguments.count {
+            let flag = arguments[index]
+            guard flag.hasPrefix("--") else {
+                throw NoopCLIQueryError.usage("resource does not accept additional positional arguments")
+            }
+            guard seenFlags.insert(flag).inserted else {
+                throw NoopCLIQueryError.usage("duplicate resource flag: \(flag)")
+            }
+            index += 1
+            switch flag {
+            case "--db-path":
+                configuration.databasePath = try requiredValue(flag, arguments: arguments, index: &index)
+            default:
+                throw NoopCLIQueryError.usage("unknown resource flag")
+            }
+        }
+        return NoopCLIResourceRequest(uri: uri, configuration: configuration)
+    }
+
+    public static func resourcePayload(_ request: NoopCLIResourceRequest) throws -> JSONValue {
+        try NoopToolDispatcher(configuration: request.configuration).resourcePayload(uri: request.uri)
+    }
+
     public static func encodeLine(_ value: JSONValue) throws -> Data {
         var data = try JSONEncoder().encode(value)
         data.append(0x0A)
@@ -240,6 +292,17 @@ public enum NoopCLIQuery {
             throw NoopCLIQueryError.usage("value for \(flag) must be an integer")
         }
         return .int(value)
+    }
+
+    private static func canonicalizeResourceURI(_ raw: String) -> String? {
+        let path: String
+        if raw.hasPrefix("noop://") {
+            path = String(raw.dropFirst("noop://".count))
+        } else {
+            path = raw
+        }
+        let uri = "noop://\(path)"
+        return resourceURIs.contains(uri) ? uri : nil
     }
 
     private static func unsupported(_ flag: String, toolName: String) -> NoopCLIQueryError {

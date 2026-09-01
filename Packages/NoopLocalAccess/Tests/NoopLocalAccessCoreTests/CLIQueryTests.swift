@@ -2553,8 +2553,88 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())), resource)
     }
 
+    func testResourceCommandPayloadMatchesMCPResourcePayload() throws {
+        let url = try TemporaryDatabase.withEvents()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let dispatcher = NoopToolDispatcher(configuration: configuration)
+        let uris = [
+            "noop://tools/catalog",
+            "noop://data/freshness",
+            "noop://health/snapshot",
+            "noop://metrics/catalog",
+            "noop://sources",
+        ]
+        for uri in uris {
+            let parsed = try NoopCLIQuery.parseResourceCommand(arguments: [uri, "--db-path", url.path])
+            XCTAssertEqual(parsed.uri, uri)
+            XCTAssertEqual(parsed.configuration.databasePath, url.path)
+            let cli = try NoopCLIQuery.resourcePayload(parsed)
+            let mcp = try dispatcher.resourcePayload(uri: uri)
+            XCTAssertEqual(
+                withoutVolatileFields(cli),
+                withoutVolatileFields(mcp),
+                "CLI/MCP resource payload mismatch for \(uri)"
+            )
+        }
+
+        let aliases: [(String, String)] = [
+            ("tools/catalog", "noop://tools/catalog"),
+            ("data/freshness", "noop://data/freshness"),
+            ("health/snapshot", "noop://health/snapshot"),
+            ("metrics/catalog", "noop://metrics/catalog"),
+            ("sources", "noop://sources"),
+        ]
+        for (alias, canonical) in aliases {
+            let parsed = try NoopCLIQuery.parseResourceCommand(arguments: [alias])
+            XCTAssertEqual(parsed.uri, canonical)
+            if canonical == "noop://tools/catalog" || canonical == "noop://metrics/catalog" || canonical == "noop://sources" {
+                let cli = try NoopCLIQuery.resourcePayload(parsed)
+                let mcp = try dispatcher.resourcePayload(uri: canonical)
+                XCTAssertEqual(cli, mcp)
+            }
+        }
+
+        let catalog = try NoopCLIQuery.resourcePayload(
+            try NoopCLIQuery.parseResourceCommand(arguments: ["noop://tools/catalog"])
+        )
+        XCTAssertEqual(catalog, NoopCLIQuery.listToolsPayload())
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("nzt"))
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("scores"))
+
+        let line = try NoopCLIQuery.encodeLine(catalog)
+        XCTAssertEqual(line.last, 0x0A)
+        XCTAssertEqual(
+            try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())),
+            try dispatcher.resourcePayload(uri: "noop://tools/catalog")
+        )
+    }
+
+    func testResourceCommandUnknownURIIsUsage64() {
+        assertResourceUsageError([])
+        assertResourceUsageError(["noop://unknown"])
+        assertResourceUsageError(["unknown"])
+        assertResourceUsageError(["noop://tools/catalog/"])
+        assertResourceUsageError(["noop://nzt"])
+        assertResourceUsageError(["noop://scores"])
+        assertResourceUsageError(["noop://tools/catalog", "extra"])
+        assertResourceUsageError(["noop://tools/catalog", "--bogus"])
+        assertResourceUsageError(["--db-path", "/tmp/noop.sqlite"])
+        assertResourceUsageError(["noop://tools/catalog", "--db-path"])
+        assertResourceUsageError(["noop://tools/catalog", "--db-path", "/tmp/a", "--db-path", "/tmp/b"])
+        assertResourceUsageError(["health_snapshot"])
+    }
+
     private func assertUsageError(_ arguments: [String], file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertThrowsError(try NoopCLIQuery.parse(arguments: arguments), file: file, line: line) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)", file: file, line: line)
+            }
+            XCTAssertEqual(error.exitCode, 64, file: file, line: line)
+        }
+    }
+
+    private func assertResourceUsageError(_ arguments: [String], file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertThrowsError(try NoopCLIQuery.parseResourceCommand(arguments: arguments), file: file, line: line) { error in
             guard let error = error as? NoopCLIQueryError else {
                 return XCTFail("Expected usage error, got \(error)", file: file, line: line)
             }

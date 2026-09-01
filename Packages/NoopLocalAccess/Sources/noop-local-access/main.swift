@@ -15,6 +15,8 @@ enum NoopLocalAccessMain {
             runQuery(arguments: args)
         case "tools":
             runTools(arguments: args)
+        case "resource":
+            runResource(arguments: args)
         case "codex-config":
             print(codexConfig(arguments: args))
         case "--help", "-h", "help":
@@ -63,6 +65,33 @@ enum NoopLocalAccessMain {
         } catch let error as NoopCLIQueryError {
             fputs("[noop-local-access] \(error)\n", stderr)
             Foundation.exit(error.exitCode)
+        } catch {
+            fputs("[noop-local-access] runtime error\n", stderr)
+            Foundation.exit(1)
+        }
+    }
+
+    private static func runResource(arguments: [String]) {
+        if arguments == ["--help"] || arguments == ["-h"] {
+            print(helpText)
+            return
+        }
+        do {
+            let request = try NoopCLIQuery.parseResourceCommand(arguments: arguments)
+            let payload = try NoopCLIQuery.resourcePayload(request)
+            FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(payload))
+        } catch let error as NoopCLIQueryError {
+            fputs("[noop-local-access] \(error)\n", stderr)
+            Foundation.exit(error.exitCode)
+        } catch let error as LocalAccessError {
+            let message: String
+            if case .databaseUnavailable = error {
+                message = "NOOP database is unavailable"
+            } else {
+                message = error.description
+            }
+            fputs("[noop-local-access] \(message)\n", stderr)
+            Foundation.exit(1)
         } catch {
             fputs("[noop-local-access] runtime error\n", stderr)
             Foundation.exit(1)
@@ -128,6 +157,7 @@ enum NoopLocalAccessMain {
       noop-local-access query <tool> [flags]
       noop-local-access query --list-tools
       noop-local-access tools
+      noop-local-access resource <uri> [--db-path PATH]
       noop-local-access codex-config [--db-path /absolute/path/to/whoop.sqlite]
 
     Query tools:
@@ -148,6 +178,14 @@ enum NoopLocalAccessMain {
       event_series --kind KIND [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--limit N] [--device-id ID]
       event_kinds [--limit N] [--device-id ID]
       rr_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--limit N] [--device-id ID]
+
+    Resource URIs (same JSON as MCP resourcePayload):
+      noop://tools/catalog
+      noop://data/freshness
+      noop://health/snapshot
+      noop://metrics/catalog
+      noop://sources
+      Short forms tools/catalog, data/freshness, health/snapshot, metrics/catalog, sources are accepted.
 
     Query options:
       --db-path PATH    Explicit NOOP SQLite path. Otherwise NOOP_DB_PATH or the official app container is used.
