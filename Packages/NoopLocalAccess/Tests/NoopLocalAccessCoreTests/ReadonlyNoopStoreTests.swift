@@ -25,6 +25,25 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(stats.decodedRows, 4)
         XCTAssertEqual(stats.rawBatches, 1)
         XCTAssertEqual(stats.rawBytes, 12)
+        XCTAssertEqual(try store.events(deviceId: "my-whoop", kind: "ALPHA", from: 0, to: 1000, limit: 10), [])
+    }
+
+    func testReadsEventRowsByKindWithoutOpeningWritableHandle() throws {
+        let url = try TemporaryDatabase.withEvents()
+        let store = try ReadonlyNoopStore(path: url.path)
+
+        XCTAssertTrue(try store.isReadOnlyForTest())
+        let alpha = try store.events(deviceId: "my-whoop", kind: "ALPHA", from: 100, to: 102, limit: 10)
+        XCTAssertEqual(alpha.map(\.ts), [100, 101, 102])
+        XCTAssertEqual(alpha.map(\.kind), ["ALPHA", "ALPHA", "ALPHA"])
+        XCTAssertEqual(alpha.map(\.payloadJSON), [#"{"ok":true,"n":1}"#, "not-json", #"{"later":true}"#])
+        XCTAssertEqual(try store.events(deviceId: "my-whoop", kind: "NO_SUCH_KIND", from: 0, to: 1000, limit: 10), [])
+
+        let suffix = try store.events(deviceId: "my-whoop", kind: "ALPHA", from: 100, to: 102, limit: 2)
+        XCTAssertEqual(suffix.map(\.ts), [101, 102])
+
+        let stats = try store.storageStats()
+        XCTAssertEqual(stats.decodedRows, 9)
     }
 
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {

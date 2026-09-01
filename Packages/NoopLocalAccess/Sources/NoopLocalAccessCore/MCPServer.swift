@@ -250,6 +250,20 @@ public func toolsList() -> JSONValue {
                     "max_points": integerProperty("Maximum stage segments per session, default 200, max 2000."),
                 ]
             ),
+            tool(
+                name: "event_series",
+                title: "Event Series",
+                description: "Return a bounded read of one stored event.kind. kind is required; this is not a dump of every kind. payloadJSON is parsed as JSON when valid, otherwise returned as a string. Missing tables and unknown kinds return empty points.",
+                properties: [
+                    "kind": stringProperty("Required event.kind filter. One kind per call."),
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ],
+                required: ["kind"]
+            ),
         ]),
     ])
 }

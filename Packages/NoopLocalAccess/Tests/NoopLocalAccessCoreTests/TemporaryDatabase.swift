@@ -147,4 +147,26 @@ enum TemporaryDatabase {
         }
         return url
     }
+
+    static func withEvents() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE event(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL, kind TEXT NOT NULL,
+                    payloadJSON TEXT NOT NULL, PRIMARY KEY(deviceId, ts, kind)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO event(deviceId, ts, kind, payloadJSON) VALUES
+                    ('my-whoop', 100, 'ALPHA', '{"ok":true,"n":1}'),
+                    ('my-whoop', 101, 'ALPHA', 'not-json'),
+                    ('my-whoop', 102, 'ALPHA', '{"later":true}'),
+                    ('my-whoop', 103, 'BETA', '{"other":1}'),
+                    ('other-device', 102, 'ALPHA', '{"skip":1}')
+                """)
+        }
+        return url
+    }
 }
