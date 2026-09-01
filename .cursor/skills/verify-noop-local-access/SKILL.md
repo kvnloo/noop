@@ -7,7 +7,7 @@ description: Drive the NoopLocalAccess CLI and MCP stdio on kvnloo/noop the way 
 
 Primary surface is the `noop-local-access` CLI. MCP is the same dispatcher over stdio (`noop-local-access mcp`). The iOS/Android apps are out of scope.
 
-macOS 13+ with Swift 5.9 is required (`Package.swift` platforms `.macOS(.v13)`). This skill is inconclusive on Linux without Swift. Do not invent a passing result.
+The CLI verifies on Linux or macOS whenever Swift 5.9+ is on PATH. `Package.swift` lists `.macOS(.v13)` as the Darwin floor only; SPM has no Linux platform case. This skill is INCONCLUSIVE (exit 2) when Swift is missing. Do not invent a passing result. iOS/macOS SwiftUI apps are out of scope.
 
 ## Launch
 
@@ -41,7 +41,7 @@ Pass only if all of these hold:
 Verdicts:
 
 - PASS (exit 0): all four checks above.
-- INCONCLUSIVE (exit 2): `swift` is missing or the host is not macOS 13+. This is not a pass and not a product fail. Do not drive. Do not invent a Linux binary. Wait for a macOS 13+ Swift 5.9 host.
+- INCONCLUSIVE (exit 2): `swift` is missing. This is not a pass and not a product fail. Do not drive. Do not invent a binary. Install Swift 5.9+ on this Linux or macOS host, then rerun doctor.
 - FAIL (exit 1): Swift is present but the package does not build, the binary is missing, or `--version` is empty.
 
 ## Drive
