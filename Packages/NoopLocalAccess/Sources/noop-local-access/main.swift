@@ -13,6 +13,9 @@ enum NoopLocalAccessMain {
         } catch let error as NoopCLIQueryError {
             fputs("[noop-local-access] \(error)\n", stderr)
             Foundation.exit(error.exitCode)
+        } catch {
+            fputs("[noop-local-access] runtime error\n", stderr)
+            Foundation.exit(1)
         }
 
         let command = args.first ?? "mcp"

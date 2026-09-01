@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+nla-verify doctor
+nla-verify version
+nla-verify list-tools
+nla-verify data-freshness --db-path PATH
+nla-verify cleanup RUN_ID
+EOF
+}
+
+find_root() {
+  local d="$PWD"
+  while [[ "$d" != "/" ]]; do
+    if [[ -f "$d/Packages/NoopLocalAccess/Package.swift" ]]; then
+      printf '%s\n' "$d"
+      return 0
+    fi
+    d="$(dirname "$d")"
+  done
+  echo "nla-verify: run from a kvnloo/noop checkout" >&2
+  return 1
+}
+
+ROOT="$(find_root)"
+PKG="$ROOT/Packages/NoopLocalAccess"
+BIN="$PKG/.build/debug/noop-local-access"
+
+build() {
+  if ! command -v swift >/dev/null 2>&1; then
+    echo "nla-verify doctor: INCONCLUSIVE host lacks Swift 5.9" >&2
+    exit 2
+  fi
+  swift build --package-path "$PKG" --product noop-local-access
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  doctor)
+    build
+    test -x "$BIN"
+    ver="$("$BIN" --version)"
+    test -n "$ver"
+    "$BIN" query --list-tools >/dev/null
+    echo "nla-verify doctor: ok version=$ver"
+    ;;
+  version)
+    build
+    "$BIN" --version
+    ;;
+  list-tools)
+    build
+    "$BIN" query --list-tools
+    ;;
+  data-freshness)
+    build
+    db=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --db-path)
+          db="${2:-}"
+          shift 2 || true
+          ;;
+        *)
+          echo "nla-verify: unknown arg $1" >&2
+          exit 64
+          ;;
+      esac
+    done
+    if [[ -z "$db" ]]; then
+      echo "nla-verify: data-freshness requires --db-path" >&2
+      exit 64
+    fi
+    "$BIN" query data_freshness --db-path "$db"
+    ;;
+  cleanup)
+    run_id="${1:-}"
+    if [[ -z "$run_id" || "$run_id" == *"/"* ]]; then
+      echo "nla-verify: cleanup requires RUN_ID" >&2
+      exit 64
+    fi
+    rm -rf "/tmp/nla-verify-${run_id}"
+    ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac
