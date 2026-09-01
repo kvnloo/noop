@@ -316,6 +316,28 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withBatterySamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE battery(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    soc DOUBLE, mv INTEGER,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO battery(deviceId, ts, soc, mv) VALUES
+                    ('my-whoop', 100, 80.0, 3900),
+                    ('my-whoop', 101, 78.0, 3850),
+                    ('my-whoop', 102, 76.0, 3800),
+                    ('other-device', 102, 10.0, 3000)
+                """)
+        }
+        return url
+    }
+
     static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

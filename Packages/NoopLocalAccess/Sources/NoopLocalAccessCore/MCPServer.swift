@@ -311,6 +311,19 @@ public func toolsList() -> JSONValue {
                 ]
             ),
             tool(
+                name: "battery_series",
+                title: "Battery Series",
+                description: "Return a bounded intra-day battery series as buckets of stored battery soc/mv. Not a daily metric_series. Missing battery table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
                 name: "sleep_stages",
                 title: "Sleep Stages",
                 description: "Return a bounded sleep hypnogram from stored sleepSession.stagesJSON. sleep_summary default stays hasStages only; optional include_motion attaches bounded motionJSON; optional include_sleep_state attaches bounded sleepStateJSON; optional include_start_adjusted exposes startTsAdjusted when present. Segment arrays keep timing; minute aggregates do not invent a timeline.",

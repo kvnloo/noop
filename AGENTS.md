@@ -30,6 +30,7 @@ network, no write/control. Same names for MCP and `query`:
 - `resp_series`
 - `step_series`
 - `gravity_series`
+- `battery_series`
 - `rr_series`
 - `event_series`
 - `sleep_stages`

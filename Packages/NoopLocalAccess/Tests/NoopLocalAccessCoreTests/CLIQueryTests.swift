@@ -22,6 +22,7 @@ final class CLIQueryTests: XCTestCase {
             ("resp_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("step_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("gravity_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
+            ("battery_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
             ("rr_series", ["--from-ts", "100", "--to-ts", "103", "--limit", "50"]),
@@ -164,6 +165,9 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["gravity_series", "--from-ts", "100"])
         assertUsageError(["gravity_series", "--to-ts", "102"])
         assertUsageError(["gravity_series", "--unknown", "x"])
+        assertUsageError(["battery_series", "--from-ts", "100"])
+        assertUsageError(["battery_series", "--to-ts", "102"])
+        assertUsageError(["battery_series", "--unknown", "x"])
         assertUsageError(["health_snapshot", "--hours", "1"])
         assertUsageError(["metric_series", "--key", "hrv", "--from-ts", "100", "--to-ts", "102"])
         assertUsageError(["sleep_stages", "--from-ts", "100"])
@@ -183,6 +187,7 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["resp_series", "--kind", "ALPHA"])
         assertUsageError(["step_series", "--kind", "ALPHA"])
         assertUsageError(["gravity_series", "--kind", "ALPHA"])
+        assertUsageError(["battery_series", "--kind", "ALPHA"])
         assertUsageError(["sleep_stages", "--kind", "ALPHA"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--max-points", "10"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--bucket-seconds", "1"])
@@ -960,6 +965,144 @@ final class CLIQueryTests: XCTestCase {
         ))
         XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
     }
+
+    func testBatterySeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "battery_series",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "102",
+            "--bucket-seconds", "1",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "battery_series")
+        XCTAssertEqual(parsed.arguments, [
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(102),
+            "bucket_seconds": .int(1),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testBatterySeriesBucketsMatchStoredSocMvAndSuffixLimit() throws {
+        let url = try TemporaryDatabase.withBatterySamples()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "battery_series", "--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1",
+        ])
+        let request = NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: configuration
+        )
+        let payload = try NoopCLIQuery.dispatch(request)
+        let object = try XCTUnwrap(payload.objectValue)
+
+        XCTAssertEqual(object["bucketSeconds"], .int(1))
+        XCTAssertEqual(object["returned"], .int(3))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(102))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 101, 102])
+        XCTAssertEqual(points[0].objectValue?["soc"]?.intValue, 80)
+        XCTAssertEqual(points[1].objectValue?["soc"]?.intValue, 78)
+        XCTAssertEqual(points[2].objectValue?["soc"]?.intValue, 76)
+        XCTAssertEqual(points[0].objectValue?["mv"]?.intValue, 3900)
+        XCTAssertEqual(points[1].objectValue?["mv"]?.intValue, 3850)
+        XCTAssertEqual(points[2].objectValue?["mv"]?.intValue, 3800)
+        XCTAssertNotNil(points[0].objectValue?["iso"])
+        XCTAssertNil(points[0].objectValue?["bpm"])
+        XCTAssertNil(points[0].objectValue?["raw"])
+        XCTAssertNil(points[0].objectValue?["counter"])
+        XCTAssertNil(points[0].objectValue?["x"])
+        XCTAssertNil(points[0].objectValue?["nzt"])
+        XCTAssertNil(object["score"])
+        XCTAssertNil(object["nzt"])
+
+        let grouped = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "battery_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(grouped.objectValue?["returned"], .int(2))
+        XCTAssertEqual(grouped.objectValue?["bucketSeconds"], .int(2))
+        guard case .array(let groupedPoints) = grouped.objectValue?["points"] else {
+            return XCTFail("Expected grouped points")
+        }
+        XCTAssertEqual(groupedPoints.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 102])
+        switch groupedPoints[0].objectValue?["soc"] {
+        case .double(let soc):
+            XCTAssertEqual(soc, 79.0, accuracy: 0.01)
+        default:
+            XCTFail("Expected averaged soc 79.0, got \(String(describing: groupedPoints[0].objectValue?["soc"]))")
+        }
+        switch groupedPoints[0].objectValue?["mv"] {
+        case .double(let mv):
+            XCTAssertEqual(mv, 3875.0, accuracy: 0.01)
+        default:
+            XCTFail("Expected averaged mv 3875.0, got \(String(describing: groupedPoints[0].objectValue?["mv"]))")
+        }
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "battery_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 102])
+
+        let missingTable = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "battery_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(missingTable.objectValue?["returned"], .int(0))
+        XCTAssertEqual(missingTable.objectValue?["truncated"], .bool(false))
+        guard case .array(let emptyMissing) = missingTable.objectValue?["points"] else {
+            return XCTFail("Expected empty points when battery table is missing")
+        }
+        XCTAssertEqual(emptyMissing.count, 0)
+    }
+
+    func testBatterySeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["battery_series", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
+    }
+
 
     func testSleepStagesParsesTheCompleteFlagContract() throws {
         let parsed = try NoopCLIQuery.parse(arguments: [
