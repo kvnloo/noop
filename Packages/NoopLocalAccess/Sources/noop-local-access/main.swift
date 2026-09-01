@@ -5,6 +5,16 @@ import NoopLocalAccessCore
 enum NoopLocalAccessMain {
     static func main() {
         var args = Array(CommandLine.arguments.dropFirst())
+        do {
+            if try NoopCLIQuery.wantsVersion(arguments: args) {
+                FileHandle.standardOutput.write(Data(NoopCLIQuery.versionLine().utf8))
+                return
+            }
+        } catch let error as NoopCLIQueryError {
+            fputs("[noop-local-access] \(error)\n", stderr)
+            Foundation.exit(error.exitCode)
+        }
+
         let command = args.first ?? "mcp"
         if !args.isEmpty { args.removeFirst() }
 
@@ -157,6 +167,8 @@ enum NoopLocalAccessMain {
 
     private static let helpText = """
     Usage:
+      noop-local-access --version
+      noop-local-access -V
       noop-local-access mcp
       noop-local-access query <tool> [flags]
       noop-local-access query --list-tools

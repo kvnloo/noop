@@ -290,6 +290,28 @@ public enum NoopCLIQuery {
         return data
     }
 
+    /// Product version printed by `noop-local-access --version` / `-V`.
+    /// SPM `Package()` has no version field, so this matches `noopLocalAccessServerVersion`.
+    public static let version = noopLocalAccessServerVersion
+
+    public static func versionLine() -> String {
+        version + "\n"
+    }
+
+    public static func wantsVersion(arguments: [String]) throws -> Bool {
+        guard let first = arguments.first, first == "--version" || first == "-V" else { return false }
+        guard arguments.count == 1 else {
+            throw NoopCLIQueryError.usage("version does not accept additional arguments")
+        }
+        return true
+    }
+
+    public static func parseVersionCommand(arguments: [String]) throws {
+        guard arguments.isEmpty else {
+            throw NoopCLIQueryError.usage("version does not accept additional arguments")
+        }
+    }
+
     private static func requiredValue(_ flag: String, arguments: [String], index: inout Int) throws -> String {
         guard index < arguments.count, !arguments[index].hasPrefix("--") else {
             throw NoopCLIQueryError.usage("missing value for \(flag)")

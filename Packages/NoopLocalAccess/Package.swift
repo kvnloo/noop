@@ -1,4 +1,6 @@
 // swift-tools-version: 5.9
+// Product version for `noop-local-access --version` / `-V` lives in
+// NoopLocalAccessCore (`noopLocalAccessServerVersion`); SPM Package() has no version field.
 import PackageDescription
 
 let package = Package(

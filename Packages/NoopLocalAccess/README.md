@@ -23,10 +23,12 @@ MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as J
 `noop://tools/catalog`, `noop://data/freshness`, `noop://health/snapshot`,
 `noop://metrics/catalog`, and `noop://sources` (short forms without `noop://` are accepted).
 Unknown URIs exit 64. `noop-local-access resource --list` prints those known URIs as a JSON array.
+`noop-local-access --version` and `-V` print the non-empty product version (`noopLocalAccessServerVersion`).
 
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
 ```sh
+noop-local-access --version
 noop-local-access query --list-tools
 noop-local-access tools
 noop-local-access resource --list

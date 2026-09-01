@@ -2648,6 +2648,51 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())), payload)
     }
 
+    func testVersionFlagPrintsNonEmptyVersion() throws {
+        XCTAssertFalse(noopLocalAccessServerVersion.isEmpty)
+        XCTAssertEqual(NoopCLIQuery.version, noopLocalAccessServerVersion)
+        XCTAssertFalse(NoopCLIQuery.version.isEmpty)
+        XCTAssertFalse(NoopCLIQuery.version.contains("nzt"))
+        XCTAssertFalse(NoopCLIQuery.version.contains("scores"))
+
+        XCTAssertTrue(try NoopCLIQuery.wantsVersion(arguments: ["--version"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsVersion(arguments: ["-V"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: []))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: ["mcp"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: ["help"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: ["--help"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: ["query"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsVersion(arguments: ["resource", "--list"]))
+
+        XCTAssertThrowsError(try NoopCLIQuery.wantsVersion(arguments: ["--version", "extra"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertThrowsError(try NoopCLIQuery.wantsVersion(arguments: ["-V", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertThrowsError(try NoopCLIQuery.parseVersionCommand(arguments: ["extra"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        try NoopCLIQuery.parseVersionCommand(arguments: [])
+
+        let line = NoopCLIQuery.versionLine()
+        XCTAssertTrue(line.hasSuffix("\n"))
+        let printed = String(line.dropLast())
+        XCTAssertFalse(printed.isEmpty)
+        XCTAssertEqual(printed, NoopCLIQuery.version)
+        XCTAssertFalse(printed.contains("nzt"))
+        XCTAssertFalse(printed.contains("scores"))
+    }
+
     func testResourceCommandUnknownURIIsUsage64() {
         assertResourceUsageError([])
         assertResourceUsageError(["noop://unknown"])
