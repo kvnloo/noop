@@ -3,6 +3,8 @@
 `noop-local-access` exposes bounded, read-only NOOP health data locally. It has no network or
 write/control path. Same names for MCP and `query`.
 
+The CLI and `NoopLocalAccessCore` library build on Linux (Swift 5.9+) as well as macOS. The iOS/macOS SwiftUI apps in this repo stay Apple-only.
+
 Seventeen tools: `health_snapshot`, `metric_series`, `data_freshness`, `sleep_summary`,
 `workout_summary`, `hr_series`, `rr_series`, `event_series`, `event_kinds`, `sleep_stages`, `spo2_series`,
 `skin_temp_series`, `resp_series`, `step_series`, `gravity_series`, `battery_series`,
