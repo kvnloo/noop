@@ -2609,6 +2609,39 @@ final class CLIQueryTests: XCTestCase {
         )
     }
 
+    func testResourceDataFreshnessMatchesQueryTool() throws {
+        let url = try TemporaryDatabase.seeded()
+        let parsed = try NoopCLIQuery.parseResourceCommand(
+            arguments: ["noop://data/freshness", "--db-path", url.path]
+        )
+        XCTAssertEqual(parsed.uri, "noop://data/freshness")
+        let resource = try NoopCLIQuery.resourcePayload(parsed)
+        let tool = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: url.path)
+        ))
+        XCTAssertEqual(withoutVolatileFields(resource), withoutVolatileFields(tool))
+        XCTAssertEqual(resource.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertNil(resource.objectValue?["score"])
+        XCTAssertNil(resource.objectValue?["nzt"])
+        XCTAssertNil(resource.objectValue?["limitless"])
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("noop://nzt"))
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("noop://scores"))
+
+        let alias = try NoopCLIQuery.parseResourceCommand(
+            arguments: ["data/freshness", "--db-path", url.path]
+        )
+        XCTAssertEqual(alias.uri, "noop://data/freshness")
+        let aliasPayload = try NoopCLIQuery.resourcePayload(alias)
+        XCTAssertEqual(withoutVolatileFields(aliasPayload), withoutVolatileFields(tool))
+
+        let line = try NoopCLIQuery.encodeLine(resource)
+        XCTAssertEqual(line.last, 0x0A)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast()))
+        XCTAssertEqual(withoutVolatileFields(decoded), withoutVolatileFields(resource))
+    }
+
     func testResourceListPrintsKnownURIsAsJSONArray() throws {
         let payload = NoopCLIQuery.listResourcesPayload()
         XCTAssertEqual(payload, .array(NoopCLIQuery.resourceURIs.map { .string($0) }))

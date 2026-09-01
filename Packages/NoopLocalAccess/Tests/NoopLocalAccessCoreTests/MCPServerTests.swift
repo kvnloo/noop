@@ -130,4 +130,70 @@ final class MCPServerTests: XCTestCase {
         let expected = JSONValue.array(NoopToolDispatcher.toolNames.map { .string($0) })
         XCTAssertEqual(first["text"], .string(prettyJSON(expected)))
     }
+
+    func testResourcesListIncludesDataFreshness() throws {
+        let resources = try XCTUnwrap(resourcesList().objectValue?["resources"])
+        guard case .array(let values) = resources else {
+            return XCTFail("Expected resources array")
+        }
+        let uris = values.compactMap { $0.objectValue?["uri"]?.stringValue }
+        XCTAssertTrue(uris.contains("noop://data/freshness"))
+        let freshness = try XCTUnwrap(values.first { $0.objectValue?["uri"] == .string("noop://data/freshness") }?.objectValue)
+        XCTAssertEqual(freshness["name"], .string("data_freshness"))
+        XCTAssertEqual(freshness["mimeType"], .string("application/json"))
+    }
+
+    func testDataFreshnessResourcePayloadMatchesTool() throws {
+        let url = try TemporaryDatabase.seeded()
+        let dispatcher = NoopToolDispatcher(configuration: LocalAccessConfiguration(databasePath: url.path))
+        let resource = try dispatcher.resourcePayload(uri: "noop://data/freshness")
+        let tool = try dispatcher.dispatch(name: "data_freshness")
+        XCTAssertEqual(withoutVolatileFields(resource), withoutVolatileFields(tool))
+        XCTAssertEqual(resource.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertNil(resource.objectValue?["score"])
+        XCTAssertNil(resource.objectValue?["nzt"])
+        XCTAssertNil(resource.objectValue?["limitless"])
+        XCTAssertFalse(resource.objectValue?.keys.contains { $0.lowercased().contains("nzt") } == true)
+        XCTAssertFalse(resource.objectValue?.keys.contains { $0.lowercased().contains("limitless") } == true)
+    }
+
+    func testResourcesReadDataFreshnessWiresResourcePayload() throws {
+        let url = try TemporaryDatabase.seeded()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let server = NoopMCPServer(configuration: configuration)
+        let response = try XCTUnwrap(try server.handle(RPCRequest(
+            id: .int(4),
+            method: "resources/read",
+            params: .object(["uri": .string("noop://data/freshness")])
+        )))
+        let contents = try XCTUnwrap(response.objectValue?["result"]?.objectValue?["contents"])
+        guard case .array(let values) = contents, let first = values.first?.objectValue else {
+            return XCTFail("Expected contents array")
+        }
+        XCTAssertEqual(first["uri"], .string("noop://data/freshness"))
+        XCTAssertEqual(first["mimeType"], .string("application/json"))
+        let text = try XCTUnwrap(first["text"]?.stringValue)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+        let tool = try NoopToolDispatcher(configuration: configuration).dispatch(name: "data_freshness")
+        XCTAssertEqual(withoutVolatileFields(decoded), withoutVolatileFields(tool))
+        XCTAssertEqual(decoded.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertNil(decoded.objectValue?["score"])
+        XCTAssertNil(decoded.objectValue?["nzt"])
+    }
+
+    private func withoutVolatileFields(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case .array(let values):
+            return .array(values.map(withoutVolatileFields))
+        case .object(let object):
+            let volatile = Set(["generatedAt", "ageSeconds", "fromTs", "toTs"])
+            var normalized: [String: JSONValue] = [:]
+            for (key, value) in object where !volatile.contains(key) {
+                normalized[key] = withoutVolatileFields(value)
+            }
+            return .object(normalized)
+        default:
+            return value
+        }
+    }
 }
