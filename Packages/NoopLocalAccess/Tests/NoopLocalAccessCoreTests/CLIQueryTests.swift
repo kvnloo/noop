@@ -2693,6 +2693,111 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertFalse(printed.contains("scores"))
     }
 
+    func testPrettyJSONOutputIndentsWhileDefaultStaysOneLine() throws {
+        let value: JSONValue = .object([
+            "ok": .bool(true),
+            "items": .array([.int(1), .int(2)]),
+        ])
+        let compact = try NoopCLIQuery.encodeLine(value)
+        XCTAssertEqual(compact.last, 0x0A)
+        XCTAssertFalse(Data(compact.dropLast()).contains(0x0A))
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(compact.dropLast())), value)
+
+        let pretty = try NoopCLIQuery.encodeLine(value, pretty: true)
+        XCTAssertEqual(pretty.last, 0x0A)
+        XCTAssertTrue(Data(pretty.dropLast()).contains(0x0A))
+        XCTAssertNotEqual(pretty, compact)
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(pretty.dropLast())), value)
+        XCTAssertThrowsError(try NoopCLIQuery.encodeLine(.double(.infinity), pretty: true))
+    }
+
+    func testQueryPrettyFlagIsOutputOnly() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["health_snapshot", "--days", "7"])
+        XCTAssertEqual(omitted.toolName, "health_snapshot")
+        XCTAssertEqual(omitted.arguments, ["days": .int(7)])
+        XCTAssertFalse(omitted.pretty)
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "health_snapshot",
+            "--pretty",
+            "--days", "7",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "health_snapshot")
+        XCTAssertEqual(parsed.arguments, ["days": .int(7)])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+        XCTAssertTrue(parsed.pretty)
+
+        let after = try NoopCLIQuery.parse(arguments: ["data_freshness", "--pretty"])
+        XCTAssertEqual(after.toolName, "data_freshness")
+        XCTAssertEqual(after.arguments, [:])
+        XCTAssertTrue(after.pretty)
+
+        XCTAssertTrue(try NoopCLIQuery.outputPretty(arguments: ["--pretty"]))
+        XCTAssertTrue(try NoopCLIQuery.outputPretty(arguments: ["health_snapshot", "--pretty"]))
+        XCTAssertFalse(try NoopCLIQuery.outputPretty(arguments: ["health_snapshot"]))
+        XCTAssertFalse(try NoopCLIQuery.outputPretty(arguments: []))
+        assertUsageError(["health_snapshot", "--pretty", "--pretty"])
+        XCTAssertThrowsError(try NoopCLIQuery.outputPretty(arguments: ["--pretty", "--pretty"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+    }
+
+    func testQueryListToolsAcceptsPretty() throws {
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--pretty"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--pretty", "--list-tools"]))
+        XCTAssertTrue(try NoopCLIQuery.outputPretty(arguments: ["--list-tools", "--pretty"]))
+        XCTAssertFalse(try NoopCLIQuery.outputPretty(arguments: ["--list-tools"]))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--pretty", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--pretty", "--pretty"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+    }
+
+    func testResourcePrettyFlagIsOutputOnly() throws {
+        let omitted = try NoopCLIQuery.parseResourceCommand(arguments: ["noop://tools/catalog"])
+        XCTAssertEqual(omitted.uri, "noop://tools/catalog")
+        XCTAssertFalse(omitted.pretty)
+
+        let parsed = try NoopCLIQuery.parseResourceCommand(arguments: [
+            "noop://tools/catalog",
+            "--pretty",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.uri, "noop://tools/catalog")
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+        XCTAssertTrue(parsed.pretty)
+
+        let before = try NoopCLIQuery.parseResourceCommand(arguments: ["--pretty", "sources"])
+        XCTAssertEqual(before.uri, "noop://sources")
+        XCTAssertTrue(before.pretty)
+
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--list"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--list", "--pretty"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--pretty", "--list"]))
+        XCTAssertTrue(try NoopCLIQuery.outputPretty(arguments: ["--list", "--pretty"]))
+        XCTAssertFalse(try NoopCLIQuery.outputPretty(arguments: ["--list"]))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListResources(arguments: ["--list", "--pretty", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        assertResourceUsageError(["noop://tools/catalog", "--pretty", "--pretty"])
+    }
+
     func testResourceCommandUnknownURIIsUsage64() {
         assertResourceUsageError([])
         assertResourceUsageError(["noop://unknown"])

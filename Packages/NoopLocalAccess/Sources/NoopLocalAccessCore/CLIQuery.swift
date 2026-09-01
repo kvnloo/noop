@@ -4,25 +4,30 @@ public struct NoopCLIQueryRequest: Equatable, Sendable {
     public let toolName: String
     public let arguments: [String: JSONValue]
     public let configuration: LocalAccessConfiguration
+    public let pretty: Bool
 
     public init(
         toolName: String,
         arguments: [String: JSONValue],
-        configuration: LocalAccessConfiguration = .environment()
+        configuration: LocalAccessConfiguration = .environment(),
+        pretty: Bool = false
     ) {
         self.toolName = toolName
         self.arguments = arguments
         self.configuration = configuration
+        self.pretty = pretty
     }
 }
 
 public struct NoopCLIResourceRequest: Equatable, Sendable {
     public let uri: String
     public let configuration: LocalAccessConfiguration
+    public let pretty: Bool
 
-    public init(uri: String, configuration: LocalAccessConfiguration = .environment()) {
+    public init(uri: String, configuration: LocalAccessConfiguration = .environment(), pretty: Bool = false) {
         self.uri = uri
         self.configuration = configuration
+        self.pretty = pretty
     }
 }
 
@@ -40,7 +45,9 @@ public enum NoopCLIQueryError: Error, CustomStringConvertible, Equatable {
 
 public enum NoopCLIQuery {
     public static func parse(arguments: [String]) throws -> NoopCLIQueryRequest {
-        guard let toolName = arguments.first, !toolName.hasPrefix("-") else {
+        let peeled = try peelPretty(arguments)
+        let argv = peeled.rest
+        guard let toolName = argv.first, !toolName.hasPrefix("-") else {
             throw NoopCLIQueryError.usage("query requires one tool name")
         }
         guard NoopToolDispatcher.toolNames.contains(toolName) else {
@@ -52,8 +59,8 @@ public enum NoopCLIQuery {
         var seenFlags = Set<String>()
         var index = 1
 
-        while index < arguments.count {
-            let flag = arguments[index]
+        while index < argv.count {
+            let flag = argv[index]
             guard flag.hasPrefix("--") else {
                 throw NoopCLIQueryError.usage("query does not accept additional positional arguments")
             }
@@ -64,48 +71,48 @@ public enum NoopCLIQuery {
 
             switch flag {
             case "--db-path":
-                configuration.databasePath = try requiredValue(flag, arguments: arguments, index: &index)
+                configuration.databasePath = try requiredValue(flag, arguments: argv, index: &index)
             case "--days":
                 guard toolName != "data_freshness" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["days"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["days"] = try integerValue(flag, arguments: argv, index: &index)
             case "--key":
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["key"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["key"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--kind":
                 guard toolName == "event_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["kind"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["kind"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--source":
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["source"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["source"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--from-day":
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["from_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["from_day"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--to-day":
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["to_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["to_day"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--limit":
                 guard toolName == "metric_series" || toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "sleep_stages" || toolName == "event_series" || toolName == "event_kinds" || toolName == "rr_series" else {
                     throw unsupported(flag, toolName: toolName)
                 }
-                toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["limit"] = try integerValue(flag, arguments: argv, index: &index)
             case "--max-points":
                 guard toolName == "sleep_stages" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["max_points"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["max_points"] = try integerValue(flag, arguments: argv, index: &index)
             case "--hours":
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["hours"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["hours"] = try integerValue(flag, arguments: argv, index: &index)
             case "--from-ts":
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["from_ts"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["from_ts"] = try integerValue(flag, arguments: argv, index: &index)
             case "--to-ts":
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["to_ts"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["to_ts"] = try integerValue(flag, arguments: argv, index: &index)
             case "--bucket-seconds":
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["bucket_seconds"] = try integerValue(flag, arguments: arguments, index: &index)
+                toolArguments["bucket_seconds"] = try integerValue(flag, arguments: argv, index: &index)
             case "--device-id":
                 guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "event_kinds" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
-                toolArguments["device_id"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+                toolArguments["device_id"] = .string(try requiredValue(flag, arguments: argv, index: &index))
             case "--include-zones":
                 guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["include_zones"] = .bool(true)
@@ -204,7 +211,12 @@ public enum NoopCLIQuery {
             }
         }
 
-        return NoopCLIQueryRequest(toolName: toolName, arguments: toolArguments, configuration: configuration)
+        return NoopCLIQueryRequest(
+            toolName: toolName,
+            arguments: toolArguments,
+            configuration: configuration,
+            pretty: peeled.pretty
+        )
     }
 
     public static func dispatch(_ request: NoopCLIQueryRequest) throws -> JSONValue {
@@ -217,8 +229,9 @@ public enum NoopCLIQuery {
     }
 
     public static func wantsListTools(arguments: [String]) throws -> Bool {
-        guard arguments.first == "--list-tools" else { return false }
-        guard arguments == ["--list-tools"] else {
+        let argv = try peelPretty(arguments).rest
+        guard argv.first == "--list-tools" else { return false }
+        guard argv == ["--list-tools"] else {
             throw NoopCLIQueryError.usage("query --list-tools does not accept additional arguments")
         }
         return true
@@ -243,15 +256,18 @@ public enum NoopCLIQuery {
     }
 
     public static func wantsListResources(arguments: [String]) throws -> Bool {
-        guard arguments.first == "--list" else { return false }
-        guard arguments == ["--list"] else {
+        let argv = try peelPretty(arguments).rest
+        guard argv.first == "--list" else { return false }
+        guard argv == ["--list"] else {
             throw NoopCLIQueryError.usage("resource --list does not accept additional arguments")
         }
         return true
     }
 
     public static func parseResourceCommand(arguments: [String]) throws -> NoopCLIResourceRequest {
-        guard let raw = arguments.first, !raw.hasPrefix("-") else {
+        let peeled = try peelPretty(arguments)
+        let argv = peeled.rest
+        guard let raw = argv.first, !raw.hasPrefix("-") else {
             throw NoopCLIQueryError.usage("resource requires one uri")
         }
         guard let uri = canonicalizeResourceURI(raw) else {
@@ -261,8 +277,8 @@ public enum NoopCLIQuery {
         var configuration = LocalAccessConfiguration.environment()
         var seenFlags = Set<String>()
         var index = 1
-        while index < arguments.count {
-            let flag = arguments[index]
+        while index < argv.count {
+            let flag = argv[index]
             guard flag.hasPrefix("--") else {
                 throw NoopCLIQueryError.usage("resource does not accept additional positional arguments")
             }
@@ -272,22 +288,30 @@ public enum NoopCLIQuery {
             index += 1
             switch flag {
             case "--db-path":
-                configuration.databasePath = try requiredValue(flag, arguments: arguments, index: &index)
+                configuration.databasePath = try requiredValue(flag, arguments: argv, index: &index)
             default:
                 throw NoopCLIQueryError.usage("unknown resource flag")
             }
         }
-        return NoopCLIResourceRequest(uri: uri, configuration: configuration)
+        return NoopCLIResourceRequest(uri: uri, configuration: configuration, pretty: peeled.pretty)
     }
 
     public static func resourcePayload(_ request: NoopCLIResourceRequest) throws -> JSONValue {
         try NoopToolDispatcher(configuration: request.configuration).resourcePayload(uri: request.uri)
     }
 
-    public static func encodeLine(_ value: JSONValue) throws -> Data {
-        var data = try JSONEncoder().encode(value)
+    public static func encodeLine(_ value: JSONValue, pretty: Bool = false) throws -> Data {
+        let encoder = JSONEncoder()
+        if pretty {
+            encoder.outputFormatting = .prettyPrinted
+        }
+        var data = try encoder.encode(value)
         data.append(0x0A)
         return data
+    }
+
+    public static func outputPretty(arguments: [String]) throws -> Bool {
+        try peelPretty(arguments).pretty
     }
 
     /// Product version printed by `noop-local-access --version` / `-V`.
@@ -310,6 +334,22 @@ public enum NoopCLIQuery {
         guard arguments.isEmpty else {
             throw NoopCLIQueryError.usage("version does not accept additional arguments")
         }
+    }
+
+    private static func peelPretty(_ arguments: [String]) throws -> (pretty: Bool, rest: [String]) {
+        var pretty = false
+        var rest: [String] = []
+        for arg in arguments {
+            if arg == "--pretty" {
+                if pretty {
+                    throw NoopCLIQueryError.usage("duplicate flag: --pretty")
+                }
+                pretty = true
+                continue
+            }
+            rest.append(arg)
+        }
+        return (pretty, rest)
     }
 
     private static func requiredValue(_ flag: String, arguments: [String], index: inout Int) throws -> String {

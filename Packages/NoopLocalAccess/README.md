@@ -24,6 +24,7 @@ MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as J
 `noop://metrics/catalog`, and `noop://sources` (short forms without `noop://` are accepted).
 Unknown URIs exit 64. `noop-local-access resource --list` prints those known URIs as a JSON array.
 `noop-local-access --version` and `-V` print the non-empty product version (`noopLocalAccessServerVersion`).
+Optional `--pretty` pretty-prints `query` and `resource` JSON; the default stays compact one-line.
 
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
@@ -35,6 +36,8 @@ noop-local-access resource --list
 noop-local-access resource noop://tools/catalog
 noop-local-access resource data/freshness
 noop-local-access query health_snapshot --days 14
+noop-local-access query health_snapshot --days 14 --pretty
+noop-local-access resource --list --pretty
 noop-local-access query metric_series --key hrv --days 90
 noop-local-access query data_freshness
 noop-local-access query sleep_summary --days 30
@@ -60,7 +63,7 @@ noop-local-access query rr_series --hours 6 --limit 50
 
 Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. Query results are written to
 stdout; diagnostics are written to stderr. Query usage errors exit 64 and runtime/database errors
-exit 1.
+exit 1. Pass `--pretty` on `query` or `resource` to indent JSON; omit it for one compact line.
 
 Arguments reuse the MCP defaults and bounds:
 
