@@ -42,6 +42,7 @@ noop-local-access resource --list --pretty
 noop-local-access query health_snapshot --days 14 --quiet
 noop-local-access query metric_series --key hrv --days 90
 noop-local-access query data_freshness
+noop-local-access query data_freshness --db-path PATH
 noop-local-access query sleep_summary --days 30
 noop-local-access query sleep_summary --days 30 --include-motion
 noop-local-access query sleep_summary --days 30 --include-sleep-state
@@ -63,7 +64,7 @@ noop-local-access query event_kinds --limit 100
 noop-local-access query rr_series --hours 6 --limit 50
 ```
 
-Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. Query results are written to
+Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. For a strapless local `query data_freshness` demo, point `--db-path` at a read-only sqlite that already has a few `hrSample` rows; `TemporaryDatabase` in the package tests already seeds those (no extra fixture). Query results are written to
 stdout; diagnostics are written to stderr. Query usage errors exit 64 and runtime/database errors
 exit 1. Pass `--pretty` on `query` or `resource` to indent JSON; omit it for one compact line. Pass `--quiet` to suppress stderr diagnostics without changing stdout JSON.
 
