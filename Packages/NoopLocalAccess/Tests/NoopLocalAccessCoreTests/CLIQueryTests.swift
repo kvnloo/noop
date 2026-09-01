@@ -17,6 +17,7 @@ final class CLIQueryTests: XCTestCase {
             ("workout_summary", ["--days", "90", "--include-zones"]),
             ("workout_summary", ["--days", "90", "--include-notes"]),
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
+            ("spo2_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
             ("rr_series", ["--from-ts", "100", "--to-ts", "103", "--limit", "50"]),
@@ -144,6 +145,9 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["hr_series", "--from-ts", "100"])
         assertUsageError(["hr_series", "--to-ts", "102"])
         assertUsageError(["hr_series", "--unknown", "x"])
+        assertUsageError(["spo2_series", "--from-ts", "100"])
+        assertUsageError(["spo2_series", "--to-ts", "102"])
+        assertUsageError(["spo2_series", "--unknown", "x"])
         assertUsageError(["health_snapshot", "--hours", "1"])
         assertUsageError(["metric_series", "--key", "hrv", "--from-ts", "100", "--to-ts", "102"])
         assertUsageError(["sleep_stages", "--from-ts", "100"])
@@ -158,6 +162,7 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["event_series", "--unknown", "x"])
         assertUsageError(["health_snapshot", "--kind", "ALPHA"])
         assertUsageError(["hr_series", "--kind", "ALPHA"])
+        assertUsageError(["spo2_series", "--kind", "ALPHA"])
         assertUsageError(["sleep_stages", "--kind", "ALPHA"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--max-points", "10"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--bucket-seconds", "1"])
@@ -172,24 +177,29 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["health_snapshot", "--include-zones"])
         assertUsageError(["sleep_summary", "--include-zones"])
         assertUsageError(["hr_series", "--include-zones"])
+        assertUsageError(["spo2_series", "--include-zones"])
         assertUsageError(["workout_summary", "--include-zones", "--include-zones"])
         assertUsageError(["health_snapshot", "--include-notes"])
         assertUsageError(["sleep_summary", "--include-notes"])
         assertUsageError(["hr_series", "--include-notes"])
+        assertUsageError(["spo2_series", "--include-notes"])
         assertUsageError(["workout_summary", "--include-notes", "--include-notes"])
         assertUsageError(["health_snapshot", "--include-motion"])
         assertUsageError(["workout_summary", "--include-motion"])
         assertUsageError(["hr_series", "--include-motion"])
+        assertUsageError(["spo2_series", "--include-motion"])
         assertUsageError(["sleep_stages", "--include-motion"])
         assertUsageError(["sleep_summary", "--include-motion", "--include-motion"])
         assertUsageError(["health_snapshot", "--include-sleep-state"])
         assertUsageError(["workout_summary", "--include-sleep-state"])
         assertUsageError(["hr_series", "--include-sleep-state"])
+        assertUsageError(["spo2_series", "--include-sleep-state"])
         assertUsageError(["sleep_stages", "--include-sleep-state"])
         assertUsageError(["sleep_summary", "--include-sleep-state", "--include-sleep-state"])
         assertUsageError(["health_snapshot", "--include-start-adjusted"])
         assertUsageError(["workout_summary", "--include-start-adjusted"])
         assertUsageError(["hr_series", "--include-start-adjusted"])
+        assertUsageError(["spo2_series", "--include-start-adjusted"])
         assertUsageError(["sleep_stages", "--include-start-adjusted"])
         assertUsageError(["sleep_summary", "--include-start-adjusted", "--include-start-adjusted"])
     }
@@ -274,6 +284,132 @@ final class CLIQueryTests: XCTestCase {
 
     func testHRSeriesHoursZeroIsClampedByTheDispatcher() throws {
         let parsed = try NoopCLIQuery.parse(arguments: ["hr_series", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
+    }
+
+    func testSpo2SeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "spo2_series",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "102",
+            "--bucket-seconds", "1",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "spo2_series")
+        XCTAssertEqual(parsed.arguments, [
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(102),
+            "bucket_seconds": .int(1),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testSpo2SeriesBucketsMatchStoredRedIrAndSuffixLimit() throws {
+        let url = try TemporaryDatabase.withSpo2Samples()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "spo2_series", "--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1",
+        ])
+        let request = NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: configuration
+        )
+        let payload = try NoopCLIQuery.dispatch(request)
+        let object = try XCTUnwrap(payload.objectValue)
+
+        XCTAssertEqual(object["bucketSeconds"], .int(1))
+        XCTAssertEqual(object["returned"], .int(3))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(102))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 101, 102])
+        XCTAssertEqual(points[0].objectValue?["red"]?.intValue, 97)
+        XCTAssertEqual(points[1].objectValue?["red"]?.intValue, 98)
+        XCTAssertEqual(points[2].objectValue?["red"]?.intValue, 96)
+        XCTAssertEqual(points[0].objectValue?["ir"]?.intValue, 50)
+        XCTAssertEqual(points[1].objectValue?["ir"]?.intValue, 51)
+        XCTAssertEqual(points[2].objectValue?["ir"]?.intValue, 49)
+        XCTAssertNotNil(points[0].objectValue?["iso"])
+        XCTAssertNil(points[0].objectValue?["pct"])
+        XCTAssertNil(object["score"])
+
+        let grouped = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "spo2_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(grouped.objectValue?["returned"], .int(2))
+        XCTAssertEqual(grouped.objectValue?["bucketSeconds"], .int(2))
+        guard case .array(let groupedPoints) = grouped.objectValue?["points"] else {
+            return XCTFail("Expected grouped points")
+        }
+        XCTAssertEqual(groupedPoints.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 102])
+        switch groupedPoints[0].objectValue?["red"] {
+        case .double(let red):
+            XCTAssertEqual(red, 97.5, accuracy: 0.01)
+        default:
+            XCTFail("Expected averaged red 97.5, got \(String(describing: groupedPoints[0].objectValue?["red"]))")
+        }
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "spo2_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 102])
+
+        let missingTable = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "spo2_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(missingTable.objectValue?["returned"], .int(0))
+        XCTAssertEqual(missingTable.objectValue?["truncated"], .bool(false))
+        guard case .array(let emptyMissing) = missingTable.objectValue?["points"] else {
+            return XCTFail("Expected empty points when spo2Sample table is missing")
+        }
+        XCTAssertEqual(emptyMissing.count, 0)
+    }
+
+    func testSpo2SeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["spo2_series", "--hours", "0"])
         XCTAssertEqual(parsed.arguments["hours"], .int(0))
 
         let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(

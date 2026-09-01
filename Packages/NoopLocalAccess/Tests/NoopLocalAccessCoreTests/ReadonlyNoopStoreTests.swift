@@ -88,6 +88,25 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(try noWorkout.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
     }
 
+    func testReadsSpo2BucketsAndReturnsEmptyWhenTableMissing() throws {
+        let url = try TemporaryDatabase.withSpo2Samples()
+        let store = try ReadonlyNoopStore(path: url.path)
+
+        XCTAssertTrue(try store.isReadOnlyForTest())
+        let buckets = try store.spo2Buckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
+        XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
+        XCTAssertEqual(buckets.map(\.red), [97.0, 98.0, 96.0])
+        XCTAssertEqual(buckets.map(\.ir), [50.0, 51.0, 49.0])
+
+        let grouped = try store.spo2Buckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 2)
+        XCTAssertEqual(grouped.map(\.ts), [100, 102])
+        XCTAssertEqual(grouped.map(\.red), [97.5, 96.0])
+        XCTAssertEqual(grouped.map(\.ir), [50.5, 49.0])
+
+        let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
+        XCTAssertEqual(try missing.spo2Buckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+    }
+
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
         let url = try TemporaryDatabase.foreignNoopLike()
 

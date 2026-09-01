@@ -21,6 +21,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertFalse(values.isEmpty)
         let names = values.compactMap { $0.objectValue?["name"]?.stringValue }
         XCTAssertTrue(names.contains("hr_series"))
+        XCTAssertTrue(names.contains("spo2_series"))
         XCTAssertTrue(names.contains("sleep_stages"))
         XCTAssertTrue(names.contains("event_series"))
         XCTAssertTrue(names.contains("rr_series"))
