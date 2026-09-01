@@ -56,7 +56,7 @@ enum NoopLocalAccessMain {
             let payload = try NoopCLIQuery.dispatch(request)
             FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(payload, pretty: request.pretty))
         } catch let error as NoopCLIQueryError {
-            fputs("[noop-local-access] \(error)\n", stderr)
+            emitDiagnostic("\(error)", arguments: arguments)
             Foundation.exit(error.exitCode)
         } catch let error as LocalAccessError {
             let message: String
@@ -65,10 +65,10 @@ enum NoopLocalAccessMain {
             } else {
                 message = error.description
             }
-            fputs("[noop-local-access] \(message)\n", stderr)
+            emitDiagnostic(message, arguments: arguments)
             Foundation.exit(1)
         } catch {
-            fputs("[noop-local-access] runtime error\n", stderr)
+            emitDiagnostic("runtime error", arguments: arguments)
             Foundation.exit(1)
         }
     }
@@ -78,10 +78,10 @@ enum NoopLocalAccessMain {
             try NoopCLIQuery.parseToolsCommand(arguments: arguments)
             FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(NoopCLIQuery.listToolsPayload()))
         } catch let error as NoopCLIQueryError {
-            fputs("[noop-local-access] \(error)\n", stderr)
+            emitDiagnostic("\(error)", arguments: arguments)
             Foundation.exit(error.exitCode)
         } catch {
-            fputs("[noop-local-access] runtime error\n", stderr)
+            emitDiagnostic("runtime error", arguments: arguments)
             Foundation.exit(1)
         }
     }
@@ -105,7 +105,7 @@ enum NoopLocalAccessMain {
             let payload = try NoopCLIQuery.resourcePayload(request)
             FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(payload, pretty: request.pretty))
         } catch let error as NoopCLIQueryError {
-            fputs("[noop-local-access] \(error)\n", stderr)
+            emitDiagnostic("\(error)", arguments: arguments)
             Foundation.exit(error.exitCode)
         } catch let error as LocalAccessError {
             let message: String
@@ -114,15 +114,27 @@ enum NoopLocalAccessMain {
             } else {
                 message = error.description
             }
-            fputs("[noop-local-access] \(message)\n", stderr)
+            emitDiagnostic(message, arguments: arguments)
             Foundation.exit(1)
         } catch {
-            fputs("[noop-local-access] runtime error\n", stderr)
+            emitDiagnostic("runtime error", arguments: arguments)
             Foundation.exit(1)
         }
     }
 
+    private static func emitDiagnostic(_ message: String, arguments: [String]) {
+        let quiet: Bool
+        if let parsed = try? NoopCLIQuery.outputQuiet(arguments: arguments) {
+            quiet = parsed
+        } else {
+            quiet = arguments.contains("--quiet")
+        }
+        guard let data = NoopCLIQuery.stderrDiagnostic(message, quiet: quiet) else { return }
+        FileHandle.standardError.write(data)
+    }
+
     private static func runMCP(configuration: LocalAccessConfiguration) {
+
         let server = NoopMCPServer(configuration: configuration)
         while let line = readLine(strippingNewline: true) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -180,11 +192,11 @@ enum NoopLocalAccessMain {
       noop-local-access --version
       noop-local-access -V
       noop-local-access mcp
-      noop-local-access query <tool> [flags] [--pretty]
-      noop-local-access query --list-tools [--pretty]
+      noop-local-access query <tool> [flags] [--pretty] [--quiet]
+      noop-local-access query --list-tools [--pretty] [--quiet]
       noop-local-access tools
-      noop-local-access resource --list [--pretty]
-      noop-local-access resource <uri> [--db-path PATH] [--pretty]
+      noop-local-access resource --list [--pretty] [--quiet]
+      noop-local-access resource <uri> [--db-path PATH] [--pretty] [--quiet]
       noop-local-access codex-config [--db-path /absolute/path/to/whoop.sqlite]
 
     Query tools:
@@ -218,6 +230,7 @@ enum NoopLocalAccessMain {
     Query options:
       --db-path PATH    Explicit NOOP SQLite path. Otherwise NOOP_DB_PATH or the official app container is used.
       --pretty          Pretty-print query and resource JSON. Default is compact one line.
+      --quiet           Suppress stderr diagnostics. stdout JSON is unchanged.
 
     Environment:
       NOOP_DB_PATH    Explicit NOOP SQLite path. Optional; otherwise the official macOS app container is used.

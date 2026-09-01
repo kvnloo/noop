@@ -2798,6 +2798,131 @@ final class CLIQueryTests: XCTestCase {
         assertResourceUsageError(["noop://tools/catalog", "--pretty", "--pretty"])
     }
 
+    func testQuietSuppressesStderrDiagnosticsWhileStdoutJSONUnchanged() throws {
+        let value: JSONValue = .object([
+            "ok": .bool(true),
+            "items": .array([.int(1), .int(2)]),
+        ])
+        let compact = try NoopCLIQuery.encodeLine(value)
+        let pretty = try NoopCLIQuery.encodeLine(value, pretty: true)
+        XCTAssertEqual(try NoopCLIQuery.encodeLine(value), compact)
+        XCTAssertEqual(try NoopCLIQuery.encodeLine(value, pretty: true), pretty)
+
+        let diagnostic = "NOOP database is unavailable"
+        XCTAssertEqual(
+            NoopCLIQuery.stderrDiagnostic(diagnostic, quiet: false),
+            Data("[noop-local-access] \(diagnostic)\n".utf8)
+        )
+        XCTAssertNil(NoopCLIQuery.stderrDiagnostic(diagnostic, quiet: true))
+        XCTAssertNil(NoopCLIQuery.stderrDiagnostic("runtime error", quiet: true))
+        XCTAssertEqual(
+            NoopCLIQuery.stderrDiagnostic("unknown query tool", quiet: false),
+            Data("[noop-local-access] unknown query tool\n".utf8)
+        )
+        XCTAssertFalse(String(data: compact, encoding: .utf8)!.contains("ryanbr"))
+        XCTAssertFalse(String(data: compact, encoding: .utf8)!.contains("nzt"))
+        XCTAssertFalse(String(data: compact, encoding: .utf8)!.contains("scores"))
+    }
+
+    func testQueryQuietFlagIsOutputOnly() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["health_snapshot", "--days", "7"])
+        XCTAssertEqual(omitted.toolName, "health_snapshot")
+        XCTAssertEqual(omitted.arguments, ["days": .int(7)])
+        XCTAssertFalse(omitted.quiet)
+        XCTAssertFalse(omitted.pretty)
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "health_snapshot",
+            "--quiet",
+            "--days", "7",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "health_snapshot")
+        XCTAssertEqual(parsed.arguments, ["days": .int(7)])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+        XCTAssertTrue(parsed.quiet)
+        XCTAssertFalse(parsed.pretty)
+
+        let both = try NoopCLIQuery.parse(arguments: ["data_freshness", "--pretty", "--quiet"])
+        XCTAssertEqual(both.toolName, "data_freshness")
+        XCTAssertEqual(both.arguments, [:])
+        XCTAssertTrue(both.quiet)
+        XCTAssertTrue(both.pretty)
+
+        XCTAssertTrue(try NoopCLIQuery.outputQuiet(arguments: ["--quiet"]))
+        XCTAssertTrue(try NoopCLIQuery.outputQuiet(arguments: ["health_snapshot", "--quiet"]))
+        XCTAssertFalse(try NoopCLIQuery.outputQuiet(arguments: ["health_snapshot"]))
+        XCTAssertFalse(try NoopCLIQuery.outputQuiet(arguments: []))
+        XCTAssertTrue(try NoopCLIQuery.outputQuiet(arguments: ["--pretty", "--quiet"]))
+        assertUsageError(["health_snapshot", "--quiet", "--quiet"])
+        XCTAssertThrowsError(try NoopCLIQuery.outputQuiet(arguments: ["--quiet", "--quiet"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+    }
+
+    func testQueryListToolsAcceptsQuiet() throws {
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--quiet"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--quiet", "--list-tools"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--pretty", "--quiet"]))
+        XCTAssertTrue(try NoopCLIQuery.outputQuiet(arguments: ["--list-tools", "--quiet"]))
+        XCTAssertFalse(try NoopCLIQuery.outputQuiet(arguments: ["--list-tools"]))
+        XCTAssertTrue(try NoopCLIQuery.outputPretty(arguments: ["--list-tools", "--pretty", "--quiet"]))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--quiet", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--quiet", "--quiet"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+    }
+
+    func testResourceQuietFlagIsOutputOnly() throws {
+        let omitted = try NoopCLIQuery.parseResourceCommand(arguments: ["noop://tools/catalog"])
+        XCTAssertEqual(omitted.uri, "noop://tools/catalog")
+        XCTAssertFalse(omitted.quiet)
+
+        let parsed = try NoopCLIQuery.parseResourceCommand(arguments: [
+            "noop://tools/catalog",
+            "--quiet",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.uri, "noop://tools/catalog")
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+        XCTAssertTrue(parsed.quiet)
+        XCTAssertFalse(parsed.pretty)
+
+        let before = try NoopCLIQuery.parseResourceCommand(arguments: ["--quiet", "sources"])
+        XCTAssertEqual(before.uri, "noop://sources")
+        XCTAssertTrue(before.quiet)
+
+        let both = try NoopCLIQuery.parseResourceCommand(arguments: ["--pretty", "--quiet", "sources"])
+        XCTAssertEqual(both.uri, "noop://sources")
+        XCTAssertTrue(both.quiet)
+        XCTAssertTrue(both.pretty)
+
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--list"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--list", "--quiet"]))
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--quiet", "--list"]))
+        XCTAssertTrue(try NoopCLIQuery.outputQuiet(arguments: ["--list", "--quiet"]))
+        XCTAssertFalse(try NoopCLIQuery.outputQuiet(arguments: ["--list"]))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListResources(arguments: ["--list", "--quiet", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        assertResourceUsageError(["noop://tools/catalog", "--quiet", "--quiet"])
+    }
+
     func testResourceCommandUnknownURIIsUsage64() {
         assertResourceUsageError([])
         assertResourceUsageError(["noop://unknown"])

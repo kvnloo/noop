@@ -64,5 +64,6 @@ MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as J
 Unknown URIs exit 64. `noop-local-access resource --list` prints those known URIs as a JSON array.
 `noop-local-access --version` and `-V` print the non-empty product version.
 Optional `--pretty` pretty-prints `query` and `resource` JSON (default remains compact one-line).
+Optional `--quiet` suppresses stderr diagnostics; stdout JSON is unchanged.
 
 One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

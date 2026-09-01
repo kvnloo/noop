@@ -5,17 +5,20 @@ public struct NoopCLIQueryRequest: Equatable, Sendable {
     public let arguments: [String: JSONValue]
     public let configuration: LocalAccessConfiguration
     public let pretty: Bool
+    public let quiet: Bool
 
     public init(
         toolName: String,
         arguments: [String: JSONValue],
         configuration: LocalAccessConfiguration = .environment(),
-        pretty: Bool = false
+        pretty: Bool = false,
+        quiet: Bool = false
     ) {
         self.toolName = toolName
         self.arguments = arguments
         self.configuration = configuration
         self.pretty = pretty
+        self.quiet = quiet
     }
 }
 
@@ -23,11 +26,18 @@ public struct NoopCLIResourceRequest: Equatable, Sendable {
     public let uri: String
     public let configuration: LocalAccessConfiguration
     public let pretty: Bool
+    public let quiet: Bool
 
-    public init(uri: String, configuration: LocalAccessConfiguration = .environment(), pretty: Bool = false) {
+    public init(
+        uri: String,
+        configuration: LocalAccessConfiguration = .environment(),
+        pretty: Bool = false,
+        quiet: Bool = false
+    ) {
         self.uri = uri
         self.configuration = configuration
         self.pretty = pretty
+        self.quiet = quiet
     }
 }
 
@@ -45,7 +55,7 @@ public enum NoopCLIQueryError: Error, CustomStringConvertible, Equatable {
 
 public enum NoopCLIQuery {
     public static func parse(arguments: [String]) throws -> NoopCLIQueryRequest {
-        let peeled = try peelPretty(arguments)
+        let peeled = try peelOutputFlags(arguments)
         let argv = peeled.rest
         guard let toolName = argv.first, !toolName.hasPrefix("-") else {
             throw NoopCLIQueryError.usage("query requires one tool name")
@@ -215,7 +225,8 @@ public enum NoopCLIQuery {
             toolName: toolName,
             arguments: toolArguments,
             configuration: configuration,
-            pretty: peeled.pretty
+            pretty: peeled.pretty,
+            quiet: peeled.quiet
         )
     }
 
@@ -229,7 +240,7 @@ public enum NoopCLIQuery {
     }
 
     public static func wantsListTools(arguments: [String]) throws -> Bool {
-        let argv = try peelPretty(arguments).rest
+        let argv = try peelOutputFlags(arguments).rest
         guard argv.first == "--list-tools" else { return false }
         guard argv == ["--list-tools"] else {
             throw NoopCLIQueryError.usage("query --list-tools does not accept additional arguments")
@@ -256,7 +267,7 @@ public enum NoopCLIQuery {
     }
 
     public static func wantsListResources(arguments: [String]) throws -> Bool {
-        let argv = try peelPretty(arguments).rest
+        let argv = try peelOutputFlags(arguments).rest
         guard argv.first == "--list" else { return false }
         guard argv == ["--list"] else {
             throw NoopCLIQueryError.usage("resource --list does not accept additional arguments")
@@ -265,7 +276,7 @@ public enum NoopCLIQuery {
     }
 
     public static func parseResourceCommand(arguments: [String]) throws -> NoopCLIResourceRequest {
-        let peeled = try peelPretty(arguments)
+        let peeled = try peelOutputFlags(arguments)
         let argv = peeled.rest
         guard let raw = argv.first, !raw.hasPrefix("-") else {
             throw NoopCLIQueryError.usage("resource requires one uri")
@@ -293,7 +304,7 @@ public enum NoopCLIQuery {
                 throw NoopCLIQueryError.usage("unknown resource flag")
             }
         }
-        return NoopCLIResourceRequest(uri: uri, configuration: configuration, pretty: peeled.pretty)
+        return NoopCLIResourceRequest(uri: uri, configuration: configuration, pretty: peeled.pretty, quiet: peeled.quiet)
     }
 
     public static func resourcePayload(_ request: NoopCLIResourceRequest) throws -> JSONValue {
@@ -311,7 +322,18 @@ public enum NoopCLIQuery {
     }
 
     public static func outputPretty(arguments: [String]) throws -> Bool {
-        try peelPretty(arguments).pretty
+        try peelOutputFlags(arguments).pretty
+    }
+
+    public static func outputQuiet(arguments: [String]) throws -> Bool {
+        try peelOutputFlags(arguments).quiet
+    }
+
+    /// stderr diagnostic line, or `nil` when `--quiet` suppresses diagnostics.
+    /// stdout JSON is encoded separately and is unchanged by quiet.
+    public static func stderrDiagnostic(_ message: String, quiet: Bool) -> Data? {
+        guard !quiet else { return nil }
+        return Data("[noop-local-access] \(message)\n".utf8)
     }
 
     /// Product version printed by `noop-local-access --version` / `-V`.
@@ -336,8 +358,9 @@ public enum NoopCLIQuery {
         }
     }
 
-    private static func peelPretty(_ arguments: [String]) throws -> (pretty: Bool, rest: [String]) {
+    private static func peelOutputFlags(_ arguments: [String]) throws -> (pretty: Bool, quiet: Bool, rest: [String]) {
         var pretty = false
+        var quiet = false
         var rest: [String] = []
         for arg in arguments {
             if arg == "--pretty" {
@@ -347,9 +370,16 @@ public enum NoopCLIQuery {
                 pretty = true
                 continue
             }
+            if arg == "--quiet" {
+                if quiet {
+                    throw NoopCLIQueryError.usage("duplicate flag: --quiet")
+                }
+                quiet = true
+                continue
+            }
             rest.append(arg)
         }
-        return (pretty, rest)
+        return (pretty, quiet, rest)
     }
 
     private static func requiredValue(_ flag: String, arguments: [String], index: inout Int) throws -> String {
