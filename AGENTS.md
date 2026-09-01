@@ -1,0 +1,69 @@
+# AGENTS.md
+
+Automated-agent entry. Full working notes live in [`CLAUDE.md`](CLAUDE.md)
+(architecture, hard scope, BLE, parity, PR conventions, CI table). This file
+adds no policy.
+
+## Pointers
+
+- [`CLAUDE.md`](CLAUDE.md), [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), [`docs/BUILD.md`](docs/BUILD.md), [`docs/SCOPE.md`](docs/SCOPE.md), [`docs/IOS.md`](docs/IOS.md)
+
+## CI facts
+
+- `android.yml` is **active**.
+- `app-build.yml` is **disabled_manually** (app-target Swift is not default CI).
+- `swift-packages.yml` covers `Packages/NoopLocalAccess`.
+
+## NoopLocalAccess tools
+
+`Packages/NoopLocalAccess` (`noop-local-access` MCP/CLI): bounded, read-only, no
+network, no write/control. Same names for MCP and `query`. Seventeen tools:
+
+- `health_snapshot`
+- `metric_series`
+- `data_freshness`
+- `sleep_summary`
+- `workout_summary`
+- `hr_series`
+- `rr_series`
+- `event_series`
+- `event_kinds`
+- `sleep_stages`
+- `spo2_series`
+- `skin_temp_series`
+- `resp_series`
+- `step_series`
+- `gravity_series`
+- `battery_series`
+- `sleep_state_series`
+
+Optional flags (MCP names; CLI uses `--include-*`):
+
+- `include_zones` / `--include-zones` on `workout_summary`
+- `include_notes` / `--include-notes` on `workout_summary`
+- `include_motion` / `--include-motion` on `sleep_summary`
+- `include_sleep_state` / `--include-sleep-state` on `sleep_summary`
+- `include_start_adjusted` / `--include-start-adjusted` on `sleep_summary`
+
+`data_freshness` last-ts keys (missing tables stay `null`):
+`latestHeartRateSample`, `latestRrInterval`, `latestEvent`,
+`latestSleepSession`, `latestWorkout`, `latestBattery`,
+`latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`,
+`latestSleepState`.
+
+`sleep_summary` still returns `hasStages` only unless `include_motion`,
+`include_sleep_state`, or `include_start_adjusted` is set. Motion and sleep
+state attach bounded payloads; startTsAdjusted is included only when present.
+`workout_summary` still returns `hasZones`/`hasNotes` only unless `include_zones`
+or `include_notes` is set, which attach bounded payloads.
+
+MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+`noop-local-access query --list-tools` and `noop-local-access tools` print the same JSON array.
+`noop-local-access resource <uri>` prints the same JSON as MCP `resourcePayload` for
+`tools/catalog`, `data/freshness`, `health/snapshot`, `metrics/catalog`, and `sources`.
+Unknown URIs exit 64. `noop-local-access resource --list` prints those known URIs as a JSON array.
+`noop-local-access --version` and `-V` print the non-empty product version.
+Optional `--pretty` pretty-prints `query` and `resource` JSON (default remains compact one-line).
+Optional `--quiet` suppresses stderr diagnostics; stdout JSON is unchanged.
+
+One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

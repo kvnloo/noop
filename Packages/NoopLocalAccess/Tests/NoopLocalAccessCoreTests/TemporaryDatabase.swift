@@ -107,4 +107,385 @@ enum TemporaryDatabase {
         try db.execute(sql: "INSERT INTO rrInterval(deviceId, ts, rrMs) VALUES ('my-whoop', 101, 850)")
         try db.execute(sql: "INSERT INTO rawBatch(batchId, deviceId, byteSize) VALUES ('batch-1', 'my-whoop', 12)")
     }
+
+    static func withSleepStages(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            let olderStart = now - 90_000
+            let olderJSON = """
+            [{"start":\(olderStart),"end":\(olderStart + 600),"stage":"light"},{"start":\(olderStart + 600),"end":\(olderStart + 1200),"stage":"deep"},{"start":\(olderStart + 1200),"end":\(olderStart + 1800),"stage":"wake"}]
+            """
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 90, 49, 68, ?)
+                """,
+                arguments: ["my-whoop", olderStart, olderStart + 1800, olderJSON]
+            )
+
+            let newerStart = now - 3_600
+            let newerJSON = """
+            [{"start":\(newerStart),"end":\(newerStart + 300),"stage":"light"},{"start":\(newerStart + 300),"end":\(newerStart + 900),"stage":"deep"},{"start":\(newerStart + 900),"end":\(newerStart + 1500),"stage":"rem"},{"start":\(newerStart + 1500),"end":\(newerStart + 1800),"stage":"awake"}]
+            """
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 92, 48, 71, ?)
+                """,
+                arguments: ["my-whoop", newerStart, newerStart + 1800, newerJSON]
+            )
+
+            let importedStart = now - 180_000
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 88, 51, 60, ?)
+                """,
+                arguments: ["my-whoop", importedStart, importedStart + 25_200, "{\"light\":100,\"deep\":50,\"rem\":40,\"awake\":10}"]
+            )
+        }
+        return url
+    }
+
+    static func withEvents() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE event(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL, kind TEXT NOT NULL,
+                    payloadJSON TEXT NOT NULL, PRIMARY KEY(deviceId, ts, kind)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO event(deviceId, ts, kind, payloadJSON) VALUES
+                    ('my-whoop', 100, 'ALPHA', '{"ok":true,"n":1}'),
+                    ('my-whoop', 101, 'ALPHA', 'not-json'),
+                    ('my-whoop', 102, 'ALPHA', '{"later":true}'),
+                    ('my-whoop', 103, 'BETA', '{"other":1}'),
+                    ('other-device', 102, 'ALPHA', '{"skip":1}')
+                """)
+        }
+        return url
+    }
+
+    static func withRRIntervals() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE rrInterval")
+            try db.execute(sql: """
+                CREATE TABLE rrInterval(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL, rrMs INTEGER NOT NULL,
+                    seq INTEGER NOT NULL DEFAULT 0, ord INTEGER,
+                    srcChannel INTEGER, tsSuspect INTEGER,
+                    PRIMARY KEY(deviceId, ts, rrMs, seq)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO rrInterval(deviceId, ts, rrMs, seq, ord, srcChannel, tsSuspect) VALUES
+                    ('my-whoop', 100, 800, 0, 0, NULL, NULL),
+                    ('my-whoop', 101, 790, 0, 0, 1, NULL),
+                    ('my-whoop', 101, 810, 1, 1, 1, NULL),
+                    ('my-whoop', 101, 820, 2, 2, 2, NULL),
+                    ('my-whoop', 102, 830, 0, 0, NULL, 1),
+                    ('my-whoop', 103, 840, 0, 0, 3, 0),
+                    ('other-device', 103, 850, 0, 0, NULL, NULL)
+                """)
+        }
+        return url
+    }
+
+    static func withoutRRInterval() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE rrInterval")
+        }
+        return url
+    }
+
+    static func withSpo2Samples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE spo2Sample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    red INTEGER NOT NULL, ir INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO spo2Sample(deviceId, ts, red, ir) VALUES
+                    ('my-whoop', 100, 97, 50),
+                    ('my-whoop', 101, 98, 51),
+                    ('my-whoop', 102, 96, 49),
+                    ('other-device', 102, 90, 40)
+                """)
+        }
+        return url
+    }
+
+    static func withSkinTempSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE skinTempSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    raw INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO skinTempSample(deviceId, ts, raw) VALUES
+                    ('my-whoop', 100, 3057),
+                    ('my-whoop', 101, 3060),
+                    ('my-whoop', 102, 3040),
+                    ('other-device', 102, 2000)
+                """)
+        }
+        return url
+    }
+
+    static func withRespSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE respSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    raw INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO respSample(deviceId, ts, raw) VALUES
+                    ('my-whoop', 100, 1200),
+                    ('my-whoop', 101, 1300),
+                    ('my-whoop', 102, 1100),
+                    ('other-device', 102, 500)
+                """)
+        }
+        return url
+    }
+
+    static func withStepSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE stepSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    counter INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO stepSample(deviceId, ts, counter) VALUES
+                    ('my-whoop', 100, 1200),
+                    ('my-whoop', 101, 1300),
+                    ('my-whoop', 102, 1100),
+                    ('other-device', 102, 500)
+                """)
+        }
+        return url
+    }
+
+    static func withGravitySamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE gravitySample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    x DOUBLE NOT NULL, y DOUBLE NOT NULL, z DOUBLE NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO gravitySample(deviceId, ts, x, y, z) VALUES
+                    ('my-whoop', 100, 1.0, 2.0, 9.0),
+                    ('my-whoop', 101, 3.0, 4.0, 7.0),
+                    ('my-whoop', 102, 5.0, 6.0, 5.0),
+                    ('other-device', 102, 0.5, 0.5, 0.5)
+                """)
+        }
+        return url
+    }
+
+    static func withBatterySamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE battery(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    soc DOUBLE, mv INTEGER,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO battery(deviceId, ts, soc, mv) VALUES
+                    ('my-whoop', 100, 80.0, 3900),
+                    ('my-whoop', 101, 78.0, 3850),
+                    ('my-whoop', 102, 76.0, 3800),
+                    ('other-device', 102, 10.0, 3000)
+                """)
+        }
+        return url
+    }
+
+    static func withSleepStateSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE sleepStateSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    state INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO sleepStateSample(deviceId, ts, state) VALUES
+                    ('my-whoop', 100, 0),
+                    ('my-whoop', 101, 2),
+                    ('my-whoop', 102, 3),
+                    ('other-device', 102, 1)
+                """)
+        }
+        return url
+    }
+
+    static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            func insertWorkout(start: Int, sport: String, zonesJSON: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO workout(deviceId, startTs, endTs, sport, source, durationS, energyKcal, avgHr, maxHr, strain, zonesJSON)
+                    VALUES (?, ?, ?, ?, 'whoop', 1800, 310, 140, 171, 8.5, ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sport, zonesJSON]
+                )
+            }
+            try insertWorkout(start: now - 3_600, sport: "run", zonesJSON: #"{"z1":12.5,"z5":4.5}"#)
+            try insertWorkout(start: now - 7_200, sport: "bike", zonesJSON: #"{"zone1":10,"zone2":20,"zone3":30,"zone4":25,"zone5":15}"#)
+            try insertWorkout(start: now - 10_800, sport: "yoga", zonesJSON: nil)
+            try insertWorkout(start: now - 14_400, sport: "row", zonesJSON: "not-json")
+            let extra = (1...40).map { "\"k\($0)\":\($0)" }.joined(separator: ",")
+            try insertWorkout(start: now - 18_000, sport: "swim", zonesJSON: "{\(extra)}")
+        }
+        return url
+    }
+
+    static func withWorkoutNotes(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            func insertWorkout(start: Int, sport: String, notes: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO workout(deviceId, startTs, endTs, sport, source, durationS, energyKcal, avgHr, maxHr, strain, notes)
+                    VALUES (?, ?, ?, ?, 'whoop', 1800, 310, 140, 171, 8.5, ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sport, notes]
+                )
+            }
+            try insertWorkout(start: now - 3_600, sport: "run", notes: "easy tempo")
+            try insertWorkout(start: now - 7_200, sport: "bike", notes: nil)
+            try insertWorkout(start: now - 10_800, sport: "row", notes: String(repeating: "x", count: 3000))
+            try insertWorkout(start: now - 14_400, sport: "yoga", notes: "")
+        }
+        return url
+    }
+
+    static func withSleepMotion(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE sleepSession ADD COLUMN motionJSON TEXT")
+            func insertSession(start: Int, motionJSON: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, motionJSON)
+                    VALUES (?, ?, ?, 90, 49, 68, '{"light":10}', ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, motionJSON]
+                )
+            }
+            try insertSession(start: now - 3_600, motionJSON: "[0.1,0.2,0.3]")
+            try insertSession(start: now - 7_200, motionJSON: nil)
+            try insertSession(start: now - 10_800, motionJSON: "not-json")
+            let extra = (1...40).map { String($0) }.joined(separator: ",")
+            try insertSession(start: now - 14_400, motionJSON: "[\(extra)]")
+        }
+        return url
+    }
+
+    static func withSleepState(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE sleepSession ADD COLUMN sleepStateJSON TEXT")
+            func insertSession(start: Int, sleepStateJSON: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, sleepStateJSON)
+                    VALUES (?, ?, ?, 90, 49, 68, '{"light":10}', ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sleepStateJSON]
+                )
+            }
+            try insertSession(start: now - 3_600, sleepStateJSON: "[0.1,0.2,0.3]")
+            try insertSession(start: now - 7_200, sleepStateJSON: nil)
+            try insertSession(start: now - 10_800, sleepStateJSON: "not-json")
+            let extra = (1...40).map { String($0) }.joined(separator: ",")
+            try insertSession(start: now - 14_400, sleepStateJSON: "[\(extra)]")
+        }
+        return url
+    }
+
+
+    static func withStartAdjusted(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE sleepSession ADD COLUMN startTsAdjusted INTEGER")
+            func insertSession(start: Int, startTsAdjusted: Int?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, startTsAdjusted)
+                    VALUES (?, ?, ?, 90, 49, 68, '{"light":10}', ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, startTsAdjusted]
+                )
+            }
+            try insertSession(start: now - 3_600, startTsAdjusted: now - 3_300)
+            try insertSession(start: now - 7_200, startTsAdjusted: nil)
+        }
+        return url
+    }
+
+    static func withoutSleepSession() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE sleepSession")
+        }
+        return url
+    }
+
+    static func withoutWorkout() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE workout")
+        }
+        return url
+    }
 }

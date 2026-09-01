@@ -15,6 +15,18 @@ public final class NoopToolDispatcher {
         "data_freshness",
         "sleep_summary",
         "workout_summary",
+        "hr_series",
+        "spo2_series",
+        "skin_temp_series",
+        "resp_series",
+        "step_series",
+        "gravity_series",
+        "battery_series",
+        "sleep_state_series",
+        "sleep_stages",
+        "event_series",
+        "event_kinds",
+        "rr_series",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -36,9 +48,172 @@ public final class NoopToolDispatcher {
         case "data_freshness":
             return try data().freshness()
         case "sleep_summary":
-            return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
+            return try data().sleepSummary(
+                days: boundedDays(arguments["days"], default: 30, max: 4000),
+                includeMotion: arguments["include_motion"]?.boolValue ?? false,
+                includeSleepState: arguments["include_sleep_state"]?.boolValue ?? false,
+                includeStartAdjusted: arguments["include_start_adjusted"]?.boolValue ?? false
+            )
         case "workout_summary":
-            return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
+            return try data().workoutSummary(
+                days: boundedDays(arguments["days"], default: 90, max: 4000),
+                includeZones: arguments["include_zones"]?.boolValue ?? false,
+                includeNotes: arguments["include_notes"]?.boolValue ?? false
+            )
+        case "hr_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("hr_series requires both from_ts and to_ts")
+            }
+            return try data().hrSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "spo2_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("spo2_series requires both from_ts and to_ts")
+            }
+            return try data().spo2Series(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "skin_temp_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("skin_temp_series requires both from_ts and to_ts")
+            }
+            return try data().skinTempSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "resp_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("resp_series requires both from_ts and to_ts")
+            }
+            return try data().respSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "step_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("step_series requires both from_ts and to_ts")
+            }
+            return try data().stepSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "gravity_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("gravity_series requires both from_ts and to_ts")
+            }
+            return try data().gravitySeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+
+        case "battery_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("battery_series requires both from_ts and to_ts")
+            }
+            return try data().batterySeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "sleep_state_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("sleep_state_series requires both from_ts and to_ts")
+            }
+            return try data().sleepStateSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "sleep_stages":
+            return try data().sleepStages(
+                days: boundedDays(arguments["days"], default: 30, max: 4000),
+                limit: boundedLimit(arguments["limit"], default: 14, max: 60),
+                maxPoints: boundedLimit(arguments["max_points"], default: 200, max: 2000)
+            )
+        case "event_series":
+            guard let kind = arguments["kind"]?.stringValue else {
+                throw LocalAccessError.invalidParams("event_series requires kind")
+            }
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
+            }
+            return try data().eventSeries(
+                kind: kind,
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "event_kinds":
+            return try data().eventKinds(
+                limit: boundedLimit(arguments["limit"], default: 100, max: 500),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "rr_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
+            }
+            return try data().rrSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
         default:
             throw LocalAccessError.toolNotFound(name)
         }
@@ -54,6 +229,8 @@ public final class NoopToolDispatcher {
             return NoopDataAccess.metricCatalog()
         case "noop://sources":
             return NoopDataAccess.sources()
+        case "noop://tools/catalog":
+            return .array(Self.toolNames.map { .string($0) })
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }

@@ -208,23 +208,177 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "data_freshness",
                 title: "Data Freshness",
-                description: "Report local NOOP source freshness, storage counts, available metric keys, and latest heart-rate sample timestamp.",
+                description: "Report local NOOP source freshness, storage counts, available metric keys, and latest timestamps for heart-rate, RR interval, event, sleep session, workout, battery, step, respiration, skin temperature, SpO2, gravity, and sleep-state samples. Missing tables are null.",
                 properties: [:]
             ),
             tool(
                 name: "sleep_summary",
                 title: "Sleep Summary",
-                description: "Return bounded sleep sessions and aggregate sleep duration/efficiency from local NOOP data.",
+                description: "Return bounded sleep sessions and aggregate sleep duration/efficiency from local NOOP data. Default keeps hasStages only and omits motionJSON, sleepStateJSON, and startTsAdjusted. include_motion and include_sleep_state attach bounded payloads with a truncated flag. include_start_adjusted exposes startTsAdjusted when the column has a value.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 30, max 4000."),
+                    "include_motion": booleanProperty("When true, attach a bounded motion payload per sleep session. Default false; response shape is otherwise unchanged."),
+                    "include_sleep_state": booleanProperty("When true, attach a bounded sleepState payload per sleep session. Default false; response shape is otherwise unchanged."),
+                    "include_start_adjusted": booleanProperty("When true, include startTsAdjusted on a session when that column is present and non-null. Default false; omitted otherwise so pre-v14 tables stay readable."),
                 ]
             ),
             tool(
                 name: "workout_summary",
                 title: "Workout Summary",
-                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data.",
+                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data. Default keeps hasZones/hasNotes only and omits zonesJSON and notes text. include_zones and include_notes attach bounded payloads with a truncated flag.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 90, max 4000."),
+                    "include_zones": booleanProperty("When true, attach a bounded zones payload per workout. Default false; response shape is otherwise unchanged."),
+                    "include_notes": booleanProperty("When true, attach a bounded notes payload per workout. Default false; response shape is otherwise unchanged."),
+                ]
+            ),
+            tool(
+                name: "hr_series",
+                title: "Heart Rate Series",
+                description: "Return a bounded intra-day heart-rate series as measured-first buckets with PPG fill-in. Not a daily metric_series.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "spo2_series",
+                title: "SpO2 Series",
+                description: "Return a bounded intra-day SpO2 series as buckets of stored spo2Sample red/ir. Not a daily metric_series. Missing spo2Sample table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "skin_temp_series",
+                title: "Skin Temp Series",
+                description: "Return a bounded intra-day skin-temp series as buckets of stored skinTempSample.raw. Not a daily metric_series. Missing skinTempSample table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "resp_series",
+                title: "Respiration Series",
+                description: "Return a bounded intra-day respiration series as buckets of stored respSample.raw. Not a daily metric_series. Missing respSample table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "step_series",
+                title: "Step Series",
+                description: "Return a bounded intra-day step series as buckets of stored stepSample.counter. Not a daily metric_series. Missing stepSample table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "gravity_series",
+                title: "Gravity Series",
+                description: "Return a bounded intra-day gravity series as buckets of stored gravitySample x/y/z. Not a daily metric_series. Missing gravitySample table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "battery_series",
+                title: "Battery Series",
+                description: "Return a bounded intra-day battery series as buckets of stored battery soc/mv. Not a daily metric_series. Missing battery table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "sleep_state_series",
+                title: "Sleep State Series",
+                description: "Return a bounded intra-day band sleep-state series as buckets of stored sleepStateSample.state. Not a daily metric_series. Missing sleepStateSample table returns empty points. Does not dump PPG waveform.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "sleep_stages",
+                title: "Sleep Stages",
+                description: "Return a bounded sleep hypnogram from stored sleepSession.stagesJSON. sleep_summary default stays hasStages only; optional include_motion attaches bounded motionJSON; optional include_sleep_state attaches bounded sleepStateJSON; optional include_start_adjusted exposes startTsAdjusted when present. Segment arrays keep timing; minute aggregates do not invent a timeline.",
+                properties: [
+                    "days": integerProperty("Trailing days to include, default 30, max 4000."),
+                    "limit": integerProperty("Maximum returned sessions as a suffix, default 14, max 60."),
+                    "max_points": integerProperty("Maximum stage segments per session, default 200, max 2000."),
+                ]
+            ),
+            tool(
+                name: "event_series",
+                title: "Event Series",
+                description: "Return a bounded read of one stored event.kind. kind is required; this is not a dump of every kind. payloadJSON is parsed as JSON when valid, otherwise returned as a string. Missing tables and unknown kinds return empty points.",
+                properties: [
+                    "kind": stringProperty("Required event.kind filter. One kind per call."),
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ],
+                required: ["kind"]
+            ),
+            tool(
+                name: "event_kinds",
+                title: "Event Kinds",
+                description: "Return distinct stored event.kind values for one device. Read-only catalog; does not dump payloads or event rows. Missing event table returns empty kinds. Optional limit default 100, max 500.",
+                properties: [
+                    "limit": integerProperty("Maximum returned kinds, default 100, max 500."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
+            tool(
+                name: "rr_series",
+                title: "R-R Interval Series",
+                description: "Return a bounded intra-day R-R series matching WhoopStore.rrIntervals filters (srcChannel != spo2Ibi, tsSuspect != 1; NULLs kept). Not a 1Hz dump: suffix limit is the cap. Missing rrInterval table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
                 ]
             ),
         ]),
@@ -238,6 +392,7 @@ public func resourcesList() -> JSONValue {
             resource("noop://data/freshness", name: "data_freshness", title: "NOOP Data Freshness", description: "Source coverage and latest sample timestamps", mimeType: "application/json"),
             resource("noop://metrics/catalog", name: "metrics_catalog", title: "NOOP Metrics Catalog", description: "Supported metric keys and source ids", mimeType: "application/json"),
             resource("noop://sources", name: "sources", title: "NOOP Sources", description: "Canonical local source identifiers", mimeType: "application/json"),
+            resource("noop://tools/catalog", name: "tools_catalog", title: "NOOP Tools Catalog", description: "Dispatcher toolNames list as JSON", mimeType: "application/json"),
         ]),
     ])
 }
@@ -305,6 +460,13 @@ private func stringProperty(_ description: String) -> JSONValue {
 private func integerProperty(_ description: String) -> JSONValue {
     .object([
         "type": .string("integer"),
+        "description": .string(description),
+    ])
+}
+
+private func booleanProperty(_ description: String) -> JSONValue {
+    .object([
+        "type": .string("boolean"),
         "description": .string(description),
     ])
 }

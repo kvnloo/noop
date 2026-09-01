@@ -387,6 +387,8 @@ Tools/Backfill/          CLI tool for backfilling decoded data
 Fixtures/                sample WHOOP export for tests
 ```
 
+`Packages/NoopLocalAccess` (`noop-local-access` MCP/CLI) is the stacked local query surface: bounded, read-only, no network, no write/control. Same nine tools for MCP and `query`: `health_snapshot`, `metric_series`, `data_freshness`, `sleep_summary`, `workout_summary`, `hr_series`, `rr_series`, `event_series`, `sleep_stages`. See [`Packages/NoopLocalAccess/README.md`](Packages/NoopLocalAccess/README.md).
+
 ### `WhoopProtocol` — the protocol-support core
 
 Platform-pure (no CoreBluetooth import) so it runs in tests and CLI tools
