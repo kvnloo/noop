@@ -208,7 +208,7 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "data_freshness",
                 title: "Data Freshness",
-                description: "Report local NOOP source freshness, storage counts, available metric keys, and latest timestamps for heart-rate, RR interval, event, and sleep session samples. Missing tables are null.",
+                description: "Report local NOOP source freshness, storage counts, available metric keys, and latest timestamps for heart-rate, RR interval, event, sleep session, and workout samples. Missing tables are null.",
                 properties: [:]
             ),
             tool(

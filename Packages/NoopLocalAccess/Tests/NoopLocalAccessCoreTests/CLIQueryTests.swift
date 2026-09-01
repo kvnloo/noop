@@ -56,6 +56,7 @@ final class CLIQueryTests: XCTestCase {
         let requiredKeys = [
             "generatedAt", "deviceId", "computedDeviceId",
             "latestHeartRateSample", "latestRrInterval", "latestEvent", "latestSleepSession",
+            "latestWorkout",
             "storage", "coverage", "metricKeys",
         ]
         for key in requiredKeys {
@@ -66,6 +67,15 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(seededObject["latestRrInterval"]?.objectValue?["ts"], .int(101))
         XCTAssertEqual(seededObject["latestEvent"], .null)
         XCTAssertEqual(seededObject["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+        XCTAssertEqual(seededObject["latestWorkout"]?.objectValue?["ts"], .int(4800))
+        XCTAssertEqual(
+            Set(seededObject["latestWorkout"]?.objectValue?.keys ?? []),
+            Set(seededObject["latestHeartRateSample"]?.objectValue?.keys ?? [])
+        )
+        XCTAssertEqual(
+            Set(seededObject["latestHeartRateSample"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
         XCTAssertNil(seededObject["analysisFingerprint"])
         XCTAssertNil(seededObject["score"])
         XCTAssertNil(seededObject["recoveryScore"])
@@ -102,6 +112,18 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(missingSleep.objectValue?["latestSleepSession"], .null)
         XCTAssertEqual(missingSleep.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
         XCTAssertEqual(missingSleep.objectValue?["latestEvent"], .null)
+        XCTAssertEqual(missingSleep.objectValue?["latestWorkout"]?.objectValue?["ts"], .int(4800))
+
+        let missingWorkout = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withoutWorkout().path)
+        ))
+        XCTAssertEqual(missingWorkout.objectValue?["latestWorkout"], .null)
+        XCTAssertEqual(missingWorkout.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(missingWorkout.objectValue?["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+        XCTAssertEqual(missingWorkout.objectValue?["latestRrInterval"]?.objectValue?["ts"], .int(101))
+        XCTAssertEqual(missingWorkout.objectValue?["latestEvent"], .null)
     }
 
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {

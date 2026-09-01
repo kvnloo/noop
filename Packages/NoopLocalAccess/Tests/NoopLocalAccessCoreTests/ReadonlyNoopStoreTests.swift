@@ -12,6 +12,7 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(try store.latestRRIntervalTs(deviceId: "my-whoop"), 101)
         XCTAssertNil(try store.latestEventTs(deviceId: "my-whoop"))
         XCTAssertEqual(try store.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
+        XCTAssertEqual(try store.latestWorkoutTs(deviceId: "my-whoop"), 4800)
         let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
         XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
         XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
@@ -79,6 +80,12 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         let noSleep = try ReadonlyNoopStore(path: try TemporaryDatabase.withoutSleepSession().path)
         XCTAssertNil(try noSleep.latestSleepSessionTs(deviceId: "my-whoop"))
         XCTAssertEqual(try noSleep.latestHRSampleTs(deviceId: "my-whoop"), 102)
+        XCTAssertEqual(try noSleep.latestWorkoutTs(deviceId: "my-whoop"), 4800)
+
+        let noWorkout = try ReadonlyNoopStore(path: try TemporaryDatabase.withoutWorkout().path)
+        XCTAssertNil(try noWorkout.latestWorkoutTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try noWorkout.latestHRSampleTs(deviceId: "my-whoop"), 102)
+        XCTAssertEqual(try noWorkout.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
     }
 
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {

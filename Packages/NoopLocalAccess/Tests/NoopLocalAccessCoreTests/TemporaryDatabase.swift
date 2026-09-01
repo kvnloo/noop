@@ -258,4 +258,13 @@ enum TemporaryDatabase {
         }
         return url
     }
+
+    static func withoutWorkout() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE workout")
+        }
+        return url
+    }
 }

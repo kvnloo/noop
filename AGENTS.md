@@ -32,5 +32,5 @@ network, no write/control. Same names for MCP and `query`:
 `sleep_summary` still returns `hasStages` only. `workout_summary` still returns
 `hasZones`/`hasNotes` only unless `include_zones` / `--include-zones` or
 `include_notes` / `--include-notes` is set, which attach bounded payloads.
-`data_freshness` includes last-ts for HR, RR, event, and sleep when those tables
-exist. One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).
+`data_freshness` includes last-ts for HR, RR, event, sleep, and workout when
+those tables exist. One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).
