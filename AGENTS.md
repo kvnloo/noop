@@ -30,8 +30,9 @@ network, no write/control. Same names for MCP and `query`:
 - `sleep_stages`
 
 `sleep_summary` still returns `hasStages` only unless `include_motion` /
-`--include-motion` or `include_sleep_state` / `--include-sleep-state` is set,
-which attach bounded `motionJSON` / `sleepStateJSON` payloads.
+`--include-motion`, `include_sleep_state` / `--include-sleep-state`, or
+`include_start_adjusted` / `--include-start-adjusted` is set. Motion and sleep
+state attach bounded payloads; startTsAdjusted is included only when present.
 `workout_summary` still returns `hasZones`/`hasNotes` only unless `include_zones`
 / `--include-zones` or `include_notes` / `--include-notes` is set, which attach
 bounded payloads.

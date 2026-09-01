@@ -296,6 +296,27 @@ enum TemporaryDatabase {
         return url
     }
 
+
+    static func withStartAdjusted(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE sleepSession ADD COLUMN startTsAdjusted INTEGER")
+            func insertSession(start: Int, startTsAdjusted: Int?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, startTsAdjusted)
+                    VALUES (?, ?, ?, 90, 49, 68, '{"light":10}', ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, startTsAdjusted]
+                )
+            }
+            try insertSession(start: now - 3_600, startTsAdjusted: now - 3_300)
+            try insertSession(start: now - 7_200, startTsAdjusted: nil)
+        }
+        return url
+    }
+
     static func withoutSleepSession() throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

@@ -132,11 +132,10 @@ public struct SleepSessionRow: Equatable, Sendable {
     public let stagesJSON: String?
     public let motionJSON: String?
     public let sleepStateJSON: String?
-    // NOTE (#318): this local-access read intentionally does NOT surface the user's `startTsAdjusted`
-    // onset correction — its SELECT must stay readable against pre-v14 / foreign sleepSession tables
-    // (see the `tableNames` guard), so adding the column would regress those. The MCP read therefore
-    // reports the DETECTED onset for a hand-edited night; the app's own screens use the corrected one.
-    // `motionJSON` and `sleepStateJSON` are selected only when pragma_table_info lists them; older tables stay readable.
+    public let startTsAdjusted: Int?
+    // `startTsAdjusted`, `motionJSON`, and `sleepStateJSON` are selected only when pragma_table_info
+    // lists them; pre-v14 / foreign sleepSession tables stay readable. sleep_summary omits
+    // startTsAdjusted unless includeStartAdjusted is true and the column has a value.
 }
 
 public struct MetricPointRow: Equatable, Sendable {
@@ -259,8 +258,9 @@ public final class ReadonlyNoopStore {
         return try dbQueue.read { db in
             let motionSelect = sleepSessionColumns.contains("motionJSON") ? "motionJSON" : "NULL AS motionJSON"
             let sleepStateSelect = sleepSessionColumns.contains("sleepStateJSON") ? "sleepStateJSON" : "NULL AS sleepStateJSON"
+            let startAdjustedSelect = sleepSessionColumns.contains("startTsAdjusted") ? "startTsAdjusted" : "NULL AS startTsAdjusted"
             return try Row.fetchAll(db, sql: """
-                SELECT startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, \(motionSelect), \(sleepStateSelect)
+                SELECT startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, \(motionSelect), \(sleepStateSelect), \(startAdjustedSelect)
                 FROM sleepSession
                 WHERE deviceId = ? AND startTs >= ? AND startTs <= ?
                 ORDER BY startTs ASC LIMIT ?
@@ -270,7 +270,8 @@ public final class ReadonlyNoopStore {
                                     efficiency: $0["efficiency"], restingHr: $0["restingHr"],
                                     avgHrv: $0["avgHrv"], stagesJSON: $0["stagesJSON"],
                                     motionJSON: $0["motionJSON"],
-                                    sleepStateJSON: $0["sleepStateJSON"])
+                                    sleepStateJSON: $0["sleepStateJSON"],
+                                    startTsAdjusted: $0["startTsAdjusted"])
                 }
         }
     }
@@ -695,7 +696,7 @@ public final class NoopDataAccess {
         ])
     }
 
-    public func sleepSummary(days: Int, includeMotion: Bool = false, includeSleepState: Bool = false) throws -> JSONValue {
+    public func sleepSummary(days: Int, includeMotion: Bool = false, includeSleepState: Bool = false, includeStartAdjusted: Bool = false) throws -> JSONValue {
         let (fromTs, toTs) = timestampRange(days: days)
         let imported = try store.sleepSessions(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
         let computed = try store.sleepSessions(deviceId: computedDeviceId, from: fromTs, to: toTs, limit: 5000)
@@ -708,7 +709,7 @@ public final class NoopDataAccess {
             "count": .int(merged.count),
             "averageDurationMin": optionalDouble(mean(durations)),
             "averageEfficiency": optionalDouble(mean(efficiencies)),
-            "sessions": .array(merged.suffix(200).map { sleepJSON($0, includeMotion: includeMotion, includeSleepState: includeSleepState) }),
+            "sessions": .array(merged.suffix(200).map { sleepJSON($0, includeMotion: includeMotion, includeSleepState: includeSleepState, includeStartAdjusted: includeStartAdjusted) }),
         ])
     }
 
@@ -1061,7 +1062,7 @@ private func appleDailyJSON(_ row: AppleDailyRow) -> JSONValue {
     ])
 }
 
-private func sleepJSON(_ row: SleepSessionRow, includeMotion: Bool = false, includeSleepState: Bool = false) -> JSONValue {
+private func sleepJSON(_ row: SleepSessionRow, includeMotion: Bool = false, includeSleepState: Bool = false, includeStartAdjusted: Bool = false) -> JSONValue {
     var object: [String: JSONValue] = [
         "startTs": .int(row.startTs),
         "endTs": .int(row.endTs),
@@ -1086,6 +1087,9 @@ private func sleepJSON(_ row: SleepSessionRow, includeMotion: Bool = false, incl
             "truncated": .bool(decoded.truncated),
             "payload": decoded.payload,
         ])
+    }
+    if includeStartAdjusted, let startTsAdjusted = row.startTsAdjusted {
+        object["startTsAdjusted"] = .int(startTsAdjusted)
     }
     return .object(object)
 }

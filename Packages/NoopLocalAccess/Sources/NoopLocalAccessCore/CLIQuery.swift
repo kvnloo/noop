@@ -108,6 +108,9 @@ public enum NoopCLIQuery {
             case "--include-sleep-state":
                 guard toolName == "sleep_summary" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["include_sleep_state"] = .bool(true)
+            case "--include-start-adjusted":
+                guard toolName == "sleep_summary" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["include_start_adjusted"] = .bool(true)
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }

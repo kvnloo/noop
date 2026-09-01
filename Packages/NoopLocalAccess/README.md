@@ -12,6 +12,7 @@ noop-local-access query data_freshness
 noop-local-access query sleep_summary --days 30
 noop-local-access query sleep_summary --days 30 --include-motion
 noop-local-access query sleep_summary --days 30 --include-sleep-state
+noop-local-access query sleep_summary --days 30 --include-start-adjusted
 noop-local-access query workout_summary --days 90
 noop-local-access query workout_summary --days 90 --include-zones
 noop-local-access query workout_summary --days 90 --include-notes
@@ -34,14 +35,14 @@ Arguments reuse the MCP defaults and bounds:
   `latestRrInterval`, `latestEvent`, `latestSleepSession`, and `latestWorkout`
   last-ts fields (missing tables are `null`). `latestHeartRateSample` is
   unchanged. `latestWorkout` uses the same `{ts, iso, ageSeconds}` shape.
-- `sleep_summary`: optional `--days` (default 30, clamped to 1...4000), `--include-motion` (default off), and `--include-sleep-state` (default off). Default rows still return `hasStages` only. When `--include-motion` is set, each row gets a bounded `motion` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-sleep-state` is set, each row gets a bounded `sleepState` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters.
+- `sleep_summary`: optional `--days` (default 30, clamped to 1...4000), `--include-motion` (default off), `--include-sleep-state` (default off), and `--include-start-adjusted` (default off). Default rows still return `hasStages` only. When `--include-motion` is set, each row gets a bounded `motion` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-sleep-state` is set, each row gets a bounded `sleepState` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-start-adjusted` is set, a row includes `startTsAdjusted` only if that column is present and non-null (pre-v14 tables omit the key).
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000), `--include-zones` (default off), and `--include-notes` (default off). Default rows still return `hasZones`/`hasNotes` only. When `--include-zones` is set, each row gets a bounded `zones` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries. When `--include-notes` is set, each row gets a bounded `notes` object (`payload` plus `truncated`); strings keep 2048 characters.
 - `hr_series`: optional `--hours` (default 6, clamped to 1...24), `--from-ts` and `--to-ts`
   together, `--bucket-seconds` (default 60, clamped to 1...3600), `--limit` (default 500,
   clamped to 1...2000), and `--device-id`.
 - `sleep_stages`: optional `--days` (default 30, clamped to 1...4000), `--limit` sessions
   (default 14, clamped to 1...60), and `--max-points` per session (default 200, clamped to
-  1...2000). `sleep_summary` still returns `hasStages` only unless `--include-motion` or `--include-sleep-state` is set.
+  1...2000). `sleep_summary` still returns `hasStages` only unless `--include-motion`, `--include-sleep-state`, or `--include-start-adjusted` is set.
 - `event_series`: required `--kind`; optional `--hours` (default 6, clamped to 1...24),
   `--from-ts` and `--to-ts` together, `--limit` (default 500, clamped to 1...2000), and
   `--device-id`. One kind per call. Unknown kinds and a missing `event` table return empty

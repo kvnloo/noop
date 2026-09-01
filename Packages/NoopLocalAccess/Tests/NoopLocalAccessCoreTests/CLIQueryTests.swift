@@ -12,6 +12,7 @@ final class CLIQueryTests: XCTestCase {
             ("sleep_summary", ["--days", "30"]),
             ("sleep_summary", ["--days", "30", "--include-motion"]),
             ("sleep_summary", ["--days", "30", "--include-sleep-state"]),
+            ("sleep_summary", ["--days", "30", "--include-start-adjusted"]),
             ("workout_summary", ["--days", "90"]),
             ("workout_summary", ["--days", "90", "--include-zones"]),
             ("workout_summary", ["--days", "90", "--include-notes"]),
@@ -186,6 +187,11 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["hr_series", "--include-sleep-state"])
         assertUsageError(["sleep_stages", "--include-sleep-state"])
         assertUsageError(["sleep_summary", "--include-sleep-state", "--include-sleep-state"])
+        assertUsageError(["health_snapshot", "--include-start-adjusted"])
+        assertUsageError(["workout_summary", "--include-start-adjusted"])
+        assertUsageError(["hr_series", "--include-start-adjusted"])
+        assertUsageError(["sleep_stages", "--include-start-adjusted"])
+        assertUsageError(["sleep_summary", "--include-start-adjusted", "--include-start-adjusted"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -403,6 +409,7 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNil(object["sleepState"])
             XCTAssertNil(object["sleepStateJSON"])
             XCTAssertNil(object["hasSleepState"])
+            XCTAssertNil(object["startTsAdjusted"])
         }
     }
 
@@ -448,6 +455,7 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNil(object["sleepState"])
             XCTAssertNil(object["sleepStateJSON"])
             XCTAssertNil(object["hasSleepState"])
+            XCTAssertNil(object["startTsAdjusted"])
         }
     }
 
@@ -585,6 +593,7 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNil(object["hasSleepState"])
             XCTAssertNil(object["stages"])
             XCTAssertNil(object["motion"])
+            XCTAssertNil(object["startTsAdjusted"])
         }
     }
 
@@ -669,6 +678,127 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertEqual(object["sleepState"]?.objectValue?["truncated"], .bool(false))
             XCTAssertEqual(object["sleepState"]?.objectValue?["payload"], .null)
             XCTAssertNil(object["sleepStateJSON"])
+        }
+    }
+
+
+    func testSleepSummaryParsesIncludeStartAdjustedFlag() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["sleep_summary", "--days", "14"])
+        XCTAssertEqual(omitted.toolName, "sleep_summary")
+        XCTAssertEqual(omitted.arguments, ["days": .int(14)])
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "sleep_summary",
+            "--days", "14",
+            "--include-start-adjusted",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "sleep_summary")
+        XCTAssertEqual(parsed.arguments, [
+            "days": .int(14),
+            "include_start_adjusted": .bool(true),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+
+        let both = try NoopCLIQuery.parse(arguments: [
+            "sleep_summary",
+            "--include-motion",
+            "--include-sleep-state",
+            "--include-start-adjusted",
+        ])
+        XCTAssertEqual(both.arguments, [
+            "include_motion": .bool(true),
+            "include_sleep_state": .bool(true),
+            "include_start_adjusted": .bool(true),
+        ])
+    }
+
+    func testSleepSummaryDefaultOmitsStartTsAdjusted() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: ["days": .int(3)],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withStartAdjusted(now: now).path)
+        ))
+        XCTAssertEqual(payload.objectValue?["count"], .int(2))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertEqual(sessions.count, 2)
+        for session in sessions {
+            let object = try XCTUnwrap(session.objectValue)
+            XCTAssertNotNil(object["hasStages"])
+            XCTAssertNil(object["startTsAdjusted"])
+            XCTAssertNil(object["motion"])
+            XCTAssertNil(object["sleepState"])
+            XCTAssertNil(object["stages"])
+        }
+    }
+
+    func testSleepSummaryIncludeStartAdjustedExposesValueWhenPresent() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let adjustedStart = now - 3_600
+        let noneStart = now - 7_200
+        let configuration = LocalAccessConfiguration(databasePath: try TemporaryDatabase.withStartAdjusted(now: now).path)
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: [
+                "days": .int(3),
+                "include_start_adjusted": .bool(true),
+            ],
+            configuration: configuration
+        ))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertEqual(sessions.count, 2)
+
+        let adjusted = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(adjustedStart) }?.objectValue)
+        XCTAssertEqual(adjusted["hasStages"], .bool(true))
+        XCTAssertEqual(adjusted["startTs"], .int(adjustedStart))
+        XCTAssertEqual(adjusted["startTsAdjusted"], .int(now - 3_300))
+        XCTAssertNil(adjusted["motion"])
+        XCTAssertNil(adjusted["sleepState"])
+
+        let none = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(noneStart) }?.objectValue)
+        XCTAssertNil(none["startTsAdjusted"])
+
+        let mcp = try XCTUnwrap(try NoopMCPServer(configuration: configuration).handle(RPCRequest(
+            id: .int(1),
+            method: "tools/call",
+            params: .object([
+                "name": .string("sleep_summary"),
+                "arguments": .object([
+                    "days": .int(3),
+                    "include_start_adjusted": .bool(true),
+                ]),
+            ])
+        )))
+        XCTAssertEqual(
+            mcp.objectValue?["result"]?.objectValue?["structuredContent"],
+            payload
+        )
+    }
+
+    func testSleepSummaryIncludeStartAdjustedWhenColumnIsAbsent() throws {
+        let url = try TemporaryDatabase.withSleepStages()
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: [
+                "days": .int(3),
+                "include_start_adjusted": .bool(true),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: url.path)
+        ))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertFalse(sessions.isEmpty)
+        for session in sessions {
+            let object = try XCTUnwrap(session.objectValue)
+            XCTAssertNotNil(object["hasStages"])
+            XCTAssertNil(object["startTsAdjusted"])
         }
     }
 
