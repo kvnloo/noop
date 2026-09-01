@@ -17,7 +17,7 @@ adds no policy.
 ## NoopLocalAccess tools
 
 `Packages/NoopLocalAccess` (`noop-local-access` MCP/CLI): bounded, read-only, no
-network, no write/control. Same names for MCP and `query`:
+network, no write/control. Same names for MCP and `query`. Sixteen tools:
 
 - `health_snapshot`
 - `metric_series`
@@ -25,6 +25,9 @@ network, no write/control. Same names for MCP and `query`:
 - `sleep_summary`
 - `workout_summary`
 - `hr_series`
+- `rr_series`
+- `event_series`
+- `sleep_stages`
 - `spo2_series`
 - `skin_temp_series`
 - `resp_series`
@@ -32,16 +35,22 @@ network, no write/control. Same names for MCP and `query`:
 - `gravity_series`
 - `battery_series`
 - `sleep_state_series`
-- `rr_series`
-- `event_series`
-- `sleep_stages`
 
-`sleep_summary` still returns `hasStages` only unless `include_motion` /
-`--include-motion`, `include_sleep_state` / `--include-sleep-state`, or
-`include_start_adjusted` / `--include-start-adjusted` is set. Motion and sleep
+Optional flags (MCP names; CLI uses `--include-*`):
+
+- `include_zones` / `--include-zones` on `workout_summary`
+- `include_notes` / `--include-notes` on `workout_summary`
+- `include_motion` / `--include-motion` on `sleep_summary`
+- `include_sleep_state` / `--include-sleep-state` on `sleep_summary`
+- `include_start_adjusted` / `--include-start-adjusted` on `sleep_summary`
+
+`data_freshness` last-ts keys (missing tables stay `null`):
+`latestHeartRateSample`, `latestRrInterval`, `latestEvent`,
+`latestSleepSession`, `latestWorkout`.
+
+`sleep_summary` still returns `hasStages` only unless `include_motion`,
+`include_sleep_state`, or `include_start_adjusted` is set. Motion and sleep
 state attach bounded payloads; startTsAdjusted is included only when present.
 `workout_summary` still returns `hasZones`/`hasNotes` only unless `include_zones`
-/ `--include-zones` or `include_notes` / `--include-notes` is set, which attach
-bounded payloads.
-`data_freshness` includes last-ts for HR, RR, event, sleep, and workout when
-those tables exist. One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).
+or `include_notes` is set, which attach bounded payloads.
+One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

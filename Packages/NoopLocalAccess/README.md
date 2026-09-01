@@ -1,7 +1,18 @@
 # NoopLocalAccess
 
 `noop-local-access` exposes bounded, read-only NOOP health data locally. It has no network or
-write/control path.
+write/control path. Same names for MCP and `query`.
+
+Sixteen tools: `health_snapshot`, `metric_series`, `data_freshness`, `sleep_summary`,
+`workout_summary`, `hr_series`, `rr_series`, `event_series`, `sleep_stages`, `spo2_series`,
+`skin_temp_series`, `resp_series`, `step_series`, `gravity_series`, `battery_series`,
+`sleep_state_series`.
+
+Optional flags: `include_zones` and `include_notes` on `workout_summary`; `include_motion`,
+`include_sleep_state`, and `include_start_adjusted` on `sleep_summary` (CLI: `--include-*`).
+
+`data_freshness` last-ts keys (missing tables stay `null`): `latestHeartRateSample`,
+`latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`.
 
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
