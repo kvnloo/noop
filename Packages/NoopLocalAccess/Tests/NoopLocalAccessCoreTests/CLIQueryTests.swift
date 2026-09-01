@@ -12,6 +12,7 @@ final class CLIQueryTests: XCTestCase {
             ("sleep_summary", ["--days", "30"]),
             ("workout_summary", ["--days", "90"]),
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
+            ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
         ]
 
         for (tool, flags) in queries {
@@ -57,6 +58,10 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["hr_series", "--unknown", "x"])
         assertUsageError(["health_snapshot", "--hours", "1"])
         assertUsageError(["metric_series", "--key", "hrv", "--from-ts", "100", "--to-ts", "102"])
+        assertUsageError(["sleep_stages", "--from-ts", "100"])
+        assertUsageError(["sleep_stages", "--max-points"])
+        assertUsageError(["health_snapshot", "--max-points", "10"])
+        assertUsageError(["sleep_summary", "--limit", "1"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -147,6 +152,141 @@ final class CLIQueryTests: XCTestCase {
             configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
         ))
         XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
+    }
+
+
+    func testSleepStagesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "sleep_stages",
+            "--days", "14",
+            "--limit", "7",
+            "--max-points", "40",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "sleep_stages")
+        XCTAssertEqual(parsed.arguments, [
+            "days": .int(14),
+            "limit": .int(7),
+            "max_points": .int(40),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testSleepStagesDecodesSegmentsAndCapsPoints() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let url = try TemporaryDatabase.withSleepStages(now: now)
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let newerStart = now - 3_600
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_stages",
+            arguments: [
+                "days": .int(3),
+                "limit": .int(1),
+                "max_points": .int(2),
+            ],
+            configuration: configuration
+        ))
+        let object = try XCTUnwrap(payload.objectValue)
+        XCTAssertEqual(object["count"], .int(3))
+        XCTAssertEqual(object["returned"], .int(1))
+        XCTAssertEqual(object["truncated"], .bool(true))
+        guard case .array(let sessions) = object["sessions"] else {
+            return XCTFail("Expected sessions array")
+        }
+        XCTAssertEqual(sessions.count, 1)
+        let session = try XCTUnwrap(sessions[0].objectValue)
+        XCTAssertEqual(session["startTs"], .int(newerStart))
+        XCTAssertEqual(session["hasStages"], .bool(true))
+        XCTAssertEqual(session["shape"], .string("segments"))
+        XCTAssertEqual(session["truncated"], .bool(true))
+        guard case .array(let stages) = session["stages"] else {
+            return XCTFail("Expected stages array")
+        }
+        XCTAssertEqual(stages.count, 2)
+        XCTAssertEqual(stages[0].objectValue?["stage"], .string("light"))
+        XCTAssertEqual(stages[1].objectValue?["stage"], .string("deep"))
+        XCTAssertEqual(stages[0].objectValue?["start"], .int(newerStart))
+        XCTAssertEqual(stages[0].objectValue?["end"], .int(newerStart + 300))
+        XCTAssertEqual(session["minutes"]?.objectValue?["light"], .double(5))
+        XCTAssertEqual(session["minutes"]?.objectValue?["deep"], .double(10))
+        XCTAssertEqual(session["minutes"]?.objectValue?["rem"], .double(0))
+        XCTAssertEqual(session["minutes"]?.objectValue?["awake"], .double(0))
+    }
+
+    func testSleepStagesMinutesShapeDoesNotInventATimeline() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let url = try TemporaryDatabase.withSleepStages(now: now)
+        let importedStart = now - 180_000
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_stages",
+            arguments: [
+                "days": .int(3),
+                "limit": .int(3),
+                "max_points": .int(200),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: url.path)
+        ))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions array")
+        }
+        XCTAssertEqual(payload.objectValue?["returned"], .int(3))
+        XCTAssertEqual(payload.objectValue?["truncated"], .bool(false))
+        let imported = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(importedStart) }?.objectValue)
+        XCTAssertEqual(imported["shape"], .string("minutes"))
+        XCTAssertEqual(imported["hasStages"], .bool(true))
+        XCTAssertEqual(imported["truncated"], .bool(false))
+        guard case .array(let stages) = imported["stages"] else {
+            return XCTFail("Expected empty stages array")
+        }
+        XCTAssertEqual(stages.count, 0)
+        XCTAssertEqual(imported["minutes"]?.objectValue?["light"], .double(100))
+        XCTAssertEqual(imported["minutes"]?.objectValue?["deep"], .double(50))
+        XCTAssertEqual(imported["minutes"]?.objectValue?["rem"], .double(40))
+        XCTAssertEqual(imported["minutes"]?.objectValue?["awake"], .double(10))
+
+        let older = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(now - 90_000) }?.objectValue)
+        XCTAssertEqual(older["shape"], .string("segments"))
+        guard case .array(let olderStages) = older["stages"] else {
+            return XCTFail("Expected older stages")
+        }
+        XCTAssertEqual(olderStages.count, 3)
+        XCTAssertEqual(olderStages[2].objectValue?["stage"], .string("awake"))
+    }
+
+    func testSleepSummaryStillOmitsTheStagePayload() throws {
+        let url = try TemporaryDatabase.withSleepStages()
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: ["days": .int(3)],
+            configuration: LocalAccessConfiguration(databasePath: url.path)
+        ))
+        XCTAssertEqual(payload.objectValue?["count"], .int(3))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertFalse(sessions.isEmpty)
+        for session in sessions {
+            let object = try XCTUnwrap(session.objectValue)
+            XCTAssertNotNil(object["hasStages"])
+            XCTAssertNil(object["stages"])
+            XCTAssertNil(object["shape"])
+            XCTAssertNil(object["minutes"])
+        }
+    }
+
+    func testSleepStagesDaysZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["sleep_stages", "--days", "0", "--limit", "0"])
+        XCTAssertEqual(parsed.arguments["days"], .int(0))
+        XCTAssertEqual(parsed.arguments["limit"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSleepStages().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["days"], .int(1))
     }
 
     func testMetricSeriesParsesTheCompleteFlagContract() throws {

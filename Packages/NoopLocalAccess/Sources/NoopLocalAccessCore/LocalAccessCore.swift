@@ -558,6 +558,51 @@ public final class NoopDataAccess {
         ])
     }
 
+    public func sleepStages(days: Int, limit: Int, maxPoints: Int) throws -> JSONValue {
+        let (fromTs, toTs) = timestampRange(days: days)
+        let imported = try store.sleepSessions(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
+        let computed = try store.sleepSessions(deviceId: computedDeviceId, from: fromTs, to: toTs, limit: 5000)
+        let merged = mergeSleep(imported: imported, computed: computed)
+        let truncatedSessions = merged.count > limit
+        let window = Array(merged.suffix(limit))
+        var anyStageTruncation = false
+        let sessions: [JSONValue] = window.map { row in
+            let decoded = decodeSleepHypnogram(
+                stagesJSON: row.stagesJSON,
+                sessionStart: row.startTs,
+                sessionEnd: row.endTs,
+                maxPoints: maxPoints
+            )
+            if decoded.truncated { anyStageTruncation = true }
+            return .object([
+                "startTs": .int(row.startTs),
+                "endTs": .int(row.endTs),
+                "start": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.startTs)))),
+                "end": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.endTs)))),
+                "durationMin": .double(Double(max(0, row.endTs - row.startTs)) / 60.0),
+                "hasStages": .bool(row.stagesJSON != nil),
+                "shape": .string(decoded.shape),
+                "truncated": .bool(decoded.truncated),
+                "minutes": decoded.minutesJSON,
+                "stages": .array(decoded.segments.map { seg in
+                    .object([
+                        "start": .int(seg.start),
+                        "end": .int(seg.end),
+                        "stage": .string(seg.stage),
+                    ])
+                }),
+            ])
+        }
+
+        return .object([
+            "range": .object(["fromTs": .int(fromTs), "toTs": .int(toTs), "days": .int(days)]),
+            "count": .int(merged.count),
+            "returned": .int(window.count),
+            "truncated": .bool(truncatedSessions || anyStageTruncation),
+            "sessions": .array(sessions),
+        ])
+    }
+
     public func workoutSummary(days: Int) throws -> JSONValue {
         let (fromTs, toTs) = timestampRange(days: days)
         let imported = try store.workouts(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
@@ -814,6 +859,143 @@ private func optionalDouble(_ value: Double?) -> JSONValue {
 
 private func optionalInt(_ value: Int?) -> JSONValue {
     value.map { .int($0) } ?? .null
+}
+
+private struct SleepHypnogramDecode {
+    let shape: String
+    let segments: [(start: Int, end: Int, stage: String)]
+    let minutesJSON: JSONValue
+    let truncated: Bool
+}
+
+private func decodeSleepHypnogram(
+    stagesJSON: String?,
+    sessionStart: Int,
+    sessionEnd: Int,
+    maxPoints: Int
+) -> SleepHypnogramDecode {
+    let empty = SleepHypnogramDecode(shape: "none", segments: [], minutesJSON: .null, truncated: false)
+    guard let stagesJSON,
+          let data = stagesJSON.data(using: .utf8),
+          let object = try? JSONSerialization.jsonObject(with: data)
+    else { return empty }
+
+    if let dict = object as? [String: Any] {
+        return SleepHypnogramDecode(
+            shape: "minutes",
+            segments: [],
+            minutesJSON: minutesObject(from: dict),
+            truncated: false
+        )
+    }
+
+    guard let array = object as? [[String: Any]] else { return empty }
+
+    let missingTiming = array.contains { jsonInt($0["start"]) == nil || jsonInt($0["end"]) == nil }
+    if missingTiming {
+        var totals = SleepStageMinutes()
+        for item in array {
+            guard let stage = normalizeSleepStage(item["stage"] as? String) else { continue }
+            let minutes = jsonDouble(item["min"]) ?? jsonDouble(item["minutes"]) ?? 0
+            totals.add(stage: stage, minutes: minutes)
+        }
+        return SleepHypnogramDecode(
+            shape: "minutes",
+            segments: [],
+            minutesJSON: totals.json,
+            truncated: false
+        )
+    }
+
+    var segments: [(start: Int, end: Int, stage: String)] = []
+    for item in array {
+        guard let rawStart = jsonInt(item["start"]),
+              let rawEnd = jsonInt(item["end"]),
+              let stage = normalizeSleepStage(item["stage"] as? String)
+        else { continue }
+        let start = max(rawStart, sessionStart)
+        let end = min(rawEnd, sessionEnd)
+        guard end > start else { continue }
+        segments.append((start, end, stage))
+    }
+    segments.sort { $0.start < $1.start }
+    let truncated = segments.count > maxPoints
+    let kept = Array(segments.prefix(maxPoints))
+    var totals = SleepStageMinutes()
+    for seg in kept {
+        totals.add(stage: seg.stage, minutes: Double(seg.end - seg.start) / 60.0)
+    }
+    return SleepHypnogramDecode(
+        shape: "segments",
+        segments: kept,
+        minutesJSON: totals.json,
+        truncated: truncated
+    )
+}
+
+private struct SleepStageMinutes {
+    var light = 0.0
+    var deep = 0.0
+    var rem = 0.0
+    var awake = 0.0
+
+    mutating func add(stage: String, minutes: Double) {
+        switch stage {
+        case "light": light += minutes
+        case "deep": deep += minutes
+        case "rem": rem += minutes
+        case "awake": awake += minutes
+        default: break
+        }
+    }
+
+    var json: JSONValue {
+        .object([
+            "light": .double(light),
+            "deep": .double(deep),
+            "rem": .double(rem),
+            "awake": .double(awake),
+        ])
+    }
+}
+
+private func minutesObject(from dict: [String: Any]) -> JSONValue {
+    var totals = SleepStageMinutes()
+    for (key, value) in dict {
+        guard let stage = normalizeSleepStage(key), let minutes = jsonDouble(value) else { continue }
+        totals.add(stage: stage, minutes: minutes)
+    }
+    return totals.json
+}
+
+private func normalizeSleepStage(_ raw: String?) -> String? {
+    switch raw?.lowercased() {
+    case "wake", "awake": return "awake"
+    case "light": return "light"
+    case "deep": return "deep"
+    case "rem": return "rem"
+    default: return nil
+    }
+}
+
+private func jsonInt(_ value: Any?) -> Int? {
+    switch value {
+    case let value as Int: return value
+    case let value as Double: return Int(value)
+    case let value as NSNumber: return value.intValue
+    case let value as String: return Int(value)
+    default: return nil
+    }
+}
+
+private func jsonDouble(_ value: Any?) -> Double? {
+    switch value {
+    case let value as Double: return value
+    case let value as Int: return Double(value)
+    case let value as NSNumber: return value.doubleValue
+    case let value as String: return Double(value)
+    default: return nil
+    }
 }
 
 func boundedDays(_ value: JSONValue?, default defaultValue: Int, max maxValue: Int) -> Int {

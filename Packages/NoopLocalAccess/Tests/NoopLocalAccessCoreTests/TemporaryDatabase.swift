@@ -107,4 +107,44 @@ enum TemporaryDatabase {
         try db.execute(sql: "INSERT INTO rrInterval(deviceId, ts, rrMs) VALUES ('my-whoop', 101, 850)")
         try db.execute(sql: "INSERT INTO rawBatch(batchId, deviceId, byteSize) VALUES ('batch-1', 'my-whoop', 12)")
     }
+
+    static func withSleepStages(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            let olderStart = now - 90_000
+            let olderJSON = """
+            [{"start":\(olderStart),"end":\(olderStart + 600),"stage":"light"},{"start":\(olderStart + 600),"end":\(olderStart + 1200),"stage":"deep"},{"start":\(olderStart + 1200),"end":\(olderStart + 1800),"stage":"wake"}]
+            """
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 90, 49, 68, ?)
+                """,
+                arguments: ["my-whoop", olderStart, olderStart + 1800, olderJSON]
+            )
+
+            let newerStart = now - 3_600
+            let newerJSON = """
+            [{"start":\(newerStart),"end":\(newerStart + 300),"stage":"light"},{"start":\(newerStart + 300),"end":\(newerStart + 900),"stage":"deep"},{"start":\(newerStart + 900),"end":\(newerStart + 1500),"stage":"rem"},{"start":\(newerStart + 1500),"end":\(newerStart + 1800),"stage":"awake"}]
+            """
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 92, 48, 71, ?)
+                """,
+                arguments: ["my-whoop", newerStart, newerStart + 1800, newerJSON]
+            )
+
+            let importedStart = now - 180_000
+            try db.execute(
+                sql: """
+                INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON)
+                VALUES (?, ?, ?, 88, 51, 60, ?)
+                """,
+                arguments: ["my-whoop", importedStart, importedStart + 25_200, "{\"light\":100,\"deep\":50,\"rem\":40,\"awake\":10}"]
+            )
+        }
+        return url
+    }
 }

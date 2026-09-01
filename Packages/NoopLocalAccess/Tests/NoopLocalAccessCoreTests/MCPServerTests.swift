@@ -21,6 +21,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertFalse(values.isEmpty)
         let names = values.compactMap { $0.objectValue?["name"]?.stringValue }
         XCTAssertTrue(names.contains("hr_series"))
+        XCTAssertTrue(names.contains("sleep_stages"))
         for tool in values {
             let annotations = try XCTUnwrap(tool.objectValue?["annotations"]?.objectValue)
             XCTAssertEqual(annotations["readOnlyHint"], .bool(true))
