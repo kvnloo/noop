@@ -113,7 +113,7 @@ enum NoopLocalAccessMain {
       health_snapshot [--days N]
       metric_series --key KEY [--source SOURCE] [--days N] [--from-day YYYY-MM-DD] [--to-day YYYY-MM-DD] [--limit N]
       data_freshness
-      sleep_summary [--days N]
+      sleep_summary [--days N] [--include-motion]
       workout_summary [--days N] [--include-zones]
       hr_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--bucket-seconds N] [--limit N] [--device-id ID]
       sleep_stages [--days N] [--limit N] [--max-points N]

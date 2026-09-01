@@ -40,7 +40,10 @@ public final class NoopToolDispatcher {
         case "data_freshness":
             return try data().freshness()
         case "sleep_summary":
-            return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
+            return try data().sleepSummary(
+                days: boundedDays(arguments["days"], default: 30, max: 4000),
+                includeMotion: arguments["include_motion"]?.boolValue ?? false
+            )
         case "workout_summary":
             return try data().workoutSummary(
                 days: boundedDays(arguments["days"], default: 90, max: 4000),

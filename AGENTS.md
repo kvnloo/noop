@@ -29,8 +29,10 @@ network, no write/control. Same names for MCP and `query`:
 - `event_series`
 - `sleep_stages`
 
-`sleep_summary` still returns `hasStages` only. `workout_summary` still returns
-`hasZones`/`hasNotes` only unless `include_zones` / `--include-zones` or
-`include_notes` / `--include-notes` is set, which attach bounded payloads.
+`sleep_summary` still returns `hasStages` only unless `include_motion` /
+`--include-motion` is set, which attaches a bounded `motionJSON` payload.
+`workout_summary` still returns `hasZones`/`hasNotes` only unless `include_zones`
+/ `--include-zones` or `include_notes` / `--include-notes` is set, which attach
+bounded payloads.
 `data_freshness` includes last-ts for HR, RR, event, sleep, and workout when
 those tables exist. One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).
