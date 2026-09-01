@@ -198,6 +198,11 @@ public struct RespBucketRow: Equatable, Sendable {
     public let raw: Double
 }
 
+public struct StepBucketRow: Equatable, Sendable {
+    public let ts: Int
+    public let counter: Double
+}
+
 public struct EventRow: Equatable, Sendable {
     public let ts: Int
     public let kind: String
@@ -520,6 +525,22 @@ public final class ReadonlyNoopStore {
                 ORDER BY bucket ASC
                 """, arguments: [bucket, bucket, deviceId, from, to, bucket]).map {
                 RespBucketRow(ts: $0["bucket"], raw: $0["avgRaw"])
+            }
+        }
+    }
+
+    public func stepBuckets(deviceId: String, from: Int, to: Int, bucketSeconds: Int) throws -> [StepBucketRow] {
+        guard tableNames.contains("stepSample") else { return [] }
+        let bucket = max(1, bucketSeconds)
+        return try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT (ts / ?) * ? AS bucket, AVG(counter) AS avgCounter
+                FROM stepSample
+                WHERE deviceId = ? AND ts >= ? AND ts <= ?
+                GROUP BY ts / ?
+                ORDER BY bucket ASC
+                """, arguments: [bucket, bucket, deviceId, from, to, bucket]).map {
+                StepBucketRow(ts: $0["bucket"], counter: $0["avgCounter"])
             }
         }
     }
@@ -1044,6 +1065,57 @@ public final class NoopDataAccess {
                     "ts": .int(row.ts),
                     "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
                     "raw": .double(row.raw),
+                ])
+            }),
+        ])
+    }
+
+    public func stepSeries(
+        hours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        bucketSeconds: Int,
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("step_series requires both from_ts and to_ts")
+        }
+
+        let now = Int(Date().timeIntervalSince1970)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            fromTs = now - hours * 3_600
+            toTs = now
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let buckets = try store.stepBuckets(
+            deviceId: resolvedDeviceId,
+            from: fromTs,
+            to: toTs,
+            bucketSeconds: bucketSeconds
+        )
+        let truncated = buckets.count > limit
+        let points = Array(buckets.suffix(limit))
+        return .object([
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(hours),
+            ]),
+            "bucketSeconds": .int(bucketSeconds),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                .object([
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "counter": .double(row.counter),
                 ])
             }),
         ])

@@ -20,6 +20,7 @@ noop-local-access query hr_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query spo2_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query skin_temp_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query resp_series --hours 1 --bucket-seconds 60 --limit 50
+noop-local-access query step_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query sleep_stages --days 14 --limit 7 --max-points 120
 noop-local-access query event_series --kind ALPHA --hours 6 --limit 50
 noop-local-access query rr_series --hours 6 --limit 50
@@ -57,6 +58,11 @@ Arguments reuse the MCP defaults and bounds:
   together, `--bucket-seconds` (default 60, clamped to 1...3600), `--limit` (default 500,
   clamped to 1...2000), and `--device-id`. Buckets average stored `respSample.raw`. A missing
   `respSample` table returns empty points. Suffix limit plus `truncated`. Not a daily
+  `metric_series`.
+- `step_series`: optional `--hours` (default 6, clamped to 1...24), `--from-ts` and `--to-ts`
+  together, `--bucket-seconds` (default 60, clamped to 1...3600), `--limit` (default 500,
+  clamped to 1...2000), and `--device-id`. Buckets average stored `stepSample.counter`. A missing
+  `stepSample` table returns empty points. Suffix limit plus `truncated`. Not a daily
   `metric_series`.
 - `sleep_stages`: optional `--days` (default 30, clamped to 1...4000), `--limit` sessions
   (default 14, clamped to 1...60), and `--max-points` per session (default 200, clamped to
