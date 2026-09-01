@@ -1,0 +1,34 @@
+# AGENTS.md
+
+Automated-agent entry. Full working notes live in [`CLAUDE.md`](CLAUDE.md)
+(architecture, hard scope, BLE, parity, PR conventions, CI table). This file
+adds no policy.
+
+## Pointers
+
+- [`CLAUDE.md`](CLAUDE.md), [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md), [`docs/BUILD.md`](docs/BUILD.md), [`docs/SCOPE.md`](docs/SCOPE.md), [`docs/IOS.md`](docs/IOS.md)
+
+## CI facts
+
+- `android.yml` is **active**.
+- `app-build.yml` is **disabled_manually** (app-target Swift is not default CI).
+- `swift-packages.yml` covers `Packages/NoopLocalAccess`.
+
+## NoopLocalAccess tools
+
+`Packages/NoopLocalAccess` (`noop-local-access` MCP/CLI): bounded, read-only, no
+network, no write/control. Same names for MCP and `query`:
+
+- `health_snapshot`
+- `metric_series`
+- `data_freshness`
+- `sleep_summary`
+- `workout_summary`
+- `hr_series`
+- `rr_series`
+- `event_series`
+- `sleep_stages`
+
+`sleep_summary` still returns `hasStages` only. `data_freshness` includes last-ts
+for HR, RR, event, and sleep when those tables exist. One concern per PR; follow
+[`CLAUDE.md`](CLAUDE.md).
