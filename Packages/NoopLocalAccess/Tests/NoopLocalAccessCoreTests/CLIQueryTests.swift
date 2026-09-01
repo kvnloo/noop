@@ -43,6 +43,65 @@ final class CLIQueryTests: XCTestCase {
         }
     }
 
+    func testDataFreshnessAddsLastTsKeysAndKeepsExistingOnes() throws {
+        let seeded = LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        let seededPayload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: seeded
+        ))
+        let seededObject = try XCTUnwrap(seededPayload.objectValue)
+        let requiredKeys = [
+            "generatedAt", "deviceId", "computedDeviceId",
+            "latestHeartRateSample", "latestRrInterval", "latestEvent", "latestSleepSession",
+            "storage", "coverage", "metricKeys",
+        ]
+        for key in requiredKeys {
+            XCTAssertNotNil(seededObject[key], "missing freshness key \(key)")
+        }
+        XCTAssertEqual(seededObject["deviceId"], .string("my-whoop"))
+        XCTAssertEqual(seededObject["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(seededObject["latestRrInterval"]?.objectValue?["ts"], .int(101))
+        XCTAssertEqual(seededObject["latestEvent"], .null)
+        XCTAssertEqual(seededObject["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+        XCTAssertNil(seededObject["analysisFingerprint"])
+        XCTAssertNil(seededObject["score"])
+        XCTAssertNil(seededObject["recoveryScore"])
+
+        let events = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withEvents().path)
+        ))
+        XCTAssertEqual(events.objectValue?["latestEvent"]?.objectValue?["ts"], .int(103))
+        XCTAssertEqual(events.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+
+        let rr = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withRRIntervals().path)
+        ))
+        XCTAssertEqual(rr.objectValue?["latestRrInterval"]?.objectValue?["ts"], .int(103))
+
+        let missingRR = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withoutRRInterval().path)
+        ))
+        XCTAssertEqual(missingRR.objectValue?["latestRrInterval"], .null)
+        XCTAssertEqual(missingRR.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(missingRR.objectValue?["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+
+        let missingSleep = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withoutSleepSession().path)
+        ))
+        XCTAssertEqual(missingSleep.objectValue?["latestSleepSession"], .null)
+        XCTAssertEqual(missingSleep.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(missingSleep.objectValue?["latestEvent"], .null)
+    }
+
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {
         assertUsageError([])
         assertUsageError(["metric_series"])

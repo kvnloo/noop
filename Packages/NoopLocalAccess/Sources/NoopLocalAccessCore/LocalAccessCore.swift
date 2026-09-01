@@ -322,6 +322,42 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func latestRRIntervalTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("rrInterval") else { return nil }
+        let hasSrc = rrIntervalColumns.contains("srcChannel")
+        let hasSuspect = rrIntervalColumns.contains("tsSuspect")
+
+        var whereSQL = "WHERE deviceId = ?"
+        if hasSrc {
+            whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
+        }
+        if hasSuspect {
+            whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
+        }
+
+        let sql = "SELECT MAX(ts) FROM rrInterval \(whereSQL)"
+        return try dbQueue.read { db in
+            if hasSrc {
+                return try Int.fetchOne(db, sql: sql, arguments: [deviceId, Self.spo2IbiChannel])
+            }
+            return try Int.fetchOne(db, sql: sql, arguments: [deviceId])
+        }
+    }
+
+    public func latestEventTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("event") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM event WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestSleepSessionTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("sleepSession") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(endTs) FROM sleepSession WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -596,6 +632,9 @@ public final class NoopDataAccess {
 
     public func freshness() throws -> JSONValue {
         let latestHR = try store.latestHRSampleTs(deviceId: deviceId)
+        let latestRR = try store.latestRRIntervalTs(deviceId: deviceId)
+        let latestEvent = try store.latestEventTs(deviceId: deviceId)
+        let latestSleep = try store.latestSleepSessionTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -611,6 +650,9 @@ public final class NoopDataAccess {
             "deviceId": .string(deviceId),
             "computedDeviceId": .string(computedDeviceId),
             "latestHeartRateSample": timestampJSON(latestHR, now: now),
+            "latestRrInterval": timestampJSON(latestRR, now: now),
+            "latestEvent": timestampJSON(latestEvent, now: now),
+            "latestSleepSession": timestampJSON(latestSleep, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),

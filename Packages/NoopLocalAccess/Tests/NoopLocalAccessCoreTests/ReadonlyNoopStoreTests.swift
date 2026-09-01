@@ -9,6 +9,9 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         XCTAssertTrue(try store.isReadOnlyForTest())
         XCTAssertEqual(try store.latestHRSampleTs(deviceId: "my-whoop"), 102)
+        XCTAssertEqual(try store.latestRRIntervalTs(deviceId: "my-whoop"), 101)
+        XCTAssertNil(try store.latestEventTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
         let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
         XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
         XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
@@ -42,6 +45,7 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(alpha.map(\.ts), [100, 101, 102])
         XCTAssertEqual(alpha.map(\.kind), ["ALPHA", "ALPHA", "ALPHA"])
         XCTAssertEqual(alpha.map(\.payloadJSON), [#"{"ok":true,"n":1}"#, "not-json", #"{"later":true}"#])
+        XCTAssertEqual(try store.latestEventTs(deviceId: "my-whoop"), 103)
         XCTAssertEqual(try store.events(deviceId: "my-whoop", kind: "NO_SUCH_KIND", from: 0, to: 1000, limit: 10), [])
 
         let suffix = try store.events(deviceId: "my-whoop", kind: "ALPHA", from: 100, to: 102, limit: 2)
@@ -66,8 +70,15 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(suffix.map(\.ts), [101, 103])
         XCTAssertEqual(suffix.map(\.rrMs), [810, 840])
 
+        XCTAssertEqual(try store.latestRRIntervalTs(deviceId: "my-whoop"), 103)
+
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.withoutRRInterval().path)
         XCTAssertEqual(try missing.rrIntervals(deviceId: "my-whoop", from: 0, to: 1000, limit: 10), [])
+        XCTAssertNil(try missing.latestRRIntervalTs(deviceId: "my-whoop"))
+
+        let noSleep = try ReadonlyNoopStore(path: try TemporaryDatabase.withoutSleepSession().path)
+        XCTAssertNil(try noSleep.latestSleepSessionTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try noSleep.latestHRSampleTs(deviceId: "my-whoop"), 102)
     }
 
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
