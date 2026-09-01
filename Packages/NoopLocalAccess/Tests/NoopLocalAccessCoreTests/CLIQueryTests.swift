@@ -11,6 +11,7 @@ final class CLIQueryTests: XCTestCase {
             ("data_freshness", []),
             ("sleep_summary", ["--days", "30"]),
             ("workout_summary", ["--days", "90"]),
+            ("workout_summary", ["--days", "90", "--include-zones"]),
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
@@ -142,6 +143,10 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["rr_series", "--max-points", "10"])
         assertUsageError(["health_snapshot", "--from-ts", "100", "--to-ts", "102"])
         assertUsageError(["sleep_stages", "--hours", "1"])
+        assertUsageError(["health_snapshot", "--include-zones"])
+        assertUsageError(["sleep_summary", "--include-zones"])
+        assertUsageError(["hr_series", "--include-zones"])
+        assertUsageError(["workout_summary", "--include-zones", "--include-zones"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -643,6 +648,125 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(line.last, 0x0A)
         XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())), value)
         XCTAssertThrowsError(try NoopCLIQuery.encodeLine(.double(.infinity)))
+    }
+
+
+    func testWorkoutSummaryParsesIncludeZonesFlag() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["workout_summary", "--days", "14"])
+        XCTAssertEqual(omitted.toolName, "workout_summary")
+        XCTAssertEqual(omitted.arguments, ["days": .int(14)])
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "workout_summary",
+            "--days", "14",
+            "--include-zones",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "workout_summary")
+        XCTAssertEqual(parsed.arguments, [
+            "days": .int(14),
+            "include_zones": .bool(true),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testWorkoutSummaryDefaultOmitsZonesPayload() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "workout_summary",
+            arguments: ["days": .int(3)],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withWorkoutZones(now: now).path)
+        ))
+        XCTAssertEqual(payload.objectValue?["count"], .int(5))
+        guard case .array(let workouts) = payload.objectValue?["workouts"] else {
+            return XCTFail("Expected workouts")
+        }
+        XCTAssertEqual(workouts.count, 5)
+        var sawZones = false
+        var sawNoZones = false
+        for workout in workouts {
+            let object = try XCTUnwrap(workout.objectValue)
+            XCTAssertNotNil(object["hasZones"])
+            XCTAssertNil(object["zones"])
+            XCTAssertNil(object["zonesJSON"])
+            if object["hasZones"] == .bool(true) { sawZones = true }
+            if object["hasZones"] == .bool(false) { sawNoZones = true }
+        }
+        XCTAssertTrue(sawZones)
+        XCTAssertTrue(sawNoZones)
+    }
+
+    func testWorkoutSummaryIncludeZonesAttachesBoundedPayload() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let macStart = now - 3_600
+        let androidStart = now - 7_200
+        let noneStart = now - 10_800
+        let badStart = now - 14_400
+        let hugeStart = now - 18_000
+        let configuration = LocalAccessConfiguration(databasePath: try TemporaryDatabase.withWorkoutZones(now: now).path)
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "workout_summary",
+            arguments: [
+                "days": .int(3),
+                "include_zones": .bool(true),
+            ],
+            configuration: configuration
+        ))
+        guard case .array(let workouts) = payload.objectValue?["workouts"] else {
+            return XCTFail("Expected workouts")
+        }
+        XCTAssertEqual(workouts.count, 5)
+
+        let mac = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(macStart) }?.objectValue)
+        XCTAssertEqual(mac["hasZones"], .bool(true))
+        XCTAssertEqual(mac["zones"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(mac["zones"]?.objectValue?["payload"], .object([
+            "z1": .double(12.5),
+            "z5": .double(4.5),
+        ]))
+        XCTAssertNil(mac["zonesJSON"])
+
+        let android = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(androidStart) }?.objectValue)
+        XCTAssertEqual(android["hasZones"], .bool(true))
+        XCTAssertEqual(android["zones"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(android["zones"]?.objectValue?["payload"]?.objectValue?["zone1"], .int(10))
+        XCTAssertEqual(android["zones"]?.objectValue?["payload"]?.objectValue?["zone5"], .int(15))
+
+        let none = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(noneStart) }?.objectValue)
+        XCTAssertEqual(none["hasZones"], .bool(false))
+        XCTAssertEqual(none["zones"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(none["zones"]?.objectValue?["payload"], .null)
+
+        let bad = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(badStart) }?.objectValue)
+        XCTAssertEqual(bad["hasZones"], .bool(true))
+        XCTAssertEqual(bad["zones"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(bad["zones"]?.objectValue?["payload"], .string("not-json"))
+
+        let huge = try XCTUnwrap(workouts.first { $0.objectValue?["startTs"] == .int(hugeStart) }?.objectValue)
+        XCTAssertEqual(huge["hasZones"], .bool(true))
+        XCTAssertEqual(huge["zones"]?.objectValue?["truncated"], .bool(true))
+        guard case .object(let keys) = huge["zones"]?.objectValue?["payload"] else {
+            return XCTFail("Expected truncated object payload")
+        }
+        XCTAssertEqual(keys.count, 32)
+        XCTAssertNil(huge["zonesJSON"])
+
+        let mcp = try XCTUnwrap(try NoopMCPServer(configuration: configuration).handle(RPCRequest(
+            id: .int(1),
+            method: "tools/call",
+            params: .object([
+                "name": .string("workout_summary"),
+                "arguments": .object([
+                    "days": .int(3),
+                    "include_zones": .bool(true),
+                ]),
+            ])
+        )))
+        XCTAssertEqual(
+            mcp.objectValue?["result"]?.objectValue?["structuredContent"],
+            payload
+        )
     }
 
     private func assertUsageError(_ arguments: [String], file: StaticString = #filePath, line: UInt = #line) {

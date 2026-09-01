@@ -733,7 +733,7 @@ public final class NoopDataAccess {
         ])
     }
 
-    public func workoutSummary(days: Int) throws -> JSONValue {
+    public func workoutSummary(days: Int, includeZones: Bool = false) throws -> JSONValue {
         let (fromTs, toTs) = timestampRange(days: days)
         let imported = try store.workouts(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
         let apple = try store.workouts(deviceId: "apple-health", from: fromTs, to: toTs, limit: 5000)
@@ -751,7 +751,7 @@ public final class NoopDataAccess {
             "totalDurationMin": .double(durationMin),
             "totalEnergyKcal": .double(calories),
             "totalStrain": .double(strain),
-            "workouts": .array(rows.suffix(300).map(workoutJSON)),
+            "workouts": .array(rows.suffix(300).map { workoutJSON($0, includeZones: includeZones) }),
         ])
     }
 
@@ -1051,8 +1051,8 @@ private func sleepJSON(_ row: SleepSessionRow) -> JSONValue {
     ])
 }
 
-private func workoutJSON(_ row: WorkoutRow) -> JSONValue {
-    .object([
+private func workoutJSON(_ row: WorkoutRow, includeZones: Bool = false) -> JSONValue {
+    var object: [String: JSONValue] = [
         "startTs": .int(row.startTs),
         "endTs": .int(row.endTs),
         "start": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.startTs)))),
@@ -1067,7 +1067,15 @@ private func workoutJSON(_ row: WorkoutRow) -> JSONValue {
         "distanceM": optionalDouble(row.distanceM),
         "hasZones": .bool(row.zonesJSON != nil),
         "hasNotes": .bool(row.notes != nil),
-    ])
+    ]
+    if includeZones {
+        let decoded = decodeWorkoutZones(row.zonesJSON)
+        object["zones"] = .object([
+            "truncated": .bool(decoded.truncated),
+            "payload": decoded.payload,
+        ])
+    }
+    return .object(object)
 }
 
 private func timestampJSON(_ ts: Int?, now: Date) -> JSONValue {
@@ -1230,6 +1238,54 @@ private func jsonDouble(_ value: Any?) -> Double? {
     case let value as NSNumber: return value.doubleValue
     case let value as String: return Double(value)
     default: return nil
+    }
+}
+
+
+private let workoutZonesMaxEntries = 32
+private let workoutZonesMaxStringChars = 2048
+
+private struct WorkoutZonesDecode {
+    let payload: JSONValue
+    let truncated: Bool
+}
+
+private func decodeWorkoutZones(_ zonesJSON: String?) -> WorkoutZonesDecode {
+    guard let zonesJSON else {
+        return WorkoutZonesDecode(payload: .null, truncated: false)
+    }
+    if let data = zonesJSON.data(using: .utf8),
+       let decoded = try? JSONDecoder().decode(JSONValue.self, from: data) {
+        let bounded = boundWorkoutZonesJSON(decoded)
+        return WorkoutZonesDecode(payload: bounded.payload, truncated: bounded.truncated)
+    }
+    let truncated = zonesJSON.count > workoutZonesMaxStringChars
+    let raw = truncated ? String(zonesJSON.prefix(workoutZonesMaxStringChars)) : zonesJSON
+    return WorkoutZonesDecode(payload: .string(raw), truncated: truncated)
+}
+
+private func boundWorkoutZonesJSON(_ value: JSONValue) -> WorkoutZonesDecode {
+    switch value {
+    case .array(let items):
+        let truncated = items.count > workoutZonesMaxEntries
+        return WorkoutZonesDecode(
+            payload: .array(Array(items.prefix(workoutZonesMaxEntries))),
+            truncated: truncated
+        )
+    case .object(let object):
+        let keys = object.keys.sorted()
+        let truncated = keys.count > workoutZonesMaxEntries
+        var kept: [String: JSONValue] = [:]
+        for key in keys.prefix(workoutZonesMaxEntries) {
+            kept[key] = object[key]
+        }
+        return WorkoutZonesDecode(payload: .object(kept), truncated: truncated)
+    case .string(let raw):
+        let truncated = raw.count > workoutZonesMaxStringChars
+        let kept = truncated ? String(raw.prefix(workoutZonesMaxStringChars)) : raw
+        return WorkoutZonesDecode(payload: .string(kept), truncated: truncated)
+    default:
+        return WorkoutZonesDecode(payload: value, truncated: false)
     }
 }
 

@@ -24,6 +24,13 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(names.contains("sleep_stages"))
         XCTAssertTrue(names.contains("event_series"))
         XCTAssertTrue(names.contains("rr_series"))
+        XCTAssertTrue(names.contains("workout_summary"))
+        let workout = try XCTUnwrap(values.first { $0.objectValue?["name"] == .string("workout_summary") }?.objectValue)
+        XCTAssertNotNil(workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_zones"])
+        XCTAssertEqual(
+            workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_zones"]?.objectValue?["type"],
+            .string("boolean")
+        )
         for tool in values {
             let annotations = try XCTUnwrap(tool.objectValue?["annotations"]?.objectValue)
             XCTAssertEqual(annotations["readOnlyHint"], .bool(true))

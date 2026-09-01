@@ -206,6 +206,29 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            func insertWorkout(start: Int, sport: String, zonesJSON: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO workout(deviceId, startTs, endTs, sport, source, durationS, energyKcal, avgHr, maxHr, strain, zonesJSON)
+                    VALUES (?, ?, ?, ?, 'whoop', 1800, 310, 140, 171, 8.5, ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sport, zonesJSON]
+                )
+            }
+            try insertWorkout(start: now - 3_600, sport: "run", zonesJSON: #"{"z1":12.5,"z5":4.5}"#)
+            try insertWorkout(start: now - 7_200, sport: "bike", zonesJSON: #"{"zone1":10,"zone2":20,"zone3":30,"zone4":25,"zone5":15}"#)
+            try insertWorkout(start: now - 10_800, sport: "yoga", zonesJSON: nil)
+            try insertWorkout(start: now - 14_400, sport: "row", zonesJSON: "not-json")
+            let extra = (1...40).map { "\"k\($0)\":\($0)" }.joined(separator: ",")
+            try insertWorkout(start: now - 18_000, sport: "swim", zonesJSON: "{\(extra)}")
+        }
+        return url
+    }
+
     static func withoutSleepSession() throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)
