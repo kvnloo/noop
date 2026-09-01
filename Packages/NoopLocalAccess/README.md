@@ -14,6 +14,7 @@ noop-local-access query workout_summary --days 90
 noop-local-access query hr_series --hours 1 --bucket-seconds 60 --limit 50
 noop-local-access query sleep_stages --days 14 --limit 7 --max-points 120
 noop-local-access query event_series --kind ALPHA --hours 6 --limit 50
+noop-local-access query rr_series --hours 6 --limit 50
 ```
 
 Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. Query results are written to
@@ -38,6 +39,10 @@ Arguments reuse the MCP defaults and bounds:
   `--from-ts` and `--to-ts` together, `--limit` (default 500, clamped to 1...2000), and
   `--device-id`. One kind per call. Unknown kinds and a missing `event` table return empty
   points. Stored `payloadJSON` is parsed as JSON when valid, otherwise returned as a string.
+- `rr_series`: optional `--hours` (default 6, clamped to 1...24), `--from-ts` and `--to-ts`
+  together, `--limit` (default 500, clamped to 1...2000), and `--device-id`. Filters match
+  WhoopStore.rrIntervals (`srcChannel != spo2Ibi`, `tsSuspect != 1`; NULLs kept). A missing
+  `rrInterval` table returns empty points. Suffix limit is the cap; this is not a 1Hz dump.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.

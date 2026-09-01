@@ -18,6 +18,7 @@ public final class NoopToolDispatcher {
         "hr_series",
         "sleep_stages",
         "event_series",
+        "rr_series",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -73,6 +74,19 @@ public final class NoopToolDispatcher {
             }
             return try data().eventSeries(
                 kind: kind,
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "rr_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
+            }
+            return try data().rrSeries(
                 hours: boundedDays(arguments["hours"], default: 6, max: 24),
                 fromTs: fromTs,
                 toTs: toTs,

@@ -169,4 +169,40 @@ enum TemporaryDatabase {
         }
         return url
     }
+
+    static func withRRIntervals() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE rrInterval")
+            try db.execute(sql: """
+                CREATE TABLE rrInterval(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL, rrMs INTEGER NOT NULL,
+                    seq INTEGER NOT NULL DEFAULT 0, ord INTEGER,
+                    srcChannel INTEGER, tsSuspect INTEGER,
+                    PRIMARY KEY(deviceId, ts, rrMs, seq)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO rrInterval(deviceId, ts, rrMs, seq, ord, srcChannel, tsSuspect) VALUES
+                    ('my-whoop', 100, 800, 0, 0, NULL, NULL),
+                    ('my-whoop', 101, 790, 0, 0, 1, NULL),
+                    ('my-whoop', 101, 810, 1, 1, 1, NULL),
+                    ('my-whoop', 101, 820, 2, 2, 2, NULL),
+                    ('my-whoop', 102, 830, 0, 0, NULL, 1),
+                    ('my-whoop', 103, 840, 0, 0, 3, 0),
+                    ('other-device', 103, 850, 0, 0, NULL, NULL)
+                """)
+        }
+        return url
+    }
+
+    static func withoutRRInterval() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE rrInterval")
+        }
+        return url
+    }
 }

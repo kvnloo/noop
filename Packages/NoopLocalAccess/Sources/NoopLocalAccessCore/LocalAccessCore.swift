@@ -186,9 +186,19 @@ public struct EventRow: Equatable, Sendable {
     public let payloadJSON: String
 }
 
+public struct RRIntervalRow: Equatable, Sendable {
+    public let ts: Int
+    public let rrMs: Int
+    public let seq: Int?
+    public let ord: Int?
+}
+
 public final class ReadonlyNoopStore {
     private let dbQueue: DatabaseQueue
     private let tableNames: Set<String>
+    private let rrIntervalColumns: Set<String>
+    /// WhoopStore `RRSourceChannel.spo2Ibi.rawValue` — stored enum, not the 0x6E wire tag.
+    private static let spo2IbiChannel = 2
 
     public init(path: String) throws {
         var config = Configuration()
@@ -197,6 +207,13 @@ public final class ReadonlyNoopStore {
         dbQueue = try DatabaseQueue(path: path, configuration: config)
         tableNames = try dbQueue.read { db in
             try Set(String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"))
+        }
+        if tableNames.contains("rrInterval") {
+            rrIntervalColumns = try dbQueue.read { db in
+                try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('rrInterval')"))
+            }
+        } else {
+            rrIntervalColumns = []
         }
         try validateSchema()
     }
@@ -396,6 +413,55 @@ public final class ReadonlyNoopStore {
                 .map {
                     EventRow(ts: $0["ts"], kind: $0["kind"], payloadJSON: $0["payloadJSON"])
                 }
+            return Array(rows.reversed())
+        }
+    }
+
+    /// Bounded WhoopStore.rrIntervals twin: exclude spo2Ibi and tsSuspect==1, keep NULLs.
+    /// Suffix-capped (newest first in SQL, then reversed) so this is never an unbounded 1Hz dump.
+    public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) throws -> [RRIntervalRow] {
+        guard tableNames.contains("rrInterval") else { return [] }
+        let cap = max(1, limit)
+        let hasSrc = rrIntervalColumns.contains("srcChannel")
+        let hasSuspect = rrIntervalColumns.contains("tsSuspect")
+        let hasOrd = rrIntervalColumns.contains("ord")
+        let hasSeq = rrIntervalColumns.contains("seq")
+
+        var select = ["ts", "rrMs"]
+        if hasOrd { select.append("ord") }
+        if hasSeq { select.append("seq") }
+
+        var whereSQL = "WHERE deviceId = ? AND ts >= ? AND ts <= ?"
+        if hasSrc {
+            whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
+        }
+        if hasSuspect {
+            whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
+        }
+
+        var order = ["ts DESC"]
+        if hasOrd { order.append("ord DESC") }
+        order.append("rrMs DESC")
+        if hasSeq { order.append("seq DESC") }
+
+        let sql = """
+            SELECT \(select.joined(separator: ", ")) FROM rrInterval
+            \(whereSQL)
+            ORDER BY \(order.joined(separator: ", ")) LIMIT ?
+            """
+        let arguments: StatementArguments = hasSrc
+            ? [deviceId, from, to, Self.spo2IbiChannel, cap]
+            : [deviceId, from, to, cap]
+
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: sql, arguments: arguments).map { row in
+                RRIntervalRow(
+                    ts: row["ts"],
+                    rrMs: row["rrMs"],
+                    seq: hasSeq ? (row["seq"] as Int?) : nil,
+                    ord: hasOrd ? (row["ord"] as Int?) : nil
+                )
+            }
             return Array(rows.reversed())
         }
     }
@@ -747,6 +813,58 @@ public final class NoopDataAccess {
                     "kind": .string(row.kind),
                     "payload": parseEventPayloadJSON(row.payloadJSON),
                 ])
+            }),
+        ])
+    }
+
+    public func rrSeries(
+        hours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
+        }
+
+        let now = Int(Date().timeIntervalSince1970)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            fromTs = now - hours * 3_600
+            toTs = now
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let rows = try store.rrIntervals(
+            deviceId: resolvedDeviceId,
+            from: fromTs,
+            to: toTs,
+            limit: limit + 1
+        )
+        let truncated = rows.count > limit
+        let points = Array(rows.suffix(limit))
+        return .object([
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(hours),
+            ]),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                var object: [String: JSONValue] = [
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "rrMs": .int(row.rrMs),
+                ]
+                if let seq = row.seq { object["seq"] = .int(seq) }
+                if let ord = row.ord { object["ord"] = .int(ord) }
+                return .object(object)
             }),
         ])
     }

@@ -264,6 +264,18 @@ public func toolsList() -> JSONValue {
                 ],
                 required: ["kind"]
             ),
+            tool(
+                name: "rr_series",
+                title: "R-R Interval Series",
+                description: "Return a bounded intra-day R-R series matching WhoopStore.rrIntervals filters (srcChannel != spo2Ibi, tsSuspect != 1; NULLs kept). Not a 1Hz dump: suffix limit is the cap. Missing rrInterval table returns empty points.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
         ]),
     ])
 }
