@@ -1,11 +1,18 @@
 // swift-tools-version: 5.9
 // Product version for `noop-local-access --version` / `-V` lives in
 // NoopLocalAccessCore (`noopLocalAccessServerVersion`); SPM Package() has no version field.
+//
+// CLI + library are Foundation + GRDB. They are intended to build on Linux and macOS.
+// SPM `platforms` only records Apple minimum versions. There is no SupportedPlatform.linux
+// API, so `.macOS(.v13)` is the Darwin floor, not a macOS-only package.
+// iOS/macOS app/SwiftUI targets elsewhere in this repo stay Apple-only and are not this package.
 import PackageDescription
 
 let package = Package(
     name: "NoopLocalAccess",
-    platforms: [.macOS(.v13)],
+    platforms: [
+        .macOS(.v13),
+    ],
     products: [
         .library(name: "NoopLocalAccessCore", targets: ["NoopLocalAccessCore"]),
         .executable(name: "noop-local-access", targets: ["noop-local-access"]),
