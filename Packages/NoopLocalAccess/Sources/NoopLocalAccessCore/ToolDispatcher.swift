@@ -22,6 +22,7 @@ public final class NoopToolDispatcher {
         "step_series",
         "gravity_series",
         "battery_series",
+        "sleep_state_series",
         "sleep_stages",
         "event_series",
         "rr_series",
@@ -150,6 +151,20 @@ public final class NoopToolDispatcher {
                 throw LocalAccessError.invalidParams("battery_series requires both from_ts and to_ts")
             }
             return try data().batterySeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                bucketSeconds: boundedLimit(arguments["bucket_seconds"], default: 60, max: 3600),
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
+        case "sleep_state_series":
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("sleep_state_series requires both from_ts and to_ts")
+            }
+            return try data().sleepStateSeries(
                 hours: boundedDays(arguments["hours"], default: 6, max: 24),
                 fromTs: fromTs,
                 toTs: toTs,

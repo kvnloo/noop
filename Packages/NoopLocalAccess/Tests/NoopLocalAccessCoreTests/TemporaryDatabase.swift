@@ -338,6 +338,28 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withSleepStateSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE sleepStateSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    state INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO sleepStateSample(deviceId, ts, state) VALUES
+                    ('my-whoop', 100, 0),
+                    ('my-whoop', 101, 2),
+                    ('my-whoop', 102, 3),
+                    ('other-device', 102, 1)
+                """)
+        }
+        return url
+    }
+
     static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

@@ -74,7 +74,7 @@ public enum NoopCLIQuery {
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["to_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--limit":
-                guard toolName == "metric_series" || toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_stages" || toolName == "event_series" || toolName == "rr_series" else {
+                guard toolName == "metric_series" || toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "sleep_stages" || toolName == "event_series" || toolName == "rr_series" else {
                     throw unsupported(flag, toolName: toolName)
                 }
                 toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
@@ -82,19 +82,19 @@ public enum NoopCLIQuery {
                 guard toolName == "sleep_stages" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["max_points"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--hours":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["hours"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--from-ts":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["from_ts"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--to-ts":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["to_ts"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--bucket-seconds":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["bucket_seconds"] = try integerValue(flag, arguments: arguments, index: &index)
             case "--device-id":
-                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "hr_series" || toolName == "spo2_series" || toolName == "skin_temp_series" || toolName == "resp_series" || toolName == "step_series" || toolName == "gravity_series" || toolName == "battery_series" || toolName == "sleep_state_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["device_id"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--include-zones":
                 guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
@@ -170,6 +170,13 @@ public enum NoopCLIQuery {
             let hasTo = toolArguments["to_ts"] != nil
             if hasFrom != hasTo {
                 throw NoopCLIQueryError.usage("battery_series requires both --from-ts and --to-ts")
+            }
+        }
+        if toolName == "sleep_state_series" {
+            let hasFrom = toolArguments["from_ts"] != nil
+            let hasTo = toolArguments["to_ts"] != nil
+            if hasFrom != hasTo {
+                throw NoopCLIQueryError.usage("sleep_state_series requires both --from-ts and --to-ts")
             }
         }
         if toolName == "event_series" {

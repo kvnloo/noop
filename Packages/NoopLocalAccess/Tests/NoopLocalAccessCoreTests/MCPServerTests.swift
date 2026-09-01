@@ -27,6 +27,7 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(names.contains("step_series"))
         XCTAssertTrue(names.contains("gravity_series"))
         XCTAssertTrue(names.contains("battery_series"))
+        XCTAssertTrue(names.contains("sleep_state_series"))
         XCTAssertTrue(names.contains("sleep_stages"))
         XCTAssertTrue(names.contains("event_series"))
         XCTAssertTrue(names.contains("rr_series"))

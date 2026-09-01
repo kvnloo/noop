@@ -199,6 +199,23 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(try missing.batteryBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
     }
 
+    func testReadsSleepStateBucketsAndReturnsEmptyWhenTableMissing() throws {
+        let url = try TemporaryDatabase.withSleepStateSamples()
+        let store = try ReadonlyNoopStore(path: url.path)
+
+        XCTAssertTrue(try store.isReadOnlyForTest())
+        let buckets = try store.sleepStateBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
+        XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
+        XCTAssertEqual(buckets.map(\.state), [0.0, 2.0, 3.0])
+
+        let grouped = try store.sleepStateBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 2)
+        XCTAssertEqual(grouped.map(\.ts), [100, 102])
+        XCTAssertEqual(grouped.map(\.state), [1.0, 3.0])
+
+        let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
+        XCTAssertEqual(try missing.sleepStateBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+    }
+
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
         let url = try TemporaryDatabase.foreignNoopLike()
 
