@@ -15,6 +15,8 @@ Optional flags: `include_zones` and `include_notes` on `workout_summary`; `inclu
 `latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`, `latestBattery`,
 `latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`.
 
+MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
 ```sh

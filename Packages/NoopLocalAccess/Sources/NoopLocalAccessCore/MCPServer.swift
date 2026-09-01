@@ -383,6 +383,7 @@ public func resourcesList() -> JSONValue {
             resource("noop://data/freshness", name: "data_freshness", title: "NOOP Data Freshness", description: "Source coverage and latest sample timestamps", mimeType: "application/json"),
             resource("noop://metrics/catalog", name: "metrics_catalog", title: "NOOP Metrics Catalog", description: "Supported metric keys and source ids", mimeType: "application/json"),
             resource("noop://sources", name: "sources", title: "NOOP Sources", description: "Canonical local source identifiers", mimeType: "application/json"),
+            resource("noop://tools/catalog", name: "tools_catalog", title: "NOOP Tools Catalog", description: "Dispatcher toolNames list as JSON", mimeType: "application/json"),
         ]),
     ])
 }

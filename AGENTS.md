@@ -54,4 +54,7 @@ Optional flags (MCP names; CLI uses `--include-*`):
 state attach bounded payloads; startTsAdjusted is included only when present.
 `workout_summary` still returns `hasZones`/`hasNotes` only unless `include_zones`
 or `include_notes` is set, which attach bounded payloads.
+
+MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+
 One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

@@ -90,4 +90,42 @@ final class MCPServerTests: XCTestCase {
         }
         XCTAssertEqual(points.compactMap { $0.objectValue?["source"]?.stringValue }, ["my-whoop", "my-whoop-noop"])
     }
+
+    func testResourcesListIncludesToolsCatalog() throws {
+        let resources = try XCTUnwrap(resourcesList().objectValue?["resources"])
+        guard case .array(let values) = resources else {
+            return XCTFail("Expected resources array")
+        }
+        let uris = values.compactMap { $0.objectValue?["uri"]?.stringValue }
+        XCTAssertTrue(uris.contains("noop://tools/catalog"))
+        let catalog = try XCTUnwrap(values.first { $0.objectValue?["uri"] == .string("noop://tools/catalog") }?.objectValue)
+        XCTAssertEqual(catalog["name"], .string("tools_catalog"))
+        XCTAssertEqual(catalog["mimeType"], .string("application/json"))
+    }
+
+    func testToolsCatalogResourcePayloadIsDispatcherToolNamesJSON() throws {
+        let dispatcher = NoopToolDispatcher(configuration: LocalAccessConfiguration(databasePath: "/unused"))
+        let payload = try dispatcher.resourcePayload(uri: "noop://tools/catalog")
+        XCTAssertEqual(payload, .array(NoopToolDispatcher.toolNames.map { .string($0) }))
+        XCTAssertTrue(NoopToolDispatcher.toolNames.contains("sleep_state_series"))
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("nzt"))
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("scores"))
+    }
+
+    func testResourcesReadToolsCatalogWiresResourcePayload() throws {
+        let server = NoopMCPServer(configuration: LocalAccessConfiguration(databasePath: "/unused"))
+        let response = try XCTUnwrap(try server.handle(RPCRequest(
+            id: .int(3),
+            method: "resources/read",
+            params: .object(["uri": .string("noop://tools/catalog")])
+        )))
+        let contents = try XCTUnwrap(response.objectValue?["result"]?.objectValue?["contents"])
+        guard case .array(let values) = contents, let first = values.first?.objectValue else {
+            return XCTFail("Expected contents array")
+        }
+        XCTAssertEqual(first["uri"], .string("noop://tools/catalog"))
+        XCTAssertEqual(first["mimeType"], .string("application/json"))
+        let expected = JSONValue.array(NoopToolDispatcher.toolNames.map { .string($0) })
+        XCTAssertEqual(first["text"], .string(prettyJSON(expected)))
+    }
 }

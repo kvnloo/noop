@@ -223,6 +223,8 @@ public final class NoopToolDispatcher {
             return NoopDataAccess.metricCatalog()
         case "noop://sources":
             return NoopDataAccess.sources()
+        case "noop://tools/catalog":
+            return .array(Self.toolNames.map { .string($0) })
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }
