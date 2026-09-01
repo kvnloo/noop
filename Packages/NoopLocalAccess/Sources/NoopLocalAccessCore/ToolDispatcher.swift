@@ -17,6 +17,7 @@ public final class NoopToolDispatcher {
         "workout_summary",
         "hr_series",
         "sleep_stages",
+        "event_series",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -60,6 +61,23 @@ public final class NoopToolDispatcher {
                 days: boundedDays(arguments["days"], default: 30, max: 4000),
                 limit: boundedLimit(arguments["limit"], default: 14, max: 60),
                 maxPoints: boundedLimit(arguments["max_points"], default: 200, max: 2000)
+            )
+        case "event_series":
+            guard let kind = arguments["kind"]?.stringValue else {
+                throw LocalAccessError.invalidParams("event_series requires kind")
+            }
+            let fromTs = arguments["from_ts"]?.intValue
+            let toTs = arguments["to_ts"]?.intValue
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
+            }
+            return try data().eventSeries(
+                kind: kind,
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
             )
         default:
             throw LocalAccessError.toolNotFound(name)

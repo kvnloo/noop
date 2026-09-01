@@ -3,7 +3,7 @@ import XCTest
 
 final class CLIQueryTests: XCTestCase {
     func testAllQueriesDispatchThroughTheSamePayloadAsMCP() throws {
-        let url = try TemporaryDatabase.seeded()
+        let url = try TemporaryDatabase.withEvents()
         let configuration = LocalAccessConfiguration(databasePath: url.path)
         let queries: [(String, [String])] = [
             ("health_snapshot", ["--days", "14"]),
@@ -13,6 +13,7 @@ final class CLIQueryTests: XCTestCase {
             ("workout_summary", ["--days", "90"]),
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
+            ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
         ]
 
         for (tool, flags) in queries {
@@ -62,6 +63,17 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["sleep_stages", "--max-points"])
         assertUsageError(["health_snapshot", "--max-points", "10"])
         assertUsageError(["sleep_summary", "--limit", "1"])
+        assertUsageError(["event_series"])
+        assertUsageError(["event_series", "--from-ts", "100", "--to-ts", "102"])
+        assertUsageError(["event_series", "--kind", "ALPHA", "--from-ts", "100"])
+        assertUsageError(["event_series", "--kind", "ALPHA", "--to-ts", "102"])
+        assertUsageError(["event_series", "--kind"])
+        assertUsageError(["event_series", "--unknown", "x"])
+        assertUsageError(["health_snapshot", "--kind", "ALPHA"])
+        assertUsageError(["hr_series", "--kind", "ALPHA"])
+        assertUsageError(["sleep_stages", "--kind", "ALPHA"])
+        assertUsageError(["event_series", "--kind", "ALPHA", "--max-points", "10"])
+        assertUsageError(["event_series", "--kind", "ALPHA", "--bucket-seconds", "1"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -287,6 +299,123 @@ final class CLIQueryTests: XCTestCase {
             configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSleepStages().path)
         ))
         XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["days"], .int(1))
+    }
+
+    func testEventSeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "event_series",
+            "--kind", "ALPHA",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "102",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "event_series")
+        XCTAssertEqual(parsed.arguments, [
+            "kind": .string("ALPHA"),
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(102),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testEventSeriesFiltersByKindAndParsesPayload() throws {
+        let url = try TemporaryDatabase.withEvents()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "event_series",
+            arguments: [
+                "kind": .string("ALPHA"),
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+            ],
+            configuration: configuration
+        ))
+        let object = try XCTUnwrap(payload.objectValue)
+        XCTAssertEqual(object["kind"], .string("ALPHA"))
+        XCTAssertEqual(object["returned"], .int(3))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(102))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points[0].objectValue?["ts"], .int(100))
+        XCTAssertEqual(points[1].objectValue?["ts"], .int(101))
+        XCTAssertEqual(points[2].objectValue?["ts"], .int(102))
+        XCTAssertEqual(points[0].objectValue?["kind"], .string("ALPHA"))
+        XCTAssertEqual(points[0].objectValue?["payload"], .object(["ok": .bool(true), "n": .int(1)]))
+        XCTAssertEqual(points[1].objectValue?["payload"], .string("not-json"))
+        XCTAssertEqual(points[2].objectValue?["payload"], .object(["later": .bool(true)]))
+        XCTAssertNotNil(points[0].objectValue?["iso"])
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "event_series",
+            arguments: [
+                "kind": .string("ALPHA"),
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 102])
+
+        let unknown = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "event_series",
+            arguments: [
+                "kind": .string("NO_SUCH_KIND"),
+                "from_ts": .int(0),
+                "to_ts": .int(10_000),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(unknown.objectValue?["kind"], .string("NO_SUCH_KIND"))
+        XCTAssertEqual(unknown.objectValue?["returned"], .int(0))
+        XCTAssertEqual(unknown.objectValue?["truncated"], .bool(false))
+        guard case .array(let emptyUnknown) = unknown.objectValue?["points"] else {
+            return XCTFail("Expected empty points")
+        }
+        XCTAssertEqual(emptyUnknown.count, 0)
+
+        let missingTable = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "event_series",
+            arguments: [
+                "kind": .string("ALPHA"),
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(missingTable.objectValue?["returned"], .int(0))
+        guard case .array(let emptyMissing) = missingTable.objectValue?["points"] else {
+            return XCTFail("Expected empty points when event table is missing")
+        }
+        XCTAssertEqual(emptyMissing.count, 0)
+    }
+
+    func testEventSeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["event_series", "--kind", "ALPHA", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withEvents().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
     }
 
     func testMetricSeriesParsesTheCompleteFlagContract() throws {
