@@ -19,6 +19,7 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertNil(try store.latestSkinTempTs(deviceId: "my-whoop"))
         XCTAssertNil(try store.latestSpo2Ts(deviceId: "my-whoop"))
         XCTAssertNil(try store.latestGravityTs(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestSleepStateTs(deviceId: "my-whoop"))
         let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
         XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
         XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
@@ -232,6 +233,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.sleepStateBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestSleepStateTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestSleepStateTs(deviceId: "my-whoop"), 102)
     }
 
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
