@@ -205,4 +205,13 @@ enum TemporaryDatabase {
         }
         return url
     }
+
+    static func withoutSleepSession() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE sleepSession")
+        }
+        return url
+    }
 }
