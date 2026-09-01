@@ -222,9 +222,10 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "workout_summary",
                 title: "Workout Summary",
-                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data.",
+                description: "Return bounded workout rows and aggregate effort/calorie/duration summaries from local NOOP data. Default keeps hasZones only and omits zonesJSON. include_zones attaches a bounded decoded zones payload with a truncated flag.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 90, max 4000."),
+                    "include_zones": booleanProperty("When true, attach a bounded zones payload per workout. Default false; response shape is otherwise unchanged."),
                 ]
             ),
             tool(
@@ -354,6 +355,13 @@ private func stringProperty(_ description: String) -> JSONValue {
 private func integerProperty(_ description: String) -> JSONValue {
     .object([
         "type": .string("integer"),
+        "description": .string(description),
+    ])
+}
+
+private func booleanProperty(_ description: String) -> JSONValue {
+    .object([
+        "type": .string("boolean"),
         "description": .string(description),
     ])
 }

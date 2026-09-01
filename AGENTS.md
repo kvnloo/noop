@@ -29,6 +29,7 @@ network, no write/control. Same names for MCP and `query`:
 - `event_series`
 - `sleep_stages`
 
-`sleep_summary` still returns `hasStages` only. `data_freshness` includes last-ts
-for HR, RR, event, and sleep when those tables exist. One concern per PR; follow
-[`CLAUDE.md`](CLAUDE.md).
+`sleep_summary` still returns `hasStages` only. `workout_summary` still returns
+`hasZones` only unless `include_zones` / `--include-zones` is set, which attaches
+a bounded zones payload. `data_freshness` includes last-ts for HR, RR, event, and
+sleep when those tables exist. One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

@@ -96,6 +96,9 @@ public enum NoopCLIQuery {
             case "--device-id":
                 guard toolName == "hr_series" || toolName == "event_series" || toolName == "rr_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["device_id"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
+            case "--include-zones":
+                guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["include_zones"] = .bool(true)
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }

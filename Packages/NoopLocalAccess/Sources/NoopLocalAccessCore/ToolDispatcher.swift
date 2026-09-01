@@ -42,7 +42,10 @@ public final class NoopToolDispatcher {
         case "sleep_summary":
             return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
         case "workout_summary":
-            return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
+            return try data().workoutSummary(
+                days: boundedDays(arguments["days"], default: 90, max: 4000),
+                includeZones: arguments["include_zones"]?.boolValue ?? false
+            )
         case "hr_series":
             let fromTs = arguments["from_ts"]?.intValue
             let toTs = arguments["to_ts"]?.intValue
