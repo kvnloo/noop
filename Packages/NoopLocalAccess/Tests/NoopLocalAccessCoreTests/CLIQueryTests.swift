@@ -2609,6 +2609,45 @@ final class CLIQueryTests: XCTestCase {
         )
     }
 
+    func testResourceListPrintsKnownURIsAsJSONArray() throws {
+        let payload = NoopCLIQuery.listResourcesPayload()
+        XCTAssertEqual(payload, .array(NoopCLIQuery.resourceURIs.map { .string($0) }))
+        XCTAssertEqual(payload, .array([
+            .string("noop://health/snapshot"),
+            .string("noop://data/freshness"),
+            .string("noop://metrics/catalog"),
+            .string("noop://sources"),
+            .string("noop://tools/catalog"),
+        ]))
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("noop://nzt"))
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("noop://scores"))
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("nzt"))
+        XCTAssertFalse(NoopCLIQuery.resourceURIs.contains("scores"))
+
+        XCTAssertTrue(try NoopCLIQuery.wantsListResources(arguments: ["--list"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsListResources(arguments: ["noop://tools/catalog"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsListResources(arguments: []))
+        XCTAssertFalse(try NoopCLIQuery.wantsListResources(arguments: ["health_snapshot"]))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListResources(arguments: ["--list", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListResources(arguments: ["--list", "noop://tools/catalog"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertFalse(try NoopCLIQuery.wantsListResources(arguments: ["noop://tools/catalog", "--list"]))
+        assertResourceUsageError(["noop://tools/catalog", "--list"])
+
+        let line = try NoopCLIQuery.encodeLine(payload)
+        XCTAssertEqual(line.last, 0x0A)
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())), payload)
+    }
+
     func testResourceCommandUnknownURIIsUsage64() {
         assertResourceUsageError([])
         assertResourceUsageError(["noop://unknown"])

@@ -77,6 +77,10 @@ enum NoopLocalAccessMain {
             return
         }
         do {
+            if try NoopCLIQuery.wantsListResources(arguments: arguments) {
+                FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(NoopCLIQuery.listResourcesPayload()))
+                return
+            }
             let request = try NoopCLIQuery.parseResourceCommand(arguments: arguments)
             let payload = try NoopCLIQuery.resourcePayload(request)
             FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(payload))
@@ -157,6 +161,7 @@ enum NoopLocalAccessMain {
       noop-local-access query <tool> [flags]
       noop-local-access query --list-tools
       noop-local-access tools
+      noop-local-access resource --list
       noop-local-access resource <uri> [--db-path PATH]
       noop-local-access codex-config [--db-path /absolute/path/to/whoop.sqlite]
 
@@ -180,6 +185,7 @@ enum NoopLocalAccessMain {
       rr_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--limit N] [--device-id ID]
 
     Resource URIs (same JSON as MCP resourcePayload):
+      noop-local-access resource --list prints the known URIs as a JSON array.
       noop://tools/catalog
       noop://data/freshness
       noop://health/snapshot

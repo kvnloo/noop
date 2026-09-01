@@ -61,6 +61,6 @@ MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as J
 `noop-local-access query --list-tools` and `noop-local-access tools` print the same JSON array.
 `noop-local-access resource <uri>` prints the same JSON as MCP `resourcePayload` for
 `tools/catalog`, `data/freshness`, `health/snapshot`, `metrics/catalog`, and `sources`.
-Unknown URIs exit 64.
+Unknown URIs exit 64. `noop-local-access resource --list` prints those known URIs as a JSON array.
 
 One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

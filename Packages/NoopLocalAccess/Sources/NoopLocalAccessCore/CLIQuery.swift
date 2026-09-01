@@ -238,6 +238,18 @@ public enum NoopCLIQuery {
         "noop://tools/catalog",
     ]
 
+    public static func listResourcesPayload() -> JSONValue {
+        .array(resourceURIs.map { .string($0) })
+    }
+
+    public static func wantsListResources(arguments: [String]) throws -> Bool {
+        guard arguments.first == "--list" else { return false }
+        guard arguments == ["--list"] else {
+            throw NoopCLIQueryError.usage("resource --list does not accept additional arguments")
+        }
+        return true
+    }
+
     public static func parseResourceCommand(arguments: [String]) throws -> NoopCLIResourceRequest {
         guard let raw = arguments.first, !raw.hasPrefix("-") else {
             throw NoopCLIQueryError.usage("resource requires one uri")
