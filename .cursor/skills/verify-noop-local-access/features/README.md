@@ -4,7 +4,7 @@ Maintained source for proving user-facing CLI/MCP query behavior. Read this inde
 
 ## Baseline preconditions
 
-- macOS 13+ with Swift 5.9. `nla-verify doctor` exit 2 is INCONCLUSIVE, not PASS and not a product FAIL.
+- Swift 5.9+ on PATH (Linux or macOS). `nla-verify doctor` exit 2 is INCONCLUSIVE when Swift is missing, not PASS and not a product FAIL.
 - Repo root of `kvnloo/noop`. Package is `Packages/NoopLocalAccess`.
 - Build `noop-local-access` via `nla-verify doctor`.
 - Use a disposable sqlite with `--db-path` for any tool that reads samples. `query --list-tools`, `tools`, `resource --list`, and `--version` do not need a DB.
