@@ -228,6 +228,28 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withSkinTempSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE skinTempSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    raw INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO skinTempSample(deviceId, ts, raw) VALUES
+                    ('my-whoop', 100, 3057),
+                    ('my-whoop', 101, 3060),
+                    ('my-whoop', 102, 3040),
+                    ('other-device', 102, 2000)
+                """)
+        }
+        return url
+    }
+
     static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

@@ -26,6 +26,7 @@ network, no write/control. Same names for MCP and `query`:
 - `workout_summary`
 - `hr_series`
 - `spo2_series`
+- `skin_temp_series`
 - `rr_series`
 - `event_series`
 - `sleep_stages`

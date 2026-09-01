@@ -117,6 +117,7 @@ enum NoopLocalAccessMain {
       workout_summary [--days N] [--include-zones]
       hr_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--bucket-seconds N] [--limit N] [--device-id ID]
       spo2_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--bucket-seconds N] [--limit N] [--device-id ID]
+      skin_temp_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--bucket-seconds N] [--limit N] [--device-id ID]
       sleep_stages [--days N] [--limit N] [--max-points N]
       event_series --kind KIND [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--limit N] [--device-id ID]
       rr_series [--hours N] [--from-ts UNIX] [--to-ts UNIX] [--limit N] [--device-id ID]
