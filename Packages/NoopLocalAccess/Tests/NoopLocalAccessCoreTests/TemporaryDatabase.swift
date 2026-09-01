@@ -273,6 +273,29 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withSleepState(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE sleepSession ADD COLUMN sleepStateJSON TEXT")
+            func insertSession(start: Int, sleepStateJSON: String?) throws {
+                try db.execute(
+                    sql: """
+                    INSERT INTO sleepSession(deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, sleepStateJSON)
+                    VALUES (?, ?, ?, 90, 49, 68, '{"light":10}', ?)
+                    """,
+                    arguments: ["my-whoop", start, start + 1800, sleepStateJSON]
+                )
+            }
+            try insertSession(start: now - 3_600, sleepStateJSON: "[0.1,0.2,0.3]")
+            try insertSession(start: now - 7_200, sleepStateJSON: nil)
+            try insertSession(start: now - 10_800, sleepStateJSON: "not-json")
+            let extra = (1...40).map { String($0) }.joined(separator: ",")
+            try insertSession(start: now - 14_400, sleepStateJSON: "[\(extra)]")
+        }
+        return url
+    }
+
     static func withoutSleepSession() throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

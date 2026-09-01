@@ -11,6 +11,7 @@ final class CLIQueryTests: XCTestCase {
             ("data_freshness", []),
             ("sleep_summary", ["--days", "30"]),
             ("sleep_summary", ["--days", "30", "--include-motion"]),
+            ("sleep_summary", ["--days", "30", "--include-sleep-state"]),
             ("workout_summary", ["--days", "90"]),
             ("workout_summary", ["--days", "90", "--include-zones"]),
             ("workout_summary", ["--days", "90", "--include-notes"]),
@@ -180,6 +181,11 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["hr_series", "--include-motion"])
         assertUsageError(["sleep_stages", "--include-motion"])
         assertUsageError(["sleep_summary", "--include-motion", "--include-motion"])
+        assertUsageError(["health_snapshot", "--include-sleep-state"])
+        assertUsageError(["workout_summary", "--include-sleep-state"])
+        assertUsageError(["hr_series", "--include-sleep-state"])
+        assertUsageError(["sleep_stages", "--include-sleep-state"])
+        assertUsageError(["sleep_summary", "--include-sleep-state", "--include-sleep-state"])
     }
 
     func testHRSeriesParsesTheCompleteFlagContract() throws {
@@ -394,6 +400,9 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNil(object["motion"])
             XCTAssertNil(object["motionJSON"])
             XCTAssertNil(object["hasMotion"])
+            XCTAssertNil(object["sleepState"])
+            XCTAssertNil(object["sleepStateJSON"])
+            XCTAssertNil(object["hasSleepState"])
         }
     }
 
@@ -436,6 +445,9 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertNil(object["motionJSON"])
             XCTAssertNil(object["hasMotion"])
             XCTAssertNil(object["stages"])
+            XCTAssertNil(object["sleepState"])
+            XCTAssertNil(object["sleepStateJSON"])
+            XCTAssertNil(object["hasSleepState"])
         }
     }
 
@@ -519,6 +531,144 @@ final class CLIQueryTests: XCTestCase {
             XCTAssertEqual(object["motion"]?.objectValue?["truncated"], .bool(false))
             XCTAssertEqual(object["motion"]?.objectValue?["payload"], .null)
             XCTAssertNil(object["motionJSON"])
+            XCTAssertNil(object["sleepState"])
+            XCTAssertNil(object["sleepStateJSON"])
+        }
+    }
+
+    func testSleepSummaryParsesIncludeSleepStateFlag() throws {
+        let omitted = try NoopCLIQuery.parse(arguments: ["sleep_summary", "--days", "14"])
+        XCTAssertEqual(omitted.toolName, "sleep_summary")
+        XCTAssertEqual(omitted.arguments, ["days": .int(14)])
+
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "sleep_summary",
+            "--days", "14",
+            "--include-sleep-state",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+        XCTAssertEqual(parsed.toolName, "sleep_summary")
+        XCTAssertEqual(parsed.arguments, [
+            "days": .int(14),
+            "include_sleep_state": .bool(true),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+
+        let both = try NoopCLIQuery.parse(arguments: [
+            "sleep_summary",
+            "--include-motion",
+            "--include-sleep-state",
+        ])
+        XCTAssertEqual(both.arguments, [
+            "include_motion": .bool(true),
+            "include_sleep_state": .bool(true),
+        ])
+    }
+
+    func testSleepSummaryDefaultOmitsSleepStatePayload() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: ["days": .int(3)],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSleepState(now: now).path)
+        ))
+        XCTAssertEqual(payload.objectValue?["count"], .int(4))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertEqual(sessions.count, 4)
+        for session in sessions {
+            let object = try XCTUnwrap(session.objectValue)
+            XCTAssertNotNil(object["hasStages"])
+            XCTAssertNil(object["sleepState"])
+            XCTAssertNil(object["sleepStateJSON"])
+            XCTAssertNil(object["hasSleepState"])
+            XCTAssertNil(object["stages"])
+            XCTAssertNil(object["motion"])
+        }
+    }
+
+    func testSleepSummaryIncludeSleepStateAttachesBoundedPayload() throws {
+        let now = Int(Date().timeIntervalSince1970)
+        let arrayStart = now - 3_600
+        let noneStart = now - 7_200
+        let badStart = now - 10_800
+        let hugeStart = now - 14_400
+        let configuration = LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSleepState(now: now).path)
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: [
+                "days": .int(3),
+                "include_sleep_state": .bool(true),
+            ],
+            configuration: configuration
+        ))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertEqual(sessions.count, 4)
+
+        let array = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(arrayStart) }?.objectValue)
+        XCTAssertEqual(array["hasStages"], .bool(true))
+        XCTAssertEqual(array["sleepState"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(array["sleepState"]?.objectValue?["payload"], .array([.double(0.1), .double(0.2), .double(0.3)]))
+        XCTAssertNil(array["sleepStateJSON"])
+        XCTAssertNil(array["motion"])
+
+        let none = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(noneStart) }?.objectValue)
+        XCTAssertEqual(none["sleepState"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(none["sleepState"]?.objectValue?["payload"], .null)
+
+        let bad = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(badStart) }?.objectValue)
+        XCTAssertEqual(bad["sleepState"]?.objectValue?["truncated"], .bool(false))
+        XCTAssertEqual(bad["sleepState"]?.objectValue?["payload"], .string("not-json"))
+
+        let huge = try XCTUnwrap(sessions.first { $0.objectValue?["startTs"] == .int(hugeStart) }?.objectValue)
+        XCTAssertEqual(huge["sleepState"]?.objectValue?["truncated"], .bool(true))
+        guard case .array(let values) = huge["sleepState"]?.objectValue?["payload"] else {
+            return XCTFail("Expected truncated array payload")
+        }
+        XCTAssertEqual(values.count, 32)
+        XCTAssertNil(huge["sleepStateJSON"])
+
+        let mcp = try XCTUnwrap(try NoopMCPServer(configuration: configuration).handle(RPCRequest(
+            id: .int(1),
+            method: "tools/call",
+            params: .object([
+                "name": .string("sleep_summary"),
+                "arguments": .object([
+                    "days": .int(3),
+                    "include_sleep_state": .bool(true),
+                ]),
+            ])
+        )))
+        XCTAssertEqual(
+            mcp.objectValue?["result"]?.objectValue?["structuredContent"],
+            payload
+        )
+    }
+
+    func testSleepSummaryIncludeSleepStateWhenSleepStateColumnIsAbsent() throws {
+        let url = try TemporaryDatabase.withSleepStages()
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "sleep_summary",
+            arguments: [
+                "days": .int(3),
+                "include_sleep_state": .bool(true),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: url.path)
+        ))
+        guard case .array(let sessions) = payload.objectValue?["sessions"] else {
+            return XCTFail("Expected sessions")
+        }
+        XCTAssertFalse(sessions.isEmpty)
+        for session in sessions {
+            let object = try XCTUnwrap(session.objectValue)
+            XCTAssertNotNil(object["hasStages"])
+            XCTAssertEqual(object["sleepState"]?.objectValue?["truncated"], .bool(false))
+            XCTAssertEqual(object["sleepState"]?.objectValue?["payload"], .null)
+            XCTAssertNil(object["sleepStateJSON"])
         }
     }
 

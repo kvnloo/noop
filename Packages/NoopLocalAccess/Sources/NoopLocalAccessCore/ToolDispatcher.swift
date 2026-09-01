@@ -42,7 +42,8 @@ public final class NoopToolDispatcher {
         case "sleep_summary":
             return try data().sleepSummary(
                 days: boundedDays(arguments["days"], default: 30, max: 4000),
-                includeMotion: arguments["include_motion"]?.boolValue ?? false
+                includeMotion: arguments["include_motion"]?.boolValue ?? false,
+                includeSleepState: arguments["include_sleep_state"]?.boolValue ?? false
             )
         case "workout_summary":
             return try data().workoutSummary(

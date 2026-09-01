@@ -32,6 +32,11 @@ final class MCPServerTests: XCTestCase {
             sleep["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_motion"]?.objectValue?["type"],
             .string("boolean")
         )
+        XCTAssertNotNil(sleep["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_sleep_state"])
+        XCTAssertEqual(
+            sleep["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_sleep_state"]?.objectValue?["type"],
+            .string("boolean")
+        )
         let workout = try XCTUnwrap(values.first { $0.objectValue?["name"] == .string("workout_summary") }?.objectValue)
         XCTAssertNotNil(workout["inputSchema"]?.objectValue?["properties"]?.objectValue?["include_zones"])
         XCTAssertEqual(

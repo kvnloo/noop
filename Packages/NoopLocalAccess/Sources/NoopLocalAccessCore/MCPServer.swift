@@ -214,10 +214,11 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "sleep_summary",
                 title: "Sleep Summary",
-                description: "Return bounded sleep sessions and aggregate sleep duration/efficiency from local NOOP data. Default keeps hasStages only and omits motionJSON. include_motion attaches a bounded payload with a truncated flag.",
+                description: "Return bounded sleep sessions and aggregate sleep duration/efficiency from local NOOP data. Default keeps hasStages only and omits motionJSON and sleepStateJSON. include_motion and include_sleep_state attach bounded payloads with a truncated flag.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 30, max 4000."),
                     "include_motion": booleanProperty("When true, attach a bounded motion payload per sleep session. Default false; response shape is otherwise unchanged."),
+                    "include_sleep_state": booleanProperty("When true, attach a bounded sleepState payload per sleep session. Default false; response shape is otherwise unchanged."),
                 ]
             ),
             tool(
@@ -246,7 +247,7 @@ public func toolsList() -> JSONValue {
             tool(
                 name: "sleep_stages",
                 title: "Sleep Stages",
-                description: "Return a bounded sleep hypnogram from stored sleepSession.stagesJSON. sleep_summary default stays hasStages only; optional include_motion attaches bounded motionJSON. Segment arrays keep timing; minute aggregates do not invent a timeline.",
+                description: "Return a bounded sleep hypnogram from stored sleepSession.stagesJSON. sleep_summary default stays hasStages only; optional include_motion attaches bounded motionJSON; optional include_sleep_state attaches bounded sleepStateJSON. Segment arrays keep timing; minute aggregates do not invent a timeline.",
                 properties: [
                     "days": integerProperty("Trailing days to include, default 30, max 4000."),
                     "limit": integerProperty("Maximum returned sessions as a suffix, default 14, max 60."),
