@@ -13,6 +13,7 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertNil(try store.latestEventTs(deviceId: "my-whoop"))
         XCTAssertEqual(try store.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
         XCTAssertEqual(try store.latestWorkoutTs(deviceId: "my-whoop"), 4800)
+        XCTAssertNil(try store.latestBatteryTs(deviceId: "my-whoop"))
         let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
         XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
         XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
@@ -197,6 +198,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.batteryBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestBatteryTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestBatteryTs(deviceId: "my-whoop"), 102)
     }
 
     func testReadsSleepStateBucketsAndReturnsEmptyWhenTableMissing() throws {

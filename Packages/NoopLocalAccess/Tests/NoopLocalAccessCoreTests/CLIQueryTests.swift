@@ -66,7 +66,7 @@ final class CLIQueryTests: XCTestCase {
         let requiredKeys = [
             "generatedAt", "deviceId", "computedDeviceId",
             "latestHeartRateSample", "latestRrInterval", "latestEvent", "latestSleepSession",
-            "latestWorkout",
+            "latestWorkout", "latestBattery",
             "storage", "coverage", "metricKeys",
         ]
         for key in requiredKeys {
@@ -78,6 +78,7 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(seededObject["latestEvent"], .null)
         XCTAssertEqual(seededObject["latestSleepSession"]?.objectValue?["ts"], .int(2000))
         XCTAssertEqual(seededObject["latestWorkout"]?.objectValue?["ts"], .int(4800))
+        XCTAssertEqual(seededObject["latestBattery"], .null)
         XCTAssertEqual(
             Set(seededObject["latestWorkout"]?.objectValue?.keys ?? []),
             Set(seededObject["latestHeartRateSample"]?.objectValue?.keys ?? [])
@@ -134,6 +135,27 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(missingWorkout.objectValue?["latestSleepSession"]?.objectValue?["ts"], .int(2000))
         XCTAssertEqual(missingWorkout.objectValue?["latestRrInterval"]?.objectValue?["ts"], .int(101))
         XCTAssertEqual(missingWorkout.objectValue?["latestEvent"], .null)
+        XCTAssertEqual(missingWorkout.objectValue?["latestBattery"], .null)
+
+        let battery = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withBatterySamples().path)
+        ))
+        XCTAssertEqual(battery.objectValue?["latestBattery"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(battery.objectValue?["latestBattery"]?.objectValue?.keys ?? []),
+            Set(battery.objectValue?["latestHeartRateSample"]?.objectValue?.keys ?? [])
+        )
+        XCTAssertEqual(
+            Set(battery.objectValue?["latestBattery"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+        XCTAssertEqual(battery.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(battery.objectValue?["latestWorkout"]?.objectValue?["ts"], .int(4800))
+        XCTAssertNil(battery.objectValue?["analysisFingerprint"])
+        XCTAssertNil(battery.objectValue?["score"])
+        XCTAssertNil(battery.objectValue?["recoveryScore"])
     }
 
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {

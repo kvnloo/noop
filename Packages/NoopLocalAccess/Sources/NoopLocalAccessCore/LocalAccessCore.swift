@@ -420,6 +420,13 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func latestBatteryTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("battery") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM battery WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -810,6 +817,7 @@ public final class NoopDataAccess {
         let latestEvent = try store.latestEventTs(deviceId: deviceId)
         let latestSleep = try store.latestSleepSessionTs(deviceId: deviceId)
         let latestWorkout = try store.latestWorkoutTs(deviceId: deviceId)
+        let latestBattery = try store.latestBatteryTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -829,6 +837,7 @@ public final class NoopDataAccess {
             "latestEvent": timestampJSON(latestEvent, now: now),
             "latestSleepSession": timestampJSON(latestSleep, now: now),
             "latestWorkout": timestampJSON(latestWorkout, now: now),
+            "latestBattery": timestampJSON(latestBattery, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),

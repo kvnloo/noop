@@ -12,7 +12,7 @@ Optional flags: `include_zones` and `include_notes` on `workout_summary`; `inclu
 `include_sleep_state`, and `include_start_adjusted` on `sleep_summary` (CLI: `--include-*`).
 
 `data_freshness` last-ts keys (missing tables stay `null`): `latestHeartRateSample`,
-`latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`.
+`latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`, `latestBattery`.
 
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
@@ -50,9 +50,10 @@ Arguments reuse the MCP defaults and bounds:
 - `metric_series`: required `--key`; optional `--source` (default `my-whoop`), `--days` (default 90,
   clamped to 1...4000), `--from-day`, `--to-day`, and `--limit` (default 500, clamped to 1...2000).
 - `data_freshness`: no tool arguments. Same object as before, plus nullable
-  `latestRrInterval`, `latestEvent`, `latestSleepSession`, and `latestWorkout`
-  last-ts fields (missing tables are `null`). `latestHeartRateSample` is
-  unchanged. `latestWorkout` uses the same `{ts, iso, ageSeconds}` shape.
+  `latestRrInterval`, `latestEvent`, `latestSleepSession`, `latestWorkout`,
+  and `latestBattery` last-ts fields (missing tables are `null`).
+  `latestHeartRateSample` is unchanged. `latestBattery` uses the same
+  `{ts, iso, ageSeconds}` shape as the other last-ts keys.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000), `--include-motion` (default off), `--include-sleep-state` (default off), and `--include-start-adjusted` (default off). Default rows still return `hasStages` only. When `--include-motion` is set, each row gets a bounded `motion` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-sleep-state` is set, each row gets a bounded `sleepState` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries; strings keep 2048 characters. When `--include-start-adjusted` is set, a row includes `startTsAdjusted` only if that column is present and non-null (pre-v14 tables omit the key).
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000), `--include-zones` (default off), and `--include-notes` (default off). Default rows still return `hasZones`/`hasNotes` only. When `--include-zones` is set, each row gets a bounded `zones` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries. When `--include-notes` is set, each row gets a bounded `notes` object (`payload` plus `truncated`); strings keep 2048 characters.
 - `hr_series`: optional `--hours` (default 6, clamped to 1...24), `--from-ts` and `--to-ts`
