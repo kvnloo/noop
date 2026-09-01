@@ -70,4 +70,15 @@ final class StandardHRMappingTests: XCTestCase {
         XCTAssertTrue(s.events.isEmpty)
         XCTAssertTrue(s.battery.isEmpty)
     }
+
+    func testContactSampleParsesPayloadJSONAndDoesNotTreatParseFailureAsAbsence() throws {
+        let detected = try StandardHRMapping.contactSample(
+            ts: 100,
+            payloadJSON: #"{"extra":true,"contact":"supported_detected"}"#
+        )
+        XCTAssertEqual(detected, StandardHRContactSample(ts: 100, contact: .supportedDetected))
+
+        XCTAssertThrowsError(try StandardHRMapping.contactSample(ts: 101, payloadJSON: "not-json"))
+        XCTAssertThrowsError(try StandardHRMapping.contactSample(ts: 102, payloadJSON: "{}"))
+    }
 }

@@ -7,14 +7,7 @@ public enum StandardHeartRate {
     public static func parse(_ data: [UInt8]) -> (hr: Int, rr: [Int], contact: StandardHRContact)? {
         guard !data.isEmpty else { return nil }
         let flags = data[0]
-        let contact: StandardHRContact
-        if flags & 0x04 == 0 {
-            contact = .unsupported
-        } else if flags & 0x02 == 0 {
-            contact = .supportedNotDetected
-        } else {
-            contact = .supportedDetected
-        }
+        let contact = StandardHRContact.fromMeasurementFlags(flags)
         var idx = 1
         let hr: Int
         if flags & 0x01 != 0 {                       // 16-bit HR

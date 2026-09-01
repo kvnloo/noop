@@ -1,6 +1,7 @@
 package com.noop.data
 
 import com.noop.protocol.StandardHrContact
+import org.json.JSONObject
 
 /** Durable mapping for standard-BLE contact readings; legacy HR rows have no companion event. */
 object StandardHrMapping {
@@ -12,12 +13,16 @@ object StandardHrMapping {
         payloadJSON = "{\"contact\":\"${contact.storageValue}\"}",
     )
 
-    fun contactSample(row: EventRow): StandardHrContactSample? {
-        val prefix = "{\"contact\":\""
-        val suffix = "\"}"
-        if (!row.payloadJSON.startsWith(prefix) || !row.payloadJSON.endsWith(suffix)) return null
-        val raw = row.payloadJSON.substring(prefix.length, row.payloadJSON.length - suffix.length)
-        return StandardHrContact.fromStorageValue(raw)?.let { StandardHrContactSample(row.ts, it) }
+    /**
+     * Parse a persisted [CONTACT_EVENT_KIND] [EventRow.payloadJSON]. Throws [org.json.JSONException]
+     * (or [IllegalArgumentException] for an unknown value) so a parse failure is not the same as
+     * "no contact event" — absence is an empty query, not a skipped row.
+     */
+    fun contactSample(row: EventRow): StandardHrContactSample {
+        val raw = JSONObject(row.payloadJSON).getString("contact")
+        val contact = StandardHrContact.fromStorageValue(raw)
+            ?: throw IllegalArgumentException("unknown STANDARD_HR_CONTACT value: $raw")
+        return StandardHrContactSample(row.ts, contact)
     }
 }
 

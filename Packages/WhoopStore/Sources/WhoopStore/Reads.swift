@@ -70,13 +70,9 @@ extension WhoopStore {
                 WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ?
                 ORDER BY ts ASC LIMIT ?
                 """, arguments: [deviceId, StandardHRMapping.contactEventKind, from, to, limit])
-                .compactMap { row in
+                .map { row in
                     let json: String = row["payloadJSON"]
-                    guard let payload = try? WhoopStore.eventDecoder.decode(
-                        [String: ParsedValue].self, from: Data(json.utf8)),
-                          case let .string(raw)? = payload["contact"],
-                          let contact = StandardHRContact(rawValue: raw) else { return nil }
-                    return StandardHRContactSample(ts: row["ts"], contact: contact)
+                    return try StandardHRMapping.contactSample(ts: row["ts"], payloadJSON: json)
                 }
         }
     }

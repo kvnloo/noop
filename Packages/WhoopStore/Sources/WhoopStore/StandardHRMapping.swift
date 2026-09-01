@@ -28,6 +28,24 @@ public enum StandardHRMapping {
             events: events
         )
     }
+
+    /// Parse a persisted `STANDARD_HR_CONTACT` `payloadJSON`. Throws on malformed JSON or a missing /
+    /// unknown `contact` field so a parse failure is not the same as "no contact event".
+    public static func contactSample(ts: Int, payloadJSON: String) throws -> StandardHRContactSample {
+        let payload = try JSONDecoder().decode([String: ParsedValue].self, from: Data(payloadJSON.utf8))
+        guard case let .string(raw)? = payload["contact"] else {
+            throw ContactSampleError.missingContact
+        }
+        guard let contact = StandardHRContact(rawValue: raw) else {
+            throw ContactSampleError.unknownContact(raw)
+        }
+        return StandardHRContactSample(ts: ts, contact: contact)
+    }
+
+    public enum ContactSampleError: Error, Equatable {
+        case missingContact
+        case unknownContact(String)
+    }
 }
 
 /// One persisted standard-BLE sensor-contact reading. Legacy HR rows have no companion event and are

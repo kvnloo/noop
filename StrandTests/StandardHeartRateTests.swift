@@ -12,6 +12,11 @@ final class StandardHeartRateTests: XCTestCase {
         ]
 
         for test in cases {
+            XCTAssertEqual(
+                StandardHRContact.fromMeasurementFlags(test.flags),
+                test.expected,
+                "flags 0x\(String(test.flags, radix: 16))"
+            )
             let parsed = StandardHeartRate.parse([test.flags, 72])
             XCTAssertEqual(parsed?.contact, test.expected, "flags 0x\(String(test.flags, radix: 16))")
         }

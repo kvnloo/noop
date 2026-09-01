@@ -1167,7 +1167,7 @@ class WhoopRepository(
         limit: Int = DEFAULT_LIMIT,
     ): List<StandardHrContactSample> = dao.eventsByKind(
         deviceId, StandardHrMapping.CONTACT_EVENT_KIND, from, to, limit,
-    ).mapNotNull(StandardHrMapping::contactSample)
+    ).map(StandardHrMapping::contactSample)
 
     suspend fun batterySamples(deviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT) =
         dao.batterySamples(deviceId, from, to, limit)

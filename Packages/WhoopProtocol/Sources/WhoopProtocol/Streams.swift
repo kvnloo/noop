@@ -19,6 +19,19 @@ public enum StandardHRContact: String, Equatable, Codable, Sendable {
     case unsupported
     case supportedNotDetected = "supported_not_detected"
     case supportedDetected = "supported_detected"
+
+    /// Decode the BLE Heart Rate Measurement flags: bit 2 = supported, bit 1 = detected.
+    /// `unsupported` wins whenever bit 2 is clear, irrespective of detected bit 1.
+    /// Twin of Kotlin `StandardHrContact.fromMeasurementFlags`.
+    public static func fromMeasurementFlags(_ flags: UInt8) -> StandardHRContact {
+        if flags & 0x04 == 0 {
+            return .unsupported
+        } else if flags & 0x02 == 0 {
+            return .supportedNotDetected
+        } else {
+            return .supportedDetected
+        }
+    }
 }
 
 /// WHICH sensor channel produced an R-R interval (#1071).
