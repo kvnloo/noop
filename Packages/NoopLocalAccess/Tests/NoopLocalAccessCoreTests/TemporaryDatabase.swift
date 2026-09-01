@@ -250,6 +250,28 @@ enum TemporaryDatabase {
         return url
     }
 
+    static func withRespSamples() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE respSample(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL,
+                    raw INTEGER NOT NULL,
+                    PRIMARY KEY(deviceId, ts)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO respSample(deviceId, ts, raw) VALUES
+                    ('my-whoop', 100, 1200),
+                    ('my-whoop', 101, 1300),
+                    ('my-whoop', 102, 1100),
+                    ('other-device', 102, 500)
+                """)
+        }
+        return url
+    }
+
     static func withWorkoutZones(now: Int = Int(Date().timeIntervalSince1970)) throws -> URL {
         let url = try seeded()
         let dbQueue = try DatabaseQueue(path: url.path)

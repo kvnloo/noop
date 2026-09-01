@@ -19,6 +19,7 @@ final class CLIQueryTests: XCTestCase {
             ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("spo2_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("skin_temp_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
+            ("resp_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
             ("sleep_stages", ["--days", "30", "--limit", "14", "--max-points", "200"]),
             ("event_series", ["--kind", "ALPHA", "--from-ts", "100", "--to-ts", "102", "--limit", "50"]),
             ("rr_series", ["--from-ts", "100", "--to-ts", "103", "--limit", "50"]),
@@ -152,6 +153,9 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["skin_temp_series", "--from-ts", "100"])
         assertUsageError(["skin_temp_series", "--to-ts", "102"])
         assertUsageError(["skin_temp_series", "--unknown", "x"])
+        assertUsageError(["resp_series", "--from-ts", "100"])
+        assertUsageError(["resp_series", "--to-ts", "102"])
+        assertUsageError(["resp_series", "--unknown", "x"])
         assertUsageError(["health_snapshot", "--hours", "1"])
         assertUsageError(["metric_series", "--key", "hrv", "--from-ts", "100", "--to-ts", "102"])
         assertUsageError(["sleep_stages", "--from-ts", "100"])
@@ -168,6 +172,7 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["hr_series", "--kind", "ALPHA"])
         assertUsageError(["spo2_series", "--kind", "ALPHA"])
         assertUsageError(["skin_temp_series", "--kind", "ALPHA"])
+        assertUsageError(["resp_series", "--kind", "ALPHA"])
         assertUsageError(["sleep_stages", "--kind", "ALPHA"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--max-points", "10"])
         assertUsageError(["event_series", "--kind", "ALPHA", "--bucket-seconds", "1"])
@@ -540,6 +545,131 @@ final class CLIQueryTests: XCTestCase {
 
     func testSkinTempSeriesHoursZeroIsClampedByTheDispatcher() throws {
         let parsed = try NoopCLIQuery.parse(arguments: ["skin_temp_series", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
+    }
+
+    func testRespSeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "resp_series",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "102",
+            "--bucket-seconds", "1",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "resp_series")
+        XCTAssertEqual(parsed.arguments, [
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(102),
+            "bucket_seconds": .int(1),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testRespSeriesBucketsMatchStoredRawAndSuffixLimit() throws {
+        let url = try TemporaryDatabase.withRespSamples()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "resp_series", "--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1",
+        ])
+        let request = NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: configuration
+        )
+        let payload = try NoopCLIQuery.dispatch(request)
+        let object = try XCTUnwrap(payload.objectValue)
+
+        XCTAssertEqual(object["bucketSeconds"], .int(1))
+        XCTAssertEqual(object["returned"], .int(3))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(102))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 101, 102])
+        XCTAssertEqual(points[0].objectValue?["raw"]?.intValue, 1200)
+        XCTAssertEqual(points[1].objectValue?["raw"]?.intValue, 1300)
+        XCTAssertEqual(points[2].objectValue?["raw"]?.intValue, 1100)
+        XCTAssertNotNil(points[0].objectValue?["iso"])
+        XCTAssertNil(points[0].objectValue?["bpm"])
+        XCTAssertNil(points[0].objectValue?["nzt"])
+        XCTAssertNil(object["score"])
+        XCTAssertNil(object["nzt"])
+
+        let grouped = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "resp_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(grouped.objectValue?["returned"], .int(2))
+        XCTAssertEqual(grouped.objectValue?["bucketSeconds"], .int(2))
+        guard case .array(let groupedPoints) = grouped.objectValue?["points"] else {
+            return XCTFail("Expected grouped points")
+        }
+        XCTAssertEqual(groupedPoints.compactMap { $0.objectValue?["ts"]?.intValue }, [100, 102])
+        switch groupedPoints[0].objectValue?["raw"] {
+        case .double(let raw):
+            XCTAssertEqual(raw, 1250.0, accuracy: 0.01)
+        default:
+            XCTFail("Expected averaged raw 1250.0, got \(String(describing: groupedPoints[0].objectValue?["raw"]))")
+        }
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "resp_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 102])
+
+        let missingTable = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "resp_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+            ],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(missingTable.objectValue?["returned"], .int(0))
+        XCTAssertEqual(missingTable.objectValue?["truncated"], .bool(false))
+        guard case .array(let emptyMissing) = missingTable.objectValue?["points"] else {
+            return XCTFail("Expected empty points when respSample table is missing")
+        }
+        XCTAssertEqual(emptyMissing.count, 0)
+    }
+
+    func testRespSeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["resp_series", "--hours", "0"])
         XCTAssertEqual(parsed.arguments["hours"], .int(0))
 
         let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
