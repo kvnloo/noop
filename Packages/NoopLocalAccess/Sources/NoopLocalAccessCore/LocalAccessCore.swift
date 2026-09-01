@@ -175,6 +175,11 @@ public struct StorageStats: Equatable, Sendable {
     public let rawBytes: Int
 }
 
+public struct HRBucketRow: Equatable, Sendable {
+    public let ts: Int
+    public let bpm: Double
+}
+
 public final class ReadonlyNoopStore {
     private let dbQueue: DatabaseQueue
     private let tableNames: Set<String>
@@ -315,6 +320,60 @@ public final class ReadonlyNoopStore {
                 return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM ppgHrSample WHERE deviceId = ?", arguments: [deviceId])
             case (false, false):
                 return nil
+            }
+        }
+    }
+
+    public func hrBuckets(deviceId: String, from: Int, to: Int, bucketSeconds: Int) throws -> [HRBucketRow] {
+        let hasHr = tableNames.contains("hrSample")
+        let hasPpg = tableNames.contains("ppgHrSample")
+        guard hasHr || hasPpg else { return [] }
+        let bucket = max(1, bucketSeconds)
+
+        return try dbQueue.read { db in
+            let sql: String
+            let arguments: StatementArguments
+            switch (hasHr, hasPpg) {
+            case (true, true):
+                // Same measured-first UNION + PPG anti-join + GROUP BY ts/bucket as WhoopStore.hrBuckets.
+                sql = """
+                    SELECT (ts / ?) * ? AS bucket, AVG(bpm) AS avgBpm FROM (
+                        SELECT ts, bpm FROM hrSample
+                        WHERE deviceId = ? AND ts >= ? AND ts <= ?
+                        UNION ALL
+                        SELECT p.ts, p.bpm FROM ppgHrSample p
+                        WHERE p.deviceId = ? AND p.ts >= ? AND p.ts <= ?
+                          AND NOT EXISTS (
+                            SELECT 1 FROM hrSample h
+                            WHERE h.deviceId = p.deviceId AND h.ts = p.ts)
+                    )
+                    GROUP BY ts / ?
+                    ORDER BY bucket ASC
+                    """
+                arguments = [bucket, bucket, deviceId, from, to, deviceId, from, to, bucket]
+            case (true, false):
+                sql = """
+                    SELECT (ts / ?) * ? AS bucket, AVG(bpm) AS avgBpm
+                    FROM hrSample
+                    WHERE deviceId = ? AND ts >= ? AND ts <= ?
+                    GROUP BY ts / ?
+                    ORDER BY bucket ASC
+                    """
+                arguments = [bucket, bucket, deviceId, from, to, bucket]
+            case (false, true):
+                sql = """
+                    SELECT (ts / ?) * ? AS bucket, AVG(bpm) AS avgBpm
+                    FROM ppgHrSample
+                    WHERE deviceId = ? AND ts >= ? AND ts <= ?
+                    GROUP BY ts / ?
+                    ORDER BY bucket ASC
+                    """
+                arguments = [bucket, bucket, deviceId, from, to, bucket]
+            case (false, false):
+                return []
+            }
+            return try Row.fetchAll(db, sql: sql, arguments: arguments).map {
+                HRBucketRow(ts: $0["bucket"], bpm: $0["avgBpm"])
             }
         }
     }
@@ -518,6 +577,57 @@ public final class NoopDataAccess {
             "totalEnergyKcal": .double(calories),
             "totalStrain": .double(strain),
             "workouts": .array(rows.suffix(300).map(workoutJSON)),
+        ])
+    }
+
+    public func hrSeries(
+        hours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        bucketSeconds: Int,
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("hr_series requires both from_ts and to_ts")
+        }
+
+        let now = Int(Date().timeIntervalSince1970)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            fromTs = now - hours * 3_600
+            toTs = now
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let buckets = try store.hrBuckets(
+            deviceId: resolvedDeviceId,
+            from: fromTs,
+            to: toTs,
+            bucketSeconds: bucketSeconds
+        )
+        let truncated = buckets.count > limit
+        let points = Array(buckets.suffix(limit))
+        return .object([
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(hours),
+            ]),
+            "bucketSeconds": .int(bucketSeconds),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                .object([
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "bpm": .double(row.bpm),
+                ])
+            }),
         ])
     }
 

@@ -227,6 +227,19 @@ public func toolsList() -> JSONValue {
                     "days": integerProperty("Trailing days to include, default 90, max 4000."),
                 ]
             ),
+            tool(
+                name: "hr_series",
+                title: "Heart Rate Series",
+                description: "Return a bounded intra-day heart-rate series as measured-first buckets with PPG fill-in. Not a daily metric_series.",
+                properties: [
+                    "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
+                    "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
+                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "bucket_seconds": integerProperty("Downsample bucket width in seconds, default 60, max 3600."),
+                    "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
+                    "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
+                ]
+            ),
         ]),
     ])
 }

@@ -71,8 +71,25 @@ public enum NoopCLIQuery {
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["to_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--limit":
-                guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "metric_series" || toolName == "hr_series" else {
+                    throw unsupported(flag, toolName: toolName)
+                }
                 toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--hours":
+                guard toolName == "hr_series" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["hours"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--from-ts":
+                guard toolName == "hr_series" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["from_ts"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--to-ts":
+                guard toolName == "hr_series" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["to_ts"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--bucket-seconds":
+                guard toolName == "hr_series" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["bucket_seconds"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--device-id":
+                guard toolName == "hr_series" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["device_id"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }
@@ -80,6 +97,13 @@ public enum NoopCLIQuery {
 
         if toolName == "metric_series", toolArguments["key"] == nil {
             throw NoopCLIQueryError.usage("metric_series requires --key")
+        }
+        if toolName == "hr_series" {
+            let hasFrom = toolArguments["from_ts"] != nil
+            let hasTo = toolArguments["to_ts"] != nil
+            if hasFrom != hasTo {
+                throw NoopCLIQueryError.usage("hr_series requires both --from-ts and --to-ts")
+            }
         }
 
         return NoopCLIQueryRequest(toolName: toolName, arguments: toolArguments, configuration: configuration)

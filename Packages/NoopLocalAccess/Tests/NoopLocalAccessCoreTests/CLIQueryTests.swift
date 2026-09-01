@@ -2,7 +2,7 @@ import XCTest
 @testable import NoopLocalAccessCore
 
 final class CLIQueryTests: XCTestCase {
-    func testAllFiveQueriesDispatchThroughTheSamePayloadAsMCP() throws {
+    func testAllQueriesDispatchThroughTheSamePayloadAsMCP() throws {
         let url = try TemporaryDatabase.seeded()
         let configuration = LocalAccessConfiguration(databasePath: url.path)
         let queries: [(String, [String])] = [
@@ -11,6 +11,7 @@ final class CLIQueryTests: XCTestCase {
             ("data_freshness", []),
             ("sleep_summary", ["--days", "30"]),
             ("workout_summary", ["--days", "90"]),
+            ("hr_series", ["--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1", "--limit", "50"]),
         ]
 
         for (tool, flags) in queries {
@@ -51,6 +52,101 @@ final class CLIQueryTests: XCTestCase {
         assertUsageError(["health_snapshot", "--db-path"])
         assertUsageError(["data_freshness", "--days", "7"])
         assertUsageError(["health_snapshot", "--days", "not-an-integer"])
+        assertUsageError(["hr_series", "--from-ts", "100"])
+        assertUsageError(["hr_series", "--to-ts", "102"])
+        assertUsageError(["hr_series", "--unknown", "x"])
+        assertUsageError(["health_snapshot", "--hours", "1"])
+        assertUsageError(["metric_series", "--key", "hrv", "--from-ts", "100", "--to-ts", "102"])
+    }
+
+    func testHRSeriesParsesTheCompleteFlagContract() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "hr_series",
+            "--hours", "2",
+            "--from-ts", "100",
+            "--to-ts", "102",
+            "--bucket-seconds", "1",
+            "--limit", "50",
+            "--device-id", "my-whoop",
+            "--db-path", "/tmp/noop.sqlite",
+        ])
+
+        XCTAssertEqual(parsed.toolName, "hr_series")
+        XCTAssertEqual(parsed.arguments, [
+            "hours": .int(2),
+            "from_ts": .int(100),
+            "to_ts": .int(102),
+            "bucket_seconds": .int(1),
+            "limit": .int(50),
+            "device_id": .string("my-whoop"),
+        ])
+        XCTAssertEqual(parsed.configuration.databasePath, "/tmp/noop.sqlite")
+    }
+
+    func testHRSeriesBucketsMatchMeasuredThenPPGFillIn() throws {
+        let url = try TemporaryDatabase.seeded()
+        let configuration = LocalAccessConfiguration(databasePath: url.path)
+        let parsed = try NoopCLIQuery.parse(arguments: [
+            "hr_series", "--from-ts", "100", "--to-ts", "102", "--bucket-seconds", "1",
+        ])
+        let request = NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: configuration
+        )
+        let payload = try NoopCLIQuery.dispatch(request)
+        let object = try XCTUnwrap(payload.objectValue)
+
+        XCTAssertEqual(object["bucketSeconds"], .int(1))
+        XCTAssertEqual(object["returned"], .int(3))
+        XCTAssertEqual(object["truncated"], .bool(false))
+        XCTAssertEqual(object["range"]?.objectValue?["fromTs"], .int(100))
+        XCTAssertEqual(object["range"]?.objectValue?["toTs"], .int(102))
+        guard case .array(let points) = object["points"] else {
+            return XCTFail("Expected points array")
+        }
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points[0].objectValue?["ts"], .int(100))
+        XCTAssertEqual(points[1].objectValue?["ts"], .int(101))
+        XCTAssertEqual(points[2].objectValue?["ts"], .int(102))
+        XCTAssertEqual(points[0].objectValue?["bpm"]?.intValue, 70)
+        XCTAssertEqual(points[1].objectValue?["bpm"]?.intValue, 72)
+        switch points[2].objectValue?["bpm"] {
+        case .double(let bpm):
+            XCTAssertEqual(bpm, 73.2, accuracy: 0.01)
+        default:
+            XCTFail("Expected PPG bpm 73.2, got \(String(describing: points[2].objectValue?["bpm"]))")
+        }
+        XCTAssertNil(points[0].objectValue?["conf"])
+
+        let truncated = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "hr_series",
+            arguments: [
+                "from_ts": .int(100),
+                "to_ts": .int(102),
+                "bucket_seconds": .int(1),
+                "limit": .int(2),
+            ],
+            configuration: configuration
+        ))
+        XCTAssertEqual(truncated.objectValue?["returned"], .int(2))
+        XCTAssertEqual(truncated.objectValue?["truncated"], .bool(true))
+        guard case .array(let suffix) = truncated.objectValue?["points"] else {
+            return XCTFail("Expected truncated points")
+        }
+        XCTAssertEqual(suffix.compactMap { $0.objectValue?["ts"]?.intValue }, [101, 102])
+    }
+
+    func testHRSeriesHoursZeroIsClampedByTheDispatcher() throws {
+        let parsed = try NoopCLIQuery.parse(arguments: ["hr_series", "--hours", "0"])
+        XCTAssertEqual(parsed.arguments["hours"], .int(0))
+
+        let payload = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: parsed.toolName,
+            arguments: parsed.arguments,
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.seeded().path)
+        ))
+        XCTAssertEqual(payload.objectValue?["range"]?.objectValue?["hours"], .int(1))
     }
 
     func testMetricSeriesParsesTheCompleteFlagContract() throws {
