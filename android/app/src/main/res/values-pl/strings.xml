@@ -373,6 +373,14 @@
     <string name="l10n_data_sources_screen_data_sources_5e43d6bb">Źródła danych</string>
     <string name="l10n_data_sources_screen_every_3560d90b">Każdy</string>
     <string name="l10n_data_sources_screen_health_connect_be6bca3e">Połączenie zdrowotne</string>
+    <string name="health_connect_categories_title">Wybierz dane, które NOOP może odczytywać</string>
+    <string name="health_connect_categories_detail">Wybierz kategorie Health Connect do zaimportowania. Możesz zmienić ten wybór później.</string>
+    <string name="health_connect_category_recovery">Regeneracja i zdrowie</string>
+    <string name="health_connect_category_recovery_detail">Tętno, HRV, sen, SpO₂, oddech i nawodnienie</string>
+    <string name="health_connect_category_activity">Aktywność</string>
+    <string name="health_connect_category_activity_detail">Kroki, kalorie, treningi, dystans i VO₂ max</string>
+    <string name="health_connect_category_body_composition">Skład ciała</string>
+    <string name="health_connect_category_body_composition_detail">Masa ciała, tkanka tłuszczowa i beztłuszczowa masa ciała</string>
     <string name="l10n_data_sources_screen_import_apple_health_export_533fca27">Importuj eksport Apple Health…</string>
     <string name="l10n_data_sources_screen_import_from_health_connect_35d55e21">Importuj z Health Connect</string>
     <string name="l10n_data_sources_screen_import_lifting_log_8fac7b68">Importuj dziennik podnoszenia…</string>
@@ -2617,6 +2625,7 @@
     <string name="raw_diag_broadcast_hr">Transmituj tętno z opaski</string>
     <string name="raw_diag_pair">Poproś Androida o sparowanie</string>
     <string name="raw_diag_unbonded_offload">Spróbuj synchronizacji historii bez parowania</string>
+    <string name="raw_diag_clear_stale_bond">Usuń nieaktualne parowanie</string>
     <string name="raw_diag_r22">Starszy eksperyment flag R22</string>
     <string name="raw_diag_r22_enable">Wyślij starszą sekwencję włączenia R22</string>
     <string name="raw_diag_r22_clear">Wyczyść flagi R22 na opasce</string>
@@ -2651,4 +2660,5 @@
     <string name="l10n_body_clock_dial_card_last_night_6eaba4dd">Ostatnia noc</string>
     <string name="l10n_body_clock_dial_card_your_clock_1b91f5ee">Twój zegar</string>
     <string name="vo2max_method_change_caption">Linia jest przerwana tam, gdzie metoda szacowania zmieniła się lub nie została zapisana.</string>
+    <string name="l10n_app_changelog_a_whoop_5_that_stays_connected_7b490eee">WHOOP 5, który nie traci połączenia, zegar biologiczny na ekranie snu i dziennik odróżniający Nie od braku wpisu</string>
 </resources>

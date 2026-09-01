@@ -226,6 +226,14 @@
     <string name="l10n_data_sources_screen_data_sources_5e43d6bb">Sources de données</string>
     <string name="l10n_data_sources_screen_every_3560d90b">Chaque</string>
     <string name="l10n_data_sources_screen_health_connect_be6bca3e">Connexion santé</string>
+    <string name="health_connect_categories_title">Choisissez ce que NOOP peut lire</string>
+    <string name="health_connect_categories_detail">Sélectionnez les catégories Health Connect à importer. Vous pourrez modifier ce choix plus tard.</string>
+    <string name="health_connect_category_recovery">Récupération et bien-être</string>
+    <string name="health_connect_category_recovery_detail">Fréquence cardiaque, VFC, sommeil, SpO₂, respiration et hydratation</string>
+    <string name="health_connect_category_activity">Activité</string>
+    <string name="health_connect_category_activity_detail">Pas, calories, entraînements, distance et VO₂ max</string>
+    <string name="health_connect_category_body_composition">Composition corporelle</string>
+    <string name="health_connect_category_body_composition_detail">Poids, masse grasse et masse maigre</string>
     <string name="l10n_data_sources_screen_import_apple_health_export_533fca27">Importation Apple Health exportation...</string>
     <string name="l10n_data_sources_screen_import_from_health_connect_35d55e21">Importation depuis Health Connect</string>
     <string name="l10n_data_sources_screen_import_lifting_log_8fac7b68">Importer le log...</string>
@@ -2612,6 +2620,7 @@
     <string name="raw_diag_broadcast_hr">Diffuser la fréquence cardiaque du bracelet</string>
     <string name="raw_diag_pair">Demander l’appairage à Android</string>
     <string name="raw_diag_unbonded_offload">Essayer la synchronisation de l\'historique sans appairage</string>
+    <string name="raw_diag_clear_stale_bond">Supprimer un appairage obsolète</string>
     <string name="raw_diag_r22">Ancienne expérience d’indicateurs R22</string>
     <string name="raw_diag_r22_enable">Envoyer l’ancienne séquence d’activation R22</string>
     <string name="raw_diag_r22_clear">Effacer les indicateurs R22 du bracelet</string>
@@ -2646,4 +2655,5 @@
     <string name="l10n_body_clock_dial_card_last_night_6eaba4dd">La nuit dernière</string>
     <string name="l10n_body_clock_dial_card_your_clock_1b91f5ee">Votre horloge</string>
     <string name="vo2max_method_change_caption">La courbe est interrompue là où la méthode d’estimation a changé ou n’a pas été enregistrée.</string>
+    <string name="l10n_app_changelog_a_whoop_5_that_stays_connected_7b490eee">Une WHOOP 5 qui reste connectée, votre horloge interne sur l\'écran Sommeil, et un journal qui distingue Non de rien</string>
 </resources>

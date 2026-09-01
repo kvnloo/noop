@@ -501,6 +501,14 @@
     <string name="l10n_data_sources_screen_data_sources_5e43d6bb">Data Sources</string>
     <string name="l10n_data_sources_screen_every_3560d90b">Every</string>
     <string name="l10n_data_sources_screen_health_connect_be6bca3e">Health Connect</string>
+    <string name="health_connect_categories_title">Choose what NOOP can read</string>
+    <string name="health_connect_categories_detail">Select the Health Connect categories to import. You can change this later.</string>
+    <string name="health_connect_category_recovery">Recovery &amp; wellness</string>
+    <string name="health_connect_category_recovery_detail">Heart rate, HRV, sleep, SpO₂, breathing, and hydration</string>
+    <string name="health_connect_category_activity">Activity</string>
+    <string name="health_connect_category_activity_detail">Steps, calories, workouts, distance, and VO₂ max</string>
+    <string name="health_connect_category_body_composition">Body composition</string>
+    <string name="health_connect_category_body_composition_detail">Weight, body fat, and lean mass</string>
     <string name="l10n_data_sources_screen_import_apple_health_export_533fca27">Import Apple Health export…</string>
     <string name="l10n_data_sources_screen_import_from_health_connect_35d55e21">Import from Health Connect</string>
     <string name="l10n_data_sources_screen_import_lifting_log_8fac7b68">Import lifting log…</string>
@@ -2641,6 +2649,7 @@
     <string name="raw_diag_broadcast_hr">Broadcast heart rate from the strap</string>
     <string name="raw_diag_pair">Ask Android to pair</string>
     <string name="raw_diag_unbonded_offload">Try history sync without pairing</string>
+    <string name="raw_diag_clear_stale_bond">Clear a stale phone pairing</string>
     <string name="raw_diag_r22">Legacy R22 feature-flag experiment</string>
     <string name="raw_diag_r22_enable">Send legacy R22 enable sequence</string>
     <string name="raw_diag_r22_clear">Clear legacy R22 flags on strap</string>
@@ -2673,4 +2682,5 @@
     <string name="l10n_body_clock_dial_card_last_night_6eaba4dd">Last night</string>
     <string name="l10n_body_clock_dial_card_your_clock_1b91f5ee">Your clock</string>
     <string name="vo2max_method_change_caption">The line breaks where the estimation method changed or was not recorded.</string>
+    <string name="l10n_app_changelog_a_whoop_5_that_stays_connected_7b490eee">A WHOOP 5 that stays connected, your body clock on the Sleep screen, and a Journal that knows No from nothing</string>
 </resources>

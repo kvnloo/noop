@@ -408,6 +408,14 @@
     <string name="l10n_data_sources_screen_data_sources_5e43d6bb">Datenquellen</string>
     <string name="l10n_data_sources_screen_every_3560d90b">Alle</string>
     <string name="l10n_data_sources_screen_health_connect_be6bca3e">Gesundheit Connect</string>
+    <string name="health_connect_categories_title">Wähle aus, was NOOP lesen darf</string>
+    <string name="health_connect_categories_detail">Wähle die Health-Connect-Kategorien aus, die importiert werden sollen. Du kannst dies später ändern.</string>
+    <string name="health_connect_category_recovery">Erholung &amp; Wohlbefinden</string>
+    <string name="health_connect_category_recovery_detail">Herzfrequenz, HRV, Schlaf, SpO₂, Atmung und Flüssigkeitszufuhr</string>
+    <string name="health_connect_category_activity">Aktivität</string>
+    <string name="health_connect_category_activity_detail">Schritte, Kalorien, Trainingseinheiten, Distanz und VO₂max</string>
+    <string name="health_connect_category_body_composition">Körperzusammensetzung</string>
+    <string name="health_connect_category_body_composition_detail">Gewicht, Körperfett und fettfreie Masse</string>
     <string name="l10n_data_sources_screen_import_apple_health_export_533fca27">Importieren Sie Apple Health Export ...</string>
     <string name="l10n_data_sources_screen_import_from_health_connect_35d55e21">Import von Health Connect</string>
     <string name="l10n_data_sources_screen_import_lifting_log_8fac7b68">Lifting Log ...</string>
@@ -2628,6 +2636,7 @@
     <string name="raw_diag_broadcast_hr">Herzfrequenz vom Band übertragen</string>
     <string name="raw_diag_pair">Android um Kopplung bitten</string>
     <string name="raw_diag_unbonded_offload">Verlaufssynchronisierung ohne Kopplung versuchen</string>
+    <string name="raw_diag_clear_stale_bond">Veraltete Kopplung entfernen</string>
     <string name="raw_diag_r22">Altes R22-Feature-Flag-Experiment</string>
     <string name="raw_diag_r22_enable">Alte R22-Aktivierungssequenz senden</string>
     <string name="raw_diag_r22_clear">R22-Flags auf dem Band löschen</string>
@@ -2660,4 +2669,5 @@
     <string name="l10n_body_clock_dial_card_last_night_6eaba4dd">Letzte Nacht</string>
     <string name="l10n_body_clock_dial_card_your_clock_1b91f5ee">Deine innere Uhr</string>
     <string name="vo2max_method_change_caption">Die Linie bricht dort ab, wo sich die Schätzmethode geändert hat oder nicht erfasst wurde.</string>
+    <string name="l10n_app_changelog_a_whoop_5_that_stays_connected_7b490eee">Eine WHOOP 5, die verbunden bleibt, deine innere Uhr im Schlaf-Screen und ein Journal, das Nein von gar nichts unterscheidet</string>
 </resources>
