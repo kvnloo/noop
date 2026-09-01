@@ -14,6 +14,11 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(try store.latestSleepSessionTs(deviceId: "my-whoop"), 2000)
         XCTAssertEqual(try store.latestWorkoutTs(deviceId: "my-whoop"), 4800)
         XCTAssertNil(try store.latestBatteryTs(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestStepTs(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestRespTs(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestSkinTempTs(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestSpo2Ts(deviceId: "my-whoop"))
+        XCTAssertNil(try store.latestGravityTs(deviceId: "my-whoop"))
         let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
         XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
         XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
@@ -106,6 +111,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.spo2Buckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestSpo2Ts(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestSpo2Ts(deviceId: "my-whoop"), 102)
     }
 
 
@@ -124,6 +131,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.skinTempBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestSkinTempTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestSkinTempTs(deviceId: "my-whoop"), 102)
     }
 
     func testReadsRespBucketsAndReturnsEmptyWhenTableMissing() throws {
@@ -141,6 +150,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.respBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestRespTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestRespTs(deviceId: "my-whoop"), 102)
     }
 
     func testReadsStepBucketsAndReturnsEmptyWhenTableMissing() throws {
@@ -158,6 +169,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.stepBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestStepTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestStepTs(deviceId: "my-whoop"), 102)
     }
 
     func testReadsGravityBucketsAndReturnsEmptyWhenTableMissing() throws {
@@ -179,6 +192,8 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         let missing = try ReadonlyNoopStore(path: try TemporaryDatabase.seeded().path)
         XCTAssertEqual(try missing.gravityBuckets(deviceId: "my-whoop", from: 0, to: 1000, bucketSeconds: 1), [])
+        XCTAssertNil(try missing.latestGravityTs(deviceId: "my-whoop"))
+        XCTAssertEqual(try store.latestGravityTs(deviceId: "my-whoop"), 102)
     }
 
     func testReadsBatteryBucketsAndReturnsEmptyWhenTableMissing() throws {

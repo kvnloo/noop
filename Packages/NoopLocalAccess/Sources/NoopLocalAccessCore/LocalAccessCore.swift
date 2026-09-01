@@ -427,6 +427,41 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func latestStepTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("stepSample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM stepSample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestRespTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("respSample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM respSample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestSkinTempTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("skinTempSample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM skinTempSample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestSpo2Ts(deviceId: String) throws -> Int? {
+        guard tableNames.contains("spo2Sample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM spo2Sample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestGravityTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("gravitySample") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM gravitySample WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -818,6 +853,11 @@ public final class NoopDataAccess {
         let latestSleep = try store.latestSleepSessionTs(deviceId: deviceId)
         let latestWorkout = try store.latestWorkoutTs(deviceId: deviceId)
         let latestBattery = try store.latestBatteryTs(deviceId: deviceId)
+        let latestStep = try store.latestStepTs(deviceId: deviceId)
+        let latestResp = try store.latestRespTs(deviceId: deviceId)
+        let latestSkinTemp = try store.latestSkinTempTs(deviceId: deviceId)
+        let latestSpo2 = try store.latestSpo2Ts(deviceId: deviceId)
+        let latestGravity = try store.latestGravityTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -838,6 +878,11 @@ public final class NoopDataAccess {
             "latestSleepSession": timestampJSON(latestSleep, now: now),
             "latestWorkout": timestampJSON(latestWorkout, now: now),
             "latestBattery": timestampJSON(latestBattery, now: now),
+            "latestStep": timestampJSON(latestStep, now: now),
+            "latestResp": timestampJSON(latestResp, now: now),
+            "latestSkinTemp": timestampJSON(latestSkinTemp, now: now),
+            "latestSpo2": timestampJSON(latestSpo2, now: now),
+            "latestGravity": timestampJSON(latestGravity, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),

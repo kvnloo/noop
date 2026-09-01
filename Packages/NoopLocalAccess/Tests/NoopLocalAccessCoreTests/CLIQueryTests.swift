@@ -67,6 +67,7 @@ final class CLIQueryTests: XCTestCase {
             "generatedAt", "deviceId", "computedDeviceId",
             "latestHeartRateSample", "latestRrInterval", "latestEvent", "latestSleepSession",
             "latestWorkout", "latestBattery",
+            "latestStep", "latestResp", "latestSkinTemp", "latestSpo2", "latestGravity",
             "storage", "coverage", "metricKeys",
         ]
         for key in requiredKeys {
@@ -79,6 +80,11 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertEqual(seededObject["latestSleepSession"]?.objectValue?["ts"], .int(2000))
         XCTAssertEqual(seededObject["latestWorkout"]?.objectValue?["ts"], .int(4800))
         XCTAssertEqual(seededObject["latestBattery"], .null)
+        XCTAssertEqual(seededObject["latestStep"], .null)
+        XCTAssertEqual(seededObject["latestResp"], .null)
+        XCTAssertEqual(seededObject["latestSkinTemp"], .null)
+        XCTAssertEqual(seededObject["latestSpo2"], .null)
+        XCTAssertEqual(seededObject["latestGravity"], .null)
         XCTAssertEqual(
             Set(seededObject["latestWorkout"]?.objectValue?.keys ?? []),
             Set(seededObject["latestHeartRateSample"]?.objectValue?.keys ?? [])
@@ -156,6 +162,79 @@ final class CLIQueryTests: XCTestCase {
         XCTAssertNil(battery.objectValue?["analysisFingerprint"])
         XCTAssertNil(battery.objectValue?["score"])
         XCTAssertNil(battery.objectValue?["recoveryScore"])
+        XCTAssertEqual(battery.objectValue?["latestStep"], .null)
+        XCTAssertEqual(battery.objectValue?["latestGravity"], .null)
+
+        let step = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withStepSamples().path)
+        ))
+        XCTAssertEqual(step.objectValue?["latestStep"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(step.objectValue?["latestStep"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+        XCTAssertEqual(step.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(step.objectValue?["latestBattery"], .null)
+        XCTAssertNil(step.objectValue?["analysisFingerprint"])
+        XCTAssertNil(step.objectValue?["score"])
+        XCTAssertNil(step.objectValue?["recoveryScore"])
+
+        let resp = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withRespSamples().path)
+        ))
+        XCTAssertEqual(resp.objectValue?["latestResp"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(resp.objectValue?["latestResp"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+        XCTAssertEqual(resp.objectValue?["latestStep"], .null)
+
+        let skin = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSkinTempSamples().path)
+        ))
+        XCTAssertEqual(skin.objectValue?["latestSkinTemp"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(skin.objectValue?["latestSkinTemp"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+
+        let spo2 = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withSpo2Samples().path)
+        ))
+        XCTAssertEqual(spo2.objectValue?["latestSpo2"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(spo2.objectValue?["latestSpo2"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+
+        let gravity = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+            toolName: "data_freshness",
+            arguments: [:],
+            configuration: LocalAccessConfiguration(databasePath: try TemporaryDatabase.withGravitySamples().path)
+        ))
+        XCTAssertEqual(gravity.objectValue?["latestGravity"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(
+            Set(gravity.objectValue?["latestGravity"]?.objectValue?.keys ?? []),
+            Set(gravity.objectValue?["latestHeartRateSample"]?.objectValue?.keys ?? [])
+        )
+        XCTAssertEqual(
+            Set(gravity.objectValue?["latestGravity"]?.objectValue?.keys ?? []),
+            Set(["ts", "iso", "ageSeconds"])
+        )
+        XCTAssertEqual(gravity.objectValue?["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(gravity.objectValue?["latestWorkout"]?.objectValue?["ts"], .int(4800))
+        XCTAssertEqual(gravity.objectValue?["latestBattery"], .null)
+        XCTAssertNil(gravity.objectValue?["analysisFingerprint"])
+        XCTAssertNil(gravity.objectValue?["score"])
+        XCTAssertNil(gravity.objectValue?["recoveryScore"])
     }
 
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {
