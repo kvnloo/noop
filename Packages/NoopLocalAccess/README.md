@@ -17,6 +17,7 @@ Optional flags: `include_zones` and `include_notes` on `workout_summary`; `inclu
 `latestSleepState`.
 
 MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+MCP resource `noop://data/freshness` returns the same JSON as tool `data_freshness`.
 `noop-local-access query --list-tools` and `noop-local-access tools` print that same JSON array.
 
 `noop-local-access resource <uri>` prints the same JSON as MCP `resourcePayload` for
