@@ -56,5 +56,6 @@ state attach bounded payloads; startTsAdjusted is included only when present.
 or `include_notes` is set, which attach bounded payloads.
 
 MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+`noop-local-access query --list-tools` and `noop-local-access tools` print the same JSON array.
 
 One concern per PR; follow [`CLAUDE.md`](CLAUDE.md).

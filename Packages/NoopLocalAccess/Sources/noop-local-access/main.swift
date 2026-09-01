@@ -13,6 +13,8 @@ enum NoopLocalAccessMain {
             runMCP(configuration: .environment())
         case "query":
             runQuery(arguments: args)
+        case "tools":
+            runTools(arguments: args)
         case "codex-config":
             print(codexConfig(arguments: args))
         case "--help", "-h", "help":
@@ -29,6 +31,10 @@ enum NoopLocalAccessMain {
             return
         }
         do {
+            if try NoopCLIQuery.wantsListTools(arguments: arguments) {
+                FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(NoopCLIQuery.listToolsPayload()))
+                return
+            }
             let request = try NoopCLIQuery.parse(arguments: arguments)
             let payload = try NoopCLIQuery.dispatch(request)
             FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(payload))
@@ -44,6 +50,19 @@ enum NoopLocalAccessMain {
             }
             fputs("[noop-local-access] \(message)\n", stderr)
             Foundation.exit(1)
+        } catch {
+            fputs("[noop-local-access] runtime error\n", stderr)
+            Foundation.exit(1)
+        }
+    }
+
+    private static func runTools(arguments: [String]) {
+        do {
+            try NoopCLIQuery.parseToolsCommand(arguments: arguments)
+            FileHandle.standardOutput.write(try NoopCLIQuery.encodeLine(NoopCLIQuery.listToolsPayload()))
+        } catch let error as NoopCLIQueryError {
+            fputs("[noop-local-access] \(error)\n", stderr)
+            Foundation.exit(error.exitCode)
         } catch {
             fputs("[noop-local-access] runtime error\n", stderr)
             Foundation.exit(1)
@@ -107,6 +126,8 @@ enum NoopLocalAccessMain {
     Usage:
       noop-local-access mcp
       noop-local-access query <tool> [flags]
+      noop-local-access query --list-tools
+      noop-local-access tools
       noop-local-access codex-config [--db-path /absolute/path/to/whoop.sqlite]
 
     Query tools:

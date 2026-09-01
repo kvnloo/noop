@@ -2378,6 +2378,41 @@ final class CLIQueryTests: XCTestCase {
         )
     }
 
+    func testQueryListToolsPayloadMatchesMCPToolsCatalog() throws {
+        let dispatcher = NoopToolDispatcher(configuration: LocalAccessConfiguration(databasePath: "/unused"))
+        let resource = try dispatcher.resourcePayload(uri: "noop://tools/catalog")
+        let payload = NoopCLIQuery.listToolsPayload()
+        XCTAssertEqual(payload, resource)
+        XCTAssertEqual(payload, .array(NoopToolDispatcher.toolNames.map { .string($0) }))
+        XCTAssertTrue(NoopToolDispatcher.toolNames.contains("sleep_state_series"))
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("nzt"))
+        XCTAssertFalse(NoopToolDispatcher.toolNames.contains("scores"))
+
+        XCTAssertTrue(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsListTools(arguments: ["health_snapshot"]))
+        XCTAssertFalse(try NoopCLIQuery.wantsListTools(arguments: []))
+        XCTAssertThrowsError(try NoopCLIQuery.wantsListTools(arguments: ["--list-tools", "--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+        XCTAssertFalse(try NoopCLIQuery.wantsListTools(arguments: ["health_snapshot", "--list-tools"]))
+        assertUsageError(["health_snapshot", "--list-tools"])
+
+        try NoopCLIQuery.parseToolsCommand(arguments: [])
+        XCTAssertThrowsError(try NoopCLIQuery.parseToolsCommand(arguments: ["--db-path", "/tmp/noop.sqlite"])) { error in
+            guard let error = error as? NoopCLIQueryError else {
+                return XCTFail("Expected usage error, got \(error)")
+            }
+            XCTAssertEqual(error.exitCode, 64)
+        }
+
+        let line = try NoopCLIQuery.encodeLine(payload)
+        XCTAssertEqual(line.last, 0x0A)
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(line.dropLast())), resource)
+    }
+
     private func assertUsageError(_ arguments: [String], file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertThrowsError(try NoopCLIQuery.parse(arguments: arguments), file: file, line: line) { error in
             guard let error = error as? NoopCLIQueryError else {

@@ -16,10 +16,13 @@ Optional flags: `include_zones` and `include_notes` on `workout_summary`; `inclu
 `latestStep`, `latestResp`, `latestSkinTemp`, `latestSpo2`, `latestGravity`.
 
 MCP resource `noop://tools/catalog` returns the dispatcher `toolNames` list as JSON.
+`noop-local-access query --list-tools` and `noop-local-access tools` print that same JSON array.
 
 Use MCP over stdio with `noop-local-access mcp`, or query one tool directly as JSON:
 
 ```sh
+noop-local-access query --list-tools
+noop-local-access tools
 noop-local-access query health_snapshot --days 14
 noop-local-access query metric_series --key hrv --days 90
 noop-local-access query data_freshness

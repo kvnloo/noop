@@ -202,6 +202,24 @@ public enum NoopCLIQuery {
             .dispatch(name: request.toolName, arguments: request.arguments)
     }
 
+    public static func listToolsPayload() -> JSONValue {
+        .array(NoopToolDispatcher.toolNames.map { .string($0) })
+    }
+
+    public static func wantsListTools(arguments: [String]) throws -> Bool {
+        guard arguments.first == "--list-tools" else { return false }
+        guard arguments == ["--list-tools"] else {
+            throw NoopCLIQueryError.usage("query --list-tools does not accept additional arguments")
+        }
+        return true
+    }
+
+    public static func parseToolsCommand(arguments: [String]) throws {
+        guard arguments.isEmpty else {
+            throw NoopCLIQueryError.usage("tools does not accept additional arguments")
+        }
+    }
+
     public static func encodeLine(_ value: JSONValue) throws -> Data {
         var data = try JSONEncoder().encode(value)
         data.append(0x0A)
