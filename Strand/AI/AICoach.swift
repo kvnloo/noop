@@ -115,6 +115,7 @@ enum AICoachError: LocalizedError {
     case server(Int, String)
     case network(String)
     case decode
+    case emptyReply(String)   // #1074: verbatim provider-error / empty-reply text (byte-parity with Android emptyReplyMessage)
     case keySaveFailed
     case badCustomURL(String)
 
@@ -139,6 +140,8 @@ enum AICoachError: LocalizedError {
             return "Network problem: \(detail). The coach is the only feature that needs the internet."
         case .decode:
             return "Couldn't read the provider's reply. Try again."
+        case .emptyReply(let message):
+            return message
         }
     }
 }
@@ -182,6 +185,9 @@ final class AICoachEngine: ObservableObject {
     /// local LLM server. Only used when `provider == .custom`. Persisted so it survives relaunch.
     @Published var customBaseURL: String {
         didSet { UserDefaults.standard.set(customBaseURL, forKey: AIProvider.customBaseURLKey) }
+    }
+    @Published var customAuthHeader: CustomAIAuthHeader {
+        didSet { UserDefaults.standard.set(customAuthHeader.rawValue, forKey: AIProvider.customAuthHeaderKey) }
     }
     /// Whether the user has committed the Custom provider (tapped Connect with a base URL). Lets the
     /// keyless local path reach the chat without a stored key, while avoiding a flip mid-typing.
@@ -303,6 +309,7 @@ final class AICoachEngine: ObservableObject {
 
         self.dataConsent = UserDefaults.standard.bool(forKey: Self.consentKey)
         self.customBaseURL = UserDefaults.standard.string(forKey: AIProvider.customBaseURLKey) ?? ""
+        self.customAuthHeader = AIProvider.customAuthHeader
         self.customConnected = UserDefaults.standard.bool(forKey: Self.customConnectedKey)
         self.includeOnDeviceSignals = UserDefaults.standard.bool(forKey: Self.onDeviceSignalsKey)
     }
@@ -546,7 +553,7 @@ final class AICoachEngine: ObservableObject {
     }
 
     /// One derived stress line for the coach context: the Baevsky Stress Index over TODAY's R-R, read
-    /// via the store exactly as `StressView` does (`storeHandle()` → `rrIntervals(deviceId:from:to:)`),
+    /// via the same device-aware repository R-R union as `StressView`,
     /// then summarised to a single number with `StressIndex.stressIndex(rr:)`. Returns nil when the
     /// store is unavailable or there are too few clean beats (the histogram needs >= 20), so the line is
     /// simply absent, never a fabricated value. Summary-only: the raw R-R never leaves the device.
@@ -554,9 +561,7 @@ final class AICoachEngine: ObservableObject {
         let cal = Calendar.current
         let from = Int(cal.startOfDay(for: Date()).timeIntervalSince1970)
         let to = Int(Date().timeIntervalSince1970)
-        guard let store = await repo.storeHandle() else { return nil }
-        let rr = (try? await store.rrIntervals(
-            deviceId: repo.deviceId, from: from, to: to, limit: 200_000)) ?? []
+        let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
         guard let si = StressIndex.stressIndex(rr: rr) else { return nil }
         return Self.stressIndexSummary(si: si)
     }

@@ -155,7 +155,7 @@ final class OuraDriverTests: XCTestCase {
 
     // MARK: - History fetch loop
 
-    func testHistoryFetchFlushesThenFetchesThenAcks() {
+    func testHistoryFetchFlushesThenFetchesThenContinues() {
         let d = OuraDriver(ringGen: .gen3, authKey: key)
         let start = d.nextStep(after: .startHistoryFetch(cursor: 0))
         XCTAssertEqual(d.phase, .fetchingHistory)
@@ -163,10 +163,11 @@ final class OuraDriverTests: XCTestCase {
         // get_events cursor 0, max 255, flags FFFFFFFF.
         XCTAssertEqual(start[1].bytes, [0x10, 0x09, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
 
-        // More data -> ack-fetch (max 0) at the advanced cursor.
-        let ack = d.nextStep(after: .historyCursorAdvanced(cursor: 0x12345678, moreData: true))
-        XCTAssertEqual(ack.count, 1)
-        XCTAssertEqual(ack[0].bytes, [0x10, 0x09, 0x78, 0x56, 0x34, 0x12, 0x00, 0xFF, 0xFF, 0xFF, 0xFF])
+        // More data -> continuation fetch at the ADVANCED cursor, SAME shape as the initial request
+        // (max 255, open_oura drain_events). The old max=0 "ack" made the ring restart its serve.
+        let cont = d.nextStep(after: .historyCursorAdvanced(cursor: 0x12345678, moreData: true))
+        XCTAssertEqual(cont.count, 1)
+        XCTAssertEqual(cont[0].bytes, [0x10, 0x09, 0x78, 0x56, 0x34, 0x12, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
 
         // No more -> back to streaming.
         let stop = d.nextStep(after: .historyCursorAdvanced(cursor: 0x12345678, moreData: false))
@@ -206,6 +207,47 @@ final class OuraDriverTests: XCTestCase {
         XCTAssertEqual(d.unixSeconds(forRingTimestamp: anchorRt - 100), Int(anchorEpochSeconds) - 10)
         // 100 ticks AFTER the anchor -> 10s later.
         XCTAssertEqual(d.unixSeconds(forRingTimestamp: anchorRt + 100), Int(anchorEpochSeconds) + 10)
+    }
+
+    /// #1073: a banked sample that converts to the future is rejected (the caller falls back to arrival
+    /// time), while a historical sample still converts. "now" is injected so the test does not depend on
+    /// the wall clock. The anchor is set to `now`, so a ring time far enough after it converts past now.
+    func testSampleConvertingToFutureIsRejected() {
+        let anchorEpochSeconds: Int64 = 1_700_000_000     // 2023-11-14, mid anchor window
+        let anchorRt: UInt32 = 1_000_000
+        // Freeze "now" AT the anchor instant, so any sample after the anchor is "in the future".
+        let d = OuraDriver(ringGen: .gen3, authKey: key,
+                           nowMsProvider: { anchorEpochSeconds * 1000 })
+        let payload = le8(anchorEpochSeconds) + [0x00]
+        _ = d.ingest(record: OuraRecord(type: OuraEventTag.timeSync.rawValue, ringTimestamp: anchorRt, payload: payload))
+
+        // Historical (10s before now) and exactly-now still convert.
+        XCTAssertEqual(d.unixSeconds(forRingTimestamp: anchorRt - 100), Int(anchorEpochSeconds) - 10)
+        XCTAssertEqual(d.unixSeconds(forRingTimestamp: anchorRt), Int(anchorEpochSeconds))
+        // Inside the 300s skew tolerance (+200s) still converts.
+        XCTAssertEqual(d.unixSeconds(forRingTimestamp: anchorRt + 2_000), Int(anchorEpochSeconds) + 200)
+        // Just past the tolerance (+301s) is rejected as future/corrupt.
+        XCTAssertNil(d.unixSeconds(forRingTimestamp: anchorRt + 3_010))
+        // The regression that #1073 is about: a sample ~1 year ahead (still inside the OLD 2020-2035
+        // anchor window, so the old gate banked it) is now rejected because it is after `now`.
+        XCTAssertNil(d.unixSeconds(forRingTimestamp: anchorRt + 315_360_000),
+                     "a sample a year in the future passed the old 2035 gate; the now-gate must reject it")
+    }
+
+    /// The two gates are decoupled (#1073): anchor ADOPTION still uses the full 2020-2035 window even when
+    /// "now" is frozen years earlier — only the per-sample conversion is bounded by now. A 2034 anchor is
+    /// adopted (event emitted), yet converting its own ring time returns nil because 2034 is after now.
+    func testAnchorAdoptionStillUsesFullWindowIndependentOfNow() {
+        let futureAnchorSeconds: Int64 = 2_020_000_000    // 2034, inside the 2020-2035 anchor window
+        let anchorRt: UInt32 = 500
+        let d = OuraDriver(ringGen: .gen3, authKey: key,
+                           nowMsProvider: { 1_700_000_000 * 1000 })   // now frozen at 2023
+        let payload = le8(futureAnchorSeconds) + [0x00]
+        let events = d.ingest(record: OuraRecord(type: OuraEventTag.timeSync.rawValue, ringTimestamp: anchorRt, payload: payload))
+        XCTAssertEqual(events, [.timeSync(OuraTimeSync(ringTimestamp: anchorRt, epochMs: futureAnchorSeconds, tzOffsetSeconds: 0))],
+                       "a 2034 anchor is still adopted — adoption uses the 2020-2035 window, not now")
+        XCTAssertNil(d.unixSeconds(forRingTimestamp: anchorRt),
+                     "but converting a sample stamped in 2034 is rejected because it is after now (2023)")
     }
 
     func testRtcBeaconOnlyAnchorsWhenNoTimeSyncSeenYet() {
@@ -353,16 +395,17 @@ final class OuraDriverTests: XCTestCase {
         // 0x4B was previously a Tier-B "sleep summary" (dropped by default). It is actually a hypnogram
         // alias (open_oura `0x4b | 0x4e | 0x5a => decode_sleep_phases`), so it now decodes with the SAME
         // validated 2-bit phase decoder as 0x4E/0x5A and emits Tier-A sleep-phase events even when
-        // allowTierB == false. Same payload as the 0x4E golden -> light, deep, rem, awake.
+        // allowTierB == false. Same payload as the 0x4E golden; open_oura's validated stage mapping
+        // (0=deep, 1=light, 2=rem, 3=awake) -> codes 1,2,3,0 = light, rem, awake, deep.
         XCTAssertEqual(OuraEventTag(rawValue: 0x4B), .sleepPhaseB)
         XCTAssertEqual(OuraEventTag.sleepPhaseB.tier, .tierA)
         let d = OuraDriver(ringGen: .gen3, authKey: key)   // allowTierB defaults to false
         let rec = OuraFraming.parseRecord(bytes("4b0602000100006c"))!
         XCTAssertEqual(d.ingest(record: rec), [
             .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 0, stage: .light)),
-            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 1, stage: .deep)),
-            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 2, stage: .rem)),
-            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 3, stage: .awake)),
+            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 1, stage: .rem)),
+            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 2, stage: .awake)),
+            .sleepPhase(OuraSleepPhase(ringTimestamp: rt, index: 3, stage: .deep)),
         ])
     }
 
@@ -462,6 +505,106 @@ final class OuraDriverTests: XCTestCase {
             OuraRecord(type: OuraEventTag.activityInfo.rawValue, ringTimestamp: rt, payload: [])))
     }
 
+    // MARK: - Real steps features (0x7E/0x7F, Tier B, third-party formula) - real Gen 3 capture
+    //
+    // PARITY/PROVENANCE: the two pairs below are byte-for-byte two CONSECUTIVE real_steps pairs from a
+    // real Gen 3 capture (2026-07-30, ring times 3499176-3499474 and their +1 0x7F partners). Expected
+    // fields are RECOMPUTED from the [oura-rs] unpack formula, not copied blind.
+
+    func testRealStepsFieldsDecodesRealCapture0x7E() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key, allowTierB: true)
+        let rec = OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: 3_499_176,
+                             payload: bytes("6feb5e0a633e106865da4c136571"))
+        let events = d.ingest(record: rec)
+        XCTAssertEqual(events, [.realStepsFields(OuraRealStepsFields(tag: OuraEventTag.realSteps1.rawValue, ringTimestamp: 3_499_176,
+            fields: [222, 470, 188, 10, 99, 62, 16, 104, 202, 436, 152, 19, 101, 113]))])
+        XCTAssertTrue(events[0].isTierB, "realStepsFields must still report isTierB - the formula is UNVERIFIED")
+    }
+
+    func testRealStepsFieldsDecodesRealCapture0x7F() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key, allowTierB: true)
+        // The 0x7F partner of the same pair (ring time = the 0x7E record's rt + 1). Its packed block
+        // starts at byte 2, NOT byte 0 (see OuraDecoders.realStepsFieldOffset), so it yields 12 fields:
+        // 12/13 would need record bytes 14/15, which do not exist in a 14-byte body.
+        let rec = OuraRecord(type: OuraEventTag.realSteps2.rawValue, ringTimestamp: 3_499_177,
+                             payload: bytes("24d467b25c127e3721a0a34dbde3"))
+        XCTAssertEqual(d.ingest(record: rec), [.realStepsFields(OuraRealStepsFields(tag: OuraEventTag.realSteps2.rawValue, ringTimestamp: 3_499_177,
+            fields: [206, 356, 184, 18, 126, 55, 33, 160, 327, 154, 378, 99]))])
+    }
+
+    func testRealStepsFieldsDecodesSecondRealPair() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key, allowTierB: true)
+        let recE = OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: 3_499_474,
+                              payload: bytes("6b556d05356b1d6faa2c85aa2368"))
+        XCTAssertEqual(d.ingest(record: recE), [.realStepsFields(OuraRealStepsFields(tag: OuraEventTag.realSteps1.rawValue, ringTimestamp: 3_499_474,
+            fields: [214, 170, 218, 5, 53, 107, 29, 111, 341, 88, 266, 42, 35, 104]))])
+
+        let recF = OuraRecord(type: OuraEventTag.realSteps2.rawValue, ringTimestamp: 3_499_475,
+                              payload: bytes("213590eb62a4515c22b4c381512c"))
+        XCTAssertEqual(d.ingest(record: recF), [.realStepsFields(OuraRealStepsFields(tag: OuraEventTag.realSteps2.rawValue, ringTimestamp: 3_499_475,
+            fields: [289, 470, 196, 36, 81, 92, 34, 180, 390, 258, 162, 44]))])
+    }
+
+    // MARK: - 0x7F's +2 block offset (NOOP finding, 2026-08-01)
+
+    func testRealStepsBlockOffsetIsTagDependent() {
+        XCTAssertEqual(OuraDecoders.realStepsFieldOffset(forTag: OuraEventTag.realSteps1.rawValue), 0)
+        XCTAssertEqual(OuraDecoders.realStepsFieldOffset(forTag: OuraEventTag.realSteps2.rawValue), 2,
+                       "0x7F's packed block starts 2 bytes later than 0x7E's - see OURA_PROTOCOL.md s6.13")
+    }
+
+    func testRealStepsFields0x7FYields12Fields0x7EYields14() {
+        // 0x7F drops fields 12/13 rather than zero-filling them: they would read past the 14-byte body,
+        // and a fabricated zero is indistinguishable from a real one (honest-data invariant).
+        let e = OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: 3_499_176,
+                           payload: bytes("6feb5e0a633e106865da4c136571"))
+        let f = OuraRecord(type: OuraEventTag.realSteps2.rawValue, ringTimestamp: 3_499_177,
+                           payload: bytes("24d467b25c127e3721a0a34dbde3"))
+        XCTAssertEqual(OuraDecoders.decodeRealStepsFields(e)?.fields.count, 14)
+        XCTAssertEqual(OuraDecoders.decodeRealStepsFields(f)?.fields.count, 12)
+    }
+
+    func testRealSteps0x7FOffsetReadsTheCarryBitFromTheRightByte() {
+        // The regression this offset fixes: fields 0/8 take their 9th bit from the block's byte 3 / byte 11
+        // MSB. For 0x7F those are RECORD bytes 5 and 13. Craft a body where the OLD (unshifted) read would
+        // see a clear carry and the CORRECT (shifted) read sees a set one - the two decodes cannot agree.
+        var payload = [UInt8](repeating: 0, count: 14)
+        payload[2] = 0xFF     // block byte 0 for 0x7F -> field0's high bits
+        payload[5] = 0x80     // block byte 3 for 0x7F -> field0's carry bit SET; old read would use byte 3 (=0)
+        let rec = OuraRecord(type: OuraEventTag.realSteps2.rawValue, ringTimestamp: rt, payload: payload)
+        let fields = OuraDecoders.decodeRealStepsFields(rec)?.fields
+        XCTAssertEqual(fields?[0], 511, "0xFF<<1 | carry(1) - the carry must come from record byte 5, not byte 3")
+        XCTAssertEqual(fields?[3], 0, "block byte 3 (record byte 5) = 0x80, & 0x7f = 0")
+    }
+
+    func testRealStepsFieldsCarryBitCombinesWithNeighborByte() {
+        // Synthetic, isolating the carry-bit mechanic the [oura-rs] source documents: byte0=0xFF (all
+        // ones) with byte3's MSB SET must read field0 = 0xFF*2 + 1 = 511 (the 9-bit max), and byte3's
+        // own value (field3) must read only its low 7 bits (the MSB was consumed by field0's carry).
+        let rec = OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: rt, payload: [
+            0xFF, 0x00, 0x00, 0x80, 0, 0, 0, 0, 0x00, 0x00, 0x00, 0x00, 0, 0,
+        ])
+        let fields = OuraDecoders.decodeRealStepsFields(rec)?.fields
+        XCTAssertEqual(fields?[0], 511)   // 0xFF<<1 | 1
+        XCTAssertEqual(fields?[3], 0)     // byte3 = 0x80, & 0x7f = 0
+        XCTAssertEqual(fields?[8], 0)     // byte11's MSB is clear -> no carry
+    }
+
+    func testRealStepsFieldsDroppedByDefaultLikeOtherTierB() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key)   // allowTierB defaults to false
+        let rec = OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: rt,
+                             payload: bytes("6feb5e0a633e106865da4c136571"))
+        XCTAssertEqual(d.ingest(record: rec), [], "the Tier-B gate must cover .realStepsFields too")
+    }
+
+    func testRealStepsFieldsWrongLengthDecodesToNil() {
+        // The source's own length gate: anything other than exactly 14 bytes -> honest nil, never a guess.
+        XCTAssertNil(OuraDecoders.decodeRealStepsFields(
+            OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: rt, payload: bytes("00"))))
+        XCTAssertNil(OuraDecoders.decodeRealStepsFields(
+            OuraRecord(type: OuraEventTag.realSteps1.rawValue, ringTimestamp: rt, payload: [])))
+    }
+
     // MARK: - Live-HR push routing + decode
 
     func testHandleSecureFrameRoutesNonceStatusAndPush() {
@@ -539,10 +682,29 @@ final class OuraDriverTests: XCTestCase {
         XCTAssertTrue(OuraRingGen.gen3.capabilities.contains(.hrv))
     }
 
-    func testSyncTimeCommandCounter() {
-        // counter = floor(unix / 256). For unix = 256 -> counter 1 -> bytes 01 00 00, trailer 0xF6.
-        let cmd = OuraCommands.syncTime(unixSeconds: 256)
-        XCTAssertEqual(cmd.bytes, [0x12, 0x09, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF6])
+    func testSyncTimeCommandIsU64SecondsLEPlusTz() {
+        // Authoritative layout: 12 09 <unix_secs u64 LE> <tz i8>. 1_700_000_000 = 0x6553F100
+        // -> LE 00 F1 53 65 00 00 00 00, tz 0. (Supersedes the old unix/256 + 0xF6-trailer guess.)
+        let cmd = OuraCommands.syncTime(unixSeconds: 1_700_000_000)
+        XCTAssertEqual(cmd.bytes,
+                       [0x12, 0x09, 0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00])
+    }
+
+    func testSyncTimeCommandTimezoneByte() {
+        // tz is a signed half-hour offset in the trailing byte: +4 (=UTC+2) -> 0x04; -4 -> 0xFC.
+        XCTAssertEqual(OuraCommands.syncTime(unixSeconds: 0, tzHalfHours: 4).bytes.last, 0x04)
+        XCTAssertEqual(OuraCommands.syncTime(unixSeconds: 0, tzHalfHours: -4).bytes.last, 0xFC)
+    }
+
+    func testLiveHRDisableWritesModeOffNotAutomatic() {
+        // 0x00 = "off" per OURA_PROTOCOL.md s7.2's APK-sourced feature-mode table; 0x01 is "automatic"
+        // and was falsified on two hardware nights (green 0x28 kept arriving after the old 0x01 write).
+        XCTAssertEqual(OuraCommands.liveHRDisable().bytes, [0x2F, 0x03, 0x22, 0x02, 0x00])
+    }
+
+    func testLiveHRUnsubscribeWritesSubscriptionOff() {
+        // Matching teardown for the enable triplet's step 3 (subscribe "latest" = 0x02).
+        XCTAssertEqual(OuraCommands.liveHRUnsubscribe().bytes, [0x2F, 0x03, 0x26, 0x02, 0x00])
     }
 
     // MARK: - Dangerous commands are isolated and labelled

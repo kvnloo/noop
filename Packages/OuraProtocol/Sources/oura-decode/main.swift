@@ -140,18 +140,21 @@ func describe(_ e: OuraEvent) -> String {
     switch e {
     case .hr(let v): return "HR bpm=\(v.bpm) ibi=\(v.ibiMs)ms rt=\(v.ringTimestamp)"
     case .ibi(let v): return "IBI \(v.ibiMs)ms amp=\(v.amplitude.map(String.init) ?? "-") rt=\(v.ringTimestamp)"
-    case .hrv(let v): return "HRV t=\(v.timeMs) b1=\(v.b1) b2=\(v.b2) rt=\(v.ringTimestamp)"
+    case .hrv(let v): return "HRV idx=\(v.index) hr=\(v.hrBpm)bpm rmssd=\(v.rmssdMs)ms rt=\(v.ringTimestamp)"
     case .spo2(let v): return "SPO2 \(v.value) (\(v.unit)) rt=\(v.ringTimestamp)"
     case .temp(let v): return "TEMP \(v.celsius)C rt=\(v.ringTimestamp)"
     case .battery(let v): return "BATTERY \(v.percent)% mv=\(v.voltageMv.map(String.init) ?? "-")"
     case .sleepPhase(let v): return "SLEEP_PHASE [\(v.index)]=\(v.stage) rt=\(v.ringTimestamp)"
     case .motion(let v): return "MOTION [\(v.index)]=\(v.state) rt=\(v.ringTimestamp)"
+    case .motionEvent(let v): return "MOTION_EVENT orient=\(v.orientation) motionS=\(v.motionSeconds) xyz=(\(v.avgX),\(v.avgY),\(v.avgZ)) lo=\(v.lowIntensity.map(String.init) ?? "-") hi=\(v.highIntensity.map(String.init) ?? "-") rt=\(v.ringTimestamp)"
     case .state(let v): return "STATE code=\(v.stateCode) text=\(v.text ?? "-") rt=\(v.ringTimestamp)"
     case .timeSync(let v): return "TIME_SYNC epochMs=\(v.epochMs) tz=\(v.tzOffsetSeconds)s"
     case .rtcBeacon(let v): return "RTC_BEACON unix=\(v.unixSeconds)"
     case .debugText(_, let t): return "DEBUG \(t)"
     case .tierB(let v): return "TIER_B[UNVERIFIED] tag=0x\(String(v.tag, radix: 16)) kind=\(v.kind) bytes=\(v.rawPayload.count)"
     case .activityInfo(let v): return "ACTIVITY[TIER-B,UNVERIFIED] state=\(v.state) met=\(v.met) rt=\(v.ringTimestamp)"
+    case .realStepsFields(let v): return "REAL_STEPS[TIER-B,UNVERIFIED] tag=0x\(String(v.tag, radix: 16)) fields=\(v.fields) rt=\(v.ringTimestamp)"
+    case .sleepPeriodInfo(let v): return "SLEEP_PERIOD[TIER-B,UNVERIFIED] hr=\(v.averageHrBpm) trend=\(v.hrTrend) breath=\(v.breathsPerMin) breathV=\(v.breathVariability) mzci=\(v.mzci) dzci=\(v.dzci) motion=\(v.motionCount) state=\(v.sleepState) cv=\(v.cv) rt=\(v.ringTimestamp)"
     }
 }
 

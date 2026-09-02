@@ -66,6 +66,8 @@ object RawSensorExport {
         to: Long,
         limit: Int = 200_000,
     ): Map<String, Int> {
+        out.write(HEADER); out.write("\n")
+        if (from > to) return emptyMap()
         // index: 0 hr_bpm,1 rr_ms,2 grav_x,3 grav_y,4 grav_z,5 step_counter,6 ppg_bpm,7 ppg_conf,
         //        8 spo2_red,9 spo2_ir,10 skintemp_raw,11 resp_raw,12 band_sleep_state,13 event_kind,14 event_payload
         val rows = ArrayList<LineRow>()
@@ -75,11 +77,11 @@ object RawSensorExport {
         counts["hr"] = hr.size
         for (s in hr) rows += LineRow(s.ts, line("hr", s.ts, 0 to n(s.bpm)))
 
-        val rr = repo.rrIntervals(deviceId, from, to, limit)
+        val rr = repo.rrIntervalsForDevice(deviceId, from, to, limit)
         counts["rr"] = rr.size
         for (s in rr) rows += LineRow(s.ts, line("rr", s.ts, 1 to n(s.rrMs)))
 
-        val grav = repo.gravitySamples(deviceId, from, to, limit)
+        val grav = repo.gravitySamplesForDevice(deviceId, from, to, limit)
         counts["gravity"] = grav.size
         for (s in grav) rows += LineRow(s.ts, line("gravity", s.ts, 2 to n(s.x), 3 to n(s.y), 4 to n(s.z)))
 
@@ -118,7 +120,6 @@ object RawSensorExport {
 
         // Stable sort by ts asc (a stream's intra-ts order is its query's secondary key).
         rows.sortBy { it.ts }
-        out.write(HEADER); out.write("\n")
         for (r in rows) { out.write(r.line); out.write("\n") }
         return counts
     }
@@ -141,8 +142,14 @@ object RawSensorExport {
      * Build the last-24 h CSV for the strap source and fire a share sheet (text/csv). Runs the DB read
      * off the main thread; toasts a per-stream summary so the user sees what was captured (and that the
      * deeper 5/MG streams are empty until they've been unlocked). On-device only.
+     *
+     * [deviceId] is REQUIRED, deliberately. It used to default to the canonical "my-whoop", and the one
+     * caller took the default — so after a strap re-add this exported the legacy id's streams rather than
+     * the strap the user is actually wearing, silently, in the CSV people attach to bug reports. That is
+     * the #172/#175 defect exactly: a defaulted strap id that no caller overrides. Removing the default
+     * makes the compiler ask, which is stronger than remembering. (Ported from tanarchytan/noop e4f508f.)
      */
-    suspend fun export(context: Context, repo: WhoopRepository, deviceId: String = "my-whoop") {
+    suspend fun export(context: Context, repo: WhoopRepository, deviceId: String) {
         runCatching {
             val now = System.currentTimeMillis() / 1000
             val dir = File(context.cacheDir, "logs").apply { mkdirs() }

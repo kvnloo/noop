@@ -86,6 +86,12 @@ class OuraDriver(
      * Per OURA_PROTOCOL.md s3.2 (the 0x24 SetAuthKey is a DANGEROUS, one-time provisioning write).
      */
     val allowKeyInstall: Boolean = false,
+    /**
+     * Wall-clock "now" in unix ms, used ONLY to reject a banked sample that converts to the future
+     * (#1073). Injectable so the gate is testable without touching the system clock; defaults to the
+     * real clock, so no ingest call site has to thread it. Twin of Swift's `nowMsProvider`.
+     */
+    private val nowMsProvider: () -> Long = { System.currentTimeMillis() },
 ) {
     var phase: OuraDriverPhase = OuraDriverPhase.Idle
         private set
@@ -216,8 +222,12 @@ class OuraDriver(
                 phase = OuraDriverPhase.Streaming
                 emptyList()
             } else {
-                // Ack-fetch (max=0) at the new cursor advances without re-pulling data (s5.3 step 4).
-                listOf(OuraCommands.getEvents(cursor = after.cursor, maxEvents = 0))
+                // Continuation fetch at the ADVANCED cursor (max seen ring-time + 1), same shape as the
+                // initial request — open_oura drain_events re-issues (start, 255, -1) every batch. The
+                // old open_ring "ack-fetch" (max=0 at a non-advancing cursor) made the ring RESTART its
+                // serve from that cursor: the observed same-window re-serve loop (s5.3). Parity with
+                // Swift 2bbdaa42.
+                listOf(OuraCommands.getEvents(cursor = after.cursor, maxEvents = 255))
             }
         }
     }
@@ -296,11 +306,19 @@ class OuraDriver(
         val deltaTicks = forRingTimestamp - anchorRt
         val ms = anchorMs + deltaTicks * 100   // default 100 ms/tick (s5.5); bounded input, no overflow
         // #968: a corrupt/misaligned ring timestamp (seen on a full cursor=0 history dump) can convert to
-        // an implausible epoch. Gate the RESULT to the same 2020-2035 plausible window used for anchoring
-        // (was a weak `ms <= 0`), so the caller honestly falls back to arrival time instead of banking a
-        // 1970 or far-future sample. Byte-identical to the Swift twin.
+        // an implausible epoch; return null so the caller falls back to arrival time instead of banking it.
+        //
+        // #1073: a banked SAMPLE is always in the past, so its upper bound is "now", NOT the 2020-2035
+        // anchor window. That window is the right screen for ADOPTING a clock anchor and far too generous
+        // for a sample — a corrupt ring timestamp that converts years ahead (measured on a live ring:
+        // ~1,600 R-R beats stamped 2026→2034, and still accruing) passed it cleanly and got filed into a
+        // future day, invisible to the night it belongs to. Gate a sample at `now + skew tolerance`
+        // (minutes, absorbing ring-clock skew + anchor rounding) and keep the 2020 lower bound (the #968
+        // 1970 guard). The 2020-2035 window stays in `plausibleAnchorMs`, for anchor adoption only.
+        // Byte-identical to the Swift twin.
         val seconds = ms / 1000
-        if (seconds < MIN_PLAUSIBLE_EPOCH_SECONDS || seconds > MAX_PLAUSIBLE_EPOCH_SECONDS) return null
+        val nowSeconds = nowMsProvider() / 1000
+        if (seconds < MIN_PLAUSIBLE_EPOCH_SECONDS || seconds > nowSeconds + SAMPLE_FUTURE_TOLERANCE_SECONDS) return null
         return seconds
     }
 
@@ -338,6 +356,20 @@ class OuraDriver(
      */
     fun isPlausibleAnchorEpoch(epochSeconds: Long): Boolean = plausibleAnchorMs(epochSeconds) != null
 
+    /**
+     * Adopt a ring-time→UTC anchor from the 0x13 SyncTime response pair (`rt` = the ring's clock
+     * counter in ticks when it processed our SyncTime, `unixSeconds` = host wall-clock at receipt).
+     * Same plausibility gate as the 0x42/0x85 paths; returns whether the anchor was set. The freshest
+     * possible pair, so it overwrites any earlier anchor (an in-log 0x42 from the same clock domain
+     * yields the same mapping anyway). Byte-identical twin of Swift's adoptSyncTimeAnchor.
+     */
+    fun adoptSyncTimeAnchor(ringTimestamp: Long, unixSeconds: Long): Boolean {
+        val ms = plausibleAnchorMs(unixSeconds) ?: return false
+        anchorUtcMs = ms
+        anchorRingTime = ringTimestamp
+        return true
+    }
+
     // MARK: - Record ingest (decode)
 
     /**
@@ -362,8 +394,12 @@ class OuraDriver(
             OuraEventTag.SPO2_IBI_AMPLITUDE ->
                 (OuraDecoders.decodeSpO2IBI(record) ?: emptyList()).map { OuraEvent.Ibi(it) }
             OuraEventTag.IBI ->
-                // The bare 0x44 IBI tag shares the bit-packed layout family; route through the same decoder.
-                (OuraDecoders.decodeIBIAmplitude(record) ?: emptyList()).map { OuraEvent.Ibi(it) }
+                // The bare 0x44 IBI tag shares the bit-packed layout family; route through the same
+                // decoder, but stamp its OWN channel — same layout is not the same tag, and a stored beat
+                // that cannot name which of the two produced it cannot answer whether they duplicate each
+                // other (#1071 follow-up). Read identically to 0x60; this is a label, not a filter.
+                (OuraDecoders.decodeIBIAmplitude(record, OuraIbiChannel.IBI_BARE) ?: emptyList())
+                    .map { OuraEvent.Ibi(it) }
 
             // --- Tier A: HRV ---
             OuraEventTag.HRV_RMSSD ->
@@ -389,12 +425,14 @@ class OuraDriver(
             OuraEventTag.MOTION_PERIOD ->
                 (OuraDecoders.decodeMotionPeriod(record) ?: emptyList()).map { OuraEvent.MotionEvent(it) }
             OuraEventTag.MOTION ->
-                // 0x47 motion_events: surfaced as state-free motion is out of v1 scope; decode to nothing
-                // rather than guess the partial layout. Per OURA_PROTOCOL.md s6.13.
-                emptyList()
+                // 0x47 motion_events: the ring's averaged accel vector (orientation + avg x/y/z ×8 +
+                // high_intensity), the same shape as a WHOOP 4.0 gravity sample. open_oura decode_motion,
+                // OURA_PROTOCOL.md s6.13. Tier-A. Byte-identical twin of Swift.
+                OuraDecoders.decodeMotionEvents(record)?.let { listOf(OuraEvent.MotionVectorEvent(it)) }
+                    ?: emptyList()
 
-            // --- Tier A: Sleep phase (2-bit codes are verified) ---
-            OuraEventTag.SLEEP_PHASE, OuraEventTag.SLEEP_PHASE_ALT ->
+            // --- Tier A: Sleep phase (2-bit codes are verified; 0x4B is the same layout, s6.12) ---
+            OuraEventTag.SLEEP_PHASE_B, OuraEventTag.SLEEP_PHASE, OuraEventTag.SLEEP_PHASE_ALT ->
                 (OuraDecoders.decodeSleepPhase(record) ?: emptyList()).map { OuraEvent.SleepPhaseEvent(it) }
 
             // --- Tier A: Lifecycle / state / time ---
@@ -444,7 +482,7 @@ class OuraDriver(
                         ),
                     ),
                 )
-            OuraEventTag.SLEEP_SUMMARY_1, OuraEventTag.SLEEP_SUMMARY_B, OuraEventTag.SLEEP_SUMMARY_C,
+            OuraEventTag.SLEEP_SUMMARY_1, OuraEventTag.SLEEP_SUMMARY_C,
             OuraEventTag.SLEEP_SUMMARY_D, OuraEventTag.SLEEP_SUMMARY_E, OuraEventTag.SLEEP_SUMMARY_F ->
                 listOf(
                     OuraEvent.TierB(
@@ -470,15 +508,31 @@ class OuraDriver(
                         ),
                     ),
                 )
-            OuraEventTag.REAL_STEPS_1, OuraEventTag.REAL_STEPS_2 ->
-                listOf(
-                    OuraEvent.TierB(
-                        OuraTierBSummary(
-                            tag = record.type, ringTimestamp = record.ringTimestamp,
-                            rawPayload = record.payload, kind = "real_steps",
-                        ),
-                    ),
-                )
+            OuraEventTag.REAL_STEPS_1, OuraEventTag.REAL_STEPS_2 -> {
+                // Split out of the raw-bytes TierB wrapper, same as ActivityInfo: this tag pair now has a
+                // cited third-party unpack formula (OuraDecoders.decodeRealStepsFields, [oura-rs]). Still
+                // Tier B - only reached behind allowTierB (gated above), and OuraStreamMapping never folds
+                // RealStepsFields into a durable stream. Applies the SAME 14-field unpack to both 0x7E and
+                // 0x7F bodies (the formula is generic over any 14-byte body; NOOP's own investigation
+                // found the movement-correlated fields present in both).
+                val fields = OuraDecoders.decodeRealStepsFields(record) ?: return emptyList()
+                listOf(OuraEvent.RealStepsFields(fields))
+            }
+            OuraEventTag.SLEEP_PERIOD_INFO -> {
+                // Split out of the raw-bytes TierB wrapper, same as ActivityInfo: this tag has a cited
+                // third-party layout ([open_ring]) whose field NAMES are what our own s6.12 was missing,
+                // and whose declared invariants our captures uphold. Still Tier B - only reached behind
+                // allowTierB (gated above). ONE field of it is durable: OuraStreamMapping maps
+                // `breathsPerMin` to a respSample row under the ring's OWN deviceId, and on a ring night
+                // AnalyticsEngine takes the night's median of those rows as dailyMetric.respRateBpm (the
+                // ring measures it; NOOP does not derive it). It is still refused at the STAGING read by
+                // provenance (OuraRespScale.forScoring) - that path reads the stream as a ~1 Hz raw ADC
+                // waveform and a per-window rate is the wrong shape for a peak detector. `averageHrBpm`
+                // and every other field stay diagnostic-only - in particular the HR must not join the
+                // beat-derived series at a different cadence.
+                val info = OuraDecoders.decodeSleepPeriodInfo(record) ?: return emptyList()
+                listOf(OuraEvent.SleepPeriodInfo(info))
+            }
             OuraEventTag.SPO2_SMOOTHED ->
                 listOf(
                     OuraEvent.TierB(
@@ -585,5 +639,32 @@ class OuraDriver(
          */
         private const val MIN_PLAUSIBLE_EPOCH_SECONDS = 1_577_836_800L
         private const val MAX_PLAUSIBLE_EPOCH_SECONDS = 2_051_222_400L
+
+        /**
+         * Skew allowance on the sample-side "must not be in the future" gate (#1073): a sample converting
+         * up to this many seconds past `now` is still accepted, absorbing ring-clock skew and the anchor's
+         * own rounding. Minutes, not the anchor window's years. Applies ONLY to [unixSeconds], never anchor
+         * adoption. Byte-identical to the Swift `sampleFutureToleranceSeconds`.
+         */
+        private const val SAMPLE_FUTURE_TOLERANCE_SECONDS = 300L
+
+        /**
+         * Resolve the 0x13 SyncTime-response device timestamp into ring TICKS, or null when no
+         * unambiguous reading exists. ringverse BLE.md labels the field "seconds" but the ring's record
+         * clock runs in 100 ms ticks, so both readings are tried: the raw value (already ticks) and
+         * value×10 (seconds→ticks). The ring's clock at connect must sit shortly AFTER where the last
+         * drain ended, so a candidate is plausible iff it falls in `[historyCursor, historyCursor +
+         * 7 days]`; exactly one must fit (ambiguity or a fresh/reset cursor → null → the caller logs
+         * raw instead of guessing). Pure. Byte-identical twin of Swift's syncTimeAnchorCandidate.
+         */
+        fun syncTimeAnchorCandidate(responseValue: Long, historyCursor: Long): Long? {
+            if (historyCursor <= 0) return null
+            val lower = historyCursor
+            val upper = lower + 6_048_000L   // 7 days of 100 ms ticks
+            val readings = listOf(responseValue, responseValue * 10)
+            val fits = readings.filter { it in lower..upper && it <= 0xFFFF_FFFFL }
+            if (fits.size != 1) return null
+            return fits[0]
+        }
     }
 }

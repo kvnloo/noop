@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.noop.R
 import com.noop.analytics.HrvAnalyzer
+import com.noop.data.OuraRespScale
 import com.noop.protocol.DeviceFamily
 import com.noop.protocol.skinTempCelsius
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,11 @@ private enum class TimelineMetric(val title: String) {
     // stepped track alongside the derived hypnogram. This is the band's REPORTED state, NOT a stage NOOP
     // trusts as truth — the pill names it "Band Sleep State" so it can't be mistaken for the derived stages.
     BandSleepState(uiString(R.string.timeline_metric_band_sleep_state)),
+
+    // The Oura ring's OWN per-window motion (0x47, OURA_MOTION events): seconds of movement in each ~30 s
+    // window. An honest ACTIVITY signal — NOT gravity magnitude (the ring sends no continuous gravity) and
+    // NEVER a step count. Empty for a WHOOP strap. Twin of Swift TimelineMetric.ouraMovement.
+    Movement(uiString(R.string.timeline_metric_movement)),
 }
 
 @Composable
@@ -102,9 +108,12 @@ fun FullDayChartScreen(vm: AppViewModel, onBack: () -> Unit) {
     var everSpo2 by remember { mutableStateOf(true) }
     var everResp by remember { mutableStateOf(true) }
     LaunchedEffect(deviceId) {
-        val model = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
-            .firstOrNull { it.id == deviceId }?.model
-        val whoop5 = DeviceFamily.forRegistryModel(model) == DeviceFamily.WHOOP5
+        val d = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
+            .firstOrNull { it.id == deviceId }
+        // A positive "is it a 5/MG", never a coalesced one (#1086): the respiration copy tells the reader
+        // their estimate is on the Health screen, which is true for a WHOOP 5 (the R-R RSA estimate runs)
+        // and false for a non-WHOOP device whose banked stream that estimate refuses.
+        val whoop5 = DeviceFamily.isWhoop5Registry(d?.model, d?.brand)
         isWhoop5 = whoop5
         val now = System.currentTimeMillis() / 1000
         everSpo2 = !whoop5 || runCatching { vm.repo.spo2Samples(deviceId, 0, now, 1) }.getOrDefault(emptyList()).isNotEmpty()
@@ -383,7 +392,9 @@ private suspend fun readTimeline(
             // the chart at day scale (the #575 point-count risk downsampleTimeline handles for the others).
             // #1036 (ryanbr): stepSec closes this Android-only day-scale flood gap.
             val hrvWindow = HrvAnalyzer.DEFAULT_ROLLING_WINDOW_SEC
-            return@withContext runCatching { repo.rrIntervals(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
+            return@withContext runCatching {
+                repo.rrIntervalsUnion(deviceId, from, to, 200_000)
+            }.getOrDefault(emptyList())
                 .let { HrvAnalyzer.rollingRmssd(it, windowSec = hrvWindow, stepSec = maxOf(1, hrvWindow / 8)) }
                 .map { (ts, v) -> TimelinePoint(ts, v) }
         }
@@ -392,19 +403,25 @@ private suspend fun readTimeline(
                 .mapNotNull { if (it.ir > 0) TimelinePoint(it.ts, it.red.toDouble() / it.ir) else null }
         TimelineMetric.SkinTemp -> {
             // #938: family-aware raw→°C — 5/MG centidegrees (raw/100, #156), a WHOOP 4.0 v24 raw ADC map.
-            // The registry-model-label → family mapping lives in DeviceFamily.forRegistryModel (#171).
+            // The registry-model-label → family mapping lives in DeviceFamily.forRegistryDevice (#171).
+            // A non-WHOOP device (null) shares the non-4.0 scale, so coalesce to WHOOP5 — same conversion
+            // as before; brand-awareness just stops it claiming to be a WHOOP (#1086).
             // Mirrors Swift Repository.timelineRawMetric.
-            val model = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
-                .firstOrNull { it.id == deviceId }?.model
-            val family = DeviceFamily.forRegistryModel(model)
+            val d = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
+                .firstOrNull { it.id == deviceId }
+            val family = DeviceFamily.forRegistryDevice(d?.model, d?.brand) ?: DeviceFamily.WHOOP5
             runCatching { repo.skinTempSamples(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
                 .map { TimelinePoint(it.ts, skinTempCelsius(it.raw, family)) }
         }
         TimelineMetric.Respiration ->
+            // Two quantities share this table: a WHOOP's raw respiration ADC waveform (plotted verbatim,
+            // as before) and an Oura ring's own per-window RATE in milli-bpm (0x6A instrumentation), which
+            // is scaled back to breaths/min so the track reads as ~14-16 instead of ~14,375.
+            // `OuraRespScale` is the single place that mapping lives. Mirrors Swift.
             runCatching { repo.respSamples(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
-                .map { TimelinePoint(it.ts, it.raw.toDouble()) }
+                .map { TimelinePoint(it.ts, OuraRespScale.displayValue(it.raw, deviceId)) }
         TimelineMetric.Motion ->
-            runCatching { repo.gravitySamples(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
+            runCatching { repo.gravitySamplesUnion(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
                 .map { TimelinePoint(it.ts, kotlin.math.sqrt(it.x * it.x + it.y * it.y + it.z * it.z)) }
         TimelineMetric.BandSleepState ->
             // #175: the strap's OWN band sleep_state (0 wake/1 still/2 asleep/3 up) as a stepped track. Read
@@ -413,6 +430,17 @@ private suspend fun readTimeline(
             // which the view renders as its honest "nothing here" state — never a fabricated flat line.
             runCatching { repo.sleepStateSamples(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
                 .map { TimelinePoint(it.ts, it.state.toDouble()) }
+        TimelineMetric.Movement ->
+            // The ring's OWN per-window motion from OURA_MOTION events (0x47): plot `motion_seconds`
+            // (0 when still, up to 31 s in the ~30 s window). Honest activity, NEVER scored/steps; empty
+            // for a WHOOP strap. Twin of Swift's ouraMovement series.
+            runCatching { repo.events(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
+                .filter { it.kind == com.noop.data.OuraStreamMapping.EVENT_MOTION }
+                .mapNotNull { row ->
+                    val ms = runCatching { org.json.JSONObject(row.payloadJSON).optInt("motion_seconds", -1) }
+                        .getOrDefault(-1)
+                    if (ms < 0) null else TimelinePoint(row.ts, ms.toDouble())
+                }
     }
     if (raw.isEmpty() || bucket <= 1L) return@withContext raw
     downsampleTimeline(raw, bucket)
@@ -448,7 +476,7 @@ private fun metricColor(metric: TimelineMetric): Color = when (metric) {
     TimelineMetric.Hr -> Palette.metricRose
     TimelineMetric.SkinTemp -> Palette.strain033
     TimelineMetric.Hrv, TimelineMetric.Spo2 -> Palette.sleepLight
-    TimelineMetric.Respiration, TimelineMetric.Motion -> Palette.textSecondary
+    TimelineMetric.Respiration, TimelineMetric.Motion, TimelineMetric.Movement -> Palette.textSecondary
     // #175: the band-state track uses the deep-sleep hue so it reads as a distinct sleep track.
     TimelineMetric.BandSleepState -> Palette.sleepDeep
 }
@@ -457,11 +485,12 @@ private fun unitSuffix(metric: TimelineMetric, tempUnit: TemperatureUnit): Strin
     TimelineMetric.Hr -> " bpm"
     TimelineMetric.SkinTemp -> UnitFormatter.temperatureUnit(tempUnit)   // #101: °C / °F per preference
     TimelineMetric.Hrv -> " ms"
+    TimelineMetric.Movement -> " s"   // seconds of movement per ~30 s window (ring's 0x47 activity)
     else -> ""
 }
 
 private fun formatValue(metric: TimelineMetric, v: Double): String = when (metric) {
-    TimelineMetric.Hr, TimelineMetric.Respiration, TimelineMetric.Hrv -> v.toInt().toString()
+    TimelineMetric.Hr, TimelineMetric.Respiration, TimelineMetric.Hrv, TimelineMetric.Movement -> v.toInt().toString()
     // `v` already arrives in the displayed unit — callers read from `displayPoints`, which converts skin
     // temp to °F upfront so the chart's axis (plotted from the same points) agrees with this readout (#101).
     TimelineMetric.SkinTemp -> String.format(Locale.US, "%.1f", v)

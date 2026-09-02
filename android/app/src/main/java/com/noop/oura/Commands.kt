@@ -27,8 +27,12 @@ object OuraCommands {
 
     // The SpO2 feature id. Per OURA_PROTOCOL.md s7.1.
     const val featureSpO2 = 0x04
-    // The real-steps feature id. Server-flag-gated (activity/real_steps, default off), so it is never
-    // emitted for an offline NOOP-only ring. Per OURA_PROTOCOL.md s7.1 / s7.3 [open_oura-feat].
+    // The real-steps feature id (`activity/real_steps`). Nominally server-flag-gated per
+    // OURA_PROTOCOL.md s7.1/s7.3 [open_oura-feat], but on-device 2026-08-25 real-steps status reads
+    // came back enabled (status=1) from BOTH an authenticated Oura-app session and NOOP's own fully
+    // offline, unauthenticated read of the same ring - the gate is ring-side state, not tied to which
+    // client asks or whether that client is cloud-authenticated. Do not assume "off for NOOP" without
+    // checking a live read.
     const val featureRealSteps = 0x0b
 
     // MARK: - Pre-auth / identity (unauthenticated OK)
@@ -64,18 +68,24 @@ object OuraCommands {
     // MARK: - Time sync
 
     /**
-     * SyncTime: `12 09 <token:1> <counter:3 LE> 00 00 00 00 f6` where counter = floor(unix_s / 256)
-     * and the trailer 0xf6 is fixed. Per OURA_PROTOCOL.md s5.4. `token` defaults to 0.
+     * SyncTime: `12 09 <unix_seconds:8 LE> <tz:1>` — unix seconds as uint64 LE, then the timezone as a
+     * SIGNED byte in HALF-HOURS from UTC. Per OURA_PROTOCOL.md s5.4 [ringverse BLE.md][open_oura
+     * `req_sync_time`]; on-device proven 2026-07-12 (this layout made the ring emit its first 0x42 and
+     * anchored history). Byte-identical twin of Swift's syncTime.
+     *
+     * SUPERSEDED (open_ring): the previous `token + unix_s/256 + 0xF6` layout never anchored on real
+     * hardware. `tzHalfHours` defaults to 0 (UTC), exactly as the reference client sends; NOOP does its
+     * own LOCAL-day bucketing downstream regardless of what the ring is told here.
      */
-    fun syncTime(unixSeconds: Long, token: Int = 0x00): OuraCommand {
-        val counter = unixSeconds / 256
-        val c0 = (counter and 0xFFL).toInt()
-        val c1 = ((counter shr 8) and 0xFFL).toInt()
-        val c2 = ((counter shr 16) and 0xFFL).toInt()
-        return OuraCommand(
-            "sync_time",
-            intArrayOf(0x12, 0x09, token and 0xFF, c0, c1, c2, 0x00, 0x00, 0x00, 0x00, 0xF6),
-        )
+    fun syncTime(unixSeconds: Long, tzHalfHours: Int = 0): OuraCommand {
+        val body = IntArray(11)
+        body[0] = 0x12
+        body[1] = 0x09
+        for (i in 0 until 8) {
+            body[2 + i] = ((unixSeconds ushr (i * 8)) and 0xFFL).toInt()
+        }
+        body[10] = tzHalfHours and 0xFF
+        return OuraCommand("sync_time", body)
     }
 
     // MARK: - Event fetch (cursor)
@@ -128,11 +138,27 @@ object OuraCommands {
         OuraCommand("dhr_subscribe", intArrayOf(0x2F, 0x03, 0x26, featureDaytimeHR, 0x02))
 
     /**
-     * Disable live HR: `2f 03 22 02 01`. ACK: `2f 03 23 02 00`; stream stops on ACK.
-     * Per OURA_PROTOCOL.md s5.6.
+     * Disable live HR: `2f 03 22 02 00`. ACK: `2f 03 23 02 00`.
+     * Mode byte is **0x00** ("off" per OURA_PROTOCOL.md s7.2's APK-sourced table), not 0x01
+     * ("automatic") — an earlier build wrote 0x01 here on the mistaken belief it meant "off"; s7.4's
+     * own worked example shows mode=1 read back while daytime-HR is actively streaming, and two
+     * consecutive real-hardware nights (08-17/18, 08-18/19) falsified "stream stops on ACK" for that
+     * byte — green 0x80 kept arriving all night at reduced but non-zero volume, matching "automatic"
+     * mode's own adaptive/motion-triggered sampling rather than a true off. Per OURA_PROTOCOL.md s5.6.
      */
     fun liveHRDisable(): OuraCommand =
-        OuraCommand("dhr_disable", intArrayOf(0x2F, 0x03, 0x22, featureDaytimeHR, 0x01))
+        OuraCommand("dhr_disable", intArrayOf(0x2F, 0x03, 0x22, featureDaytimeHR, 0x00))
+
+    /**
+     * Unsubscribe from live-HR pushes: `2f 03 26 02 00`. ACK: `2f 03 27 02 00`.
+     * The enable triplet's step 3 (`liveHRSubscribe`) leaves the ring subscribed at "latest" (byte2 =
+     * 2); nothing ever wrote it back to "off" before this — `liveHRDisable` alone only touches the
+     * feature MODE byte, not the subscription. Send both together when suspending live HR so no
+     * notification channel is left standing open for the ring's own adaptive sampling to push through.
+     * Per OURA_PROTOCOL.md s5.6/7.2.
+     */
+    fun liveHRUnsubscribe(): OuraCommand =
+        OuraCommand("dhr_unsubscribe", intArrayOf(0x2F, 0x03, 0x26, featureDaytimeHR, 0x00))
 
     // Feature-status diagnostics (READ-ONLY; s5.6 / s7.1)
 
@@ -146,9 +172,11 @@ object OuraCommands {
         OuraCommand("spo2_status", intArrayOf(0x2F, 0x02, 0x20, featureSpO2))
 
     /**
-     * Read the real-steps feature status, `2f 02 20 0b` (READ verb, not enable). The `0x21` reply confirms
-     * the server-flag gate (`activity/real_steps`, default off) from the ring itself. Read-only diagnostic.
-     * [open_oura-feat]
+     * Read the real-steps feature status, `2f 02 20 0b` (READ verb, not enable). The `0x21` reply reports
+     * the ring's own real_steps gate state - NOT reliably "off" for an offline ring: on-device
+     * 2026-08-25 this read back status=1 (enabled) from NOOP's own unauthenticated connection, matching
+     * the real Oura app's read of the same ring byte-for-byte. Read-only diagnostic either way - never
+     * enables anything, never writes a mode. [open_oura-feat]
      */
     fun realStepsReadStatus(): OuraCommand =
         OuraCommand("realsteps_status", intArrayOf(0x2F, 0x02, 0x20, featureRealSteps))

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -65,18 +66,79 @@ import kotlin.math.roundToInt
  * the menu-bar extra, so closing the window leaves the strap connected.
  */
 /**
- * One tick of the ongoing-notification/widget stream. Carries TWO day rows on purpose (#911):
- * [todayRow] is the naive/unscored today row the notification's Recovery line reads (honest-null until
- * tonight is scored), while [anchorRow] is the widget-only carried anchor (today when scored, else the
- * freshest prior scored day) so the widget describes the same day as Today without the notification ever
- * showing a carried figure as if it were live.
+ * One tick of the ongoing-notification/widget stream. [dayState] is memoized separately from the
+ * ~1 Hz [LiveState] so daily analytics are not recomputed for every heart-rate sample.
  */
 private data class NotifyTick(
     val state: LiveState,
-    val todayRow: DailyMetric?,
-    val anchorRow: DailyMetric?,
-    val illness: String?,
+    val dayState: NotifyDayState,
 )
+
+/**
+ * Daily values consumed by the foreground-service collector. Carries TWO recovery projections on
+ * purpose (#911): [todayRecovery] is the honest-null notification value, while [widgetRecovery] is
+ * the carried widget anchor. [days] stays by reference for the battery night-guard, which reads it
+ * only when the strap's battery percentage changes.
+ */
+internal data class NotifyDayState(
+    val todayRecovery: Double?,
+    val widgetRecovery: Int?,
+    val widgetRest: Int?,
+    val widgetEffort: Int?,
+    val illness: String?,
+    val days: List<DailyMetric>,
+)
+
+/**
+ * Memoizes daily-row selection and Illness Watch evaluation across live-state emissions.
+ *
+ * `combine` reuses the exact immutable day-list instance until the Room flow emits again, while BLE
+ * state can emit about once per second. Identity is therefore the cheap generation token: a new list,
+ * a logical/local-day rollover, or an Illness Watch preference change refreshes the projection. This
+ * preserves the old behavior at midnight/04:00 and when the opt-out changes without rescanning up to
+ * 800 day rows or allocating Illness Watch slices for every heart-rate sample.
+ */
+internal class NotifyDayStateCache(
+    private val illnessEvaluator: (List<DailyMetric>) -> String? = IllnessWatch::evaluate,
+) {
+    private var cachedDays: List<DailyMetric>? = null
+    private var cachedLogicalKey: String? = null
+    private var cachedLocalKey: String? = null
+    private var cachedIllnessEnabled: Boolean? = null
+    private var cachedState: NotifyDayState? = null
+
+    fun resolve(
+        days: List<DailyMetric>,
+        logicalKey: String,
+        localKey: String,
+        illnessEnabled: Boolean,
+    ): NotifyDayState {
+        cachedState?.let { state ->
+            if (days === cachedDays && logicalKey == cachedLogicalKey && localKey == cachedLocalKey &&
+                illnessEnabled == cachedIllnessEnabled
+            ) {
+                return state
+            }
+        }
+
+        val todayRow = com.noop.ui.resolveTodayRow(days, logicalKey, localKey)
+        val anchorRow = com.noop.ui.widgetAnchorRow(days, logicalKey, localKey)
+        val state = NotifyDayState(
+            todayRecovery = todayRow?.recovery,
+            widgetRecovery = anchorRow?.recovery?.roundToInt(),
+            widgetRest = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
+            widgetEffort = anchorRow?.strain?.roundToInt(),
+            illness = if (illnessEnabled) illnessEvaluator(days) else null,
+            days = days,
+        )
+        cachedDays = days
+        cachedLogicalKey = logicalKey
+        cachedLocalKey = localKey
+        cachedIllnessEnabled = illnessEnabled
+        cachedState = state
+        return state
+    }
+}
 
 class WhoopConnectionService : Service() {
 
@@ -86,6 +148,9 @@ class WhoopConnectionService : Service() {
     /** The single live-state→notification collector. Re-`start`s land here repeatedly (on every
      *  connect, plus any OS restart), so we cancel the old one before launching a new one. */
     private var notifyJob: Job? = null
+
+    /** Daily analytics projection shared across the notification's ~1 Hz live-state ticks. */
+    private val notifyDayStateCache = NotifyDayStateCache()
 
     /** Watches [GpsSession] and runs the platform location stream while a GPS workout is active. This
      *  is what makes route tracking survive the screen turning off (#215): the collection lives on the
@@ -109,6 +174,31 @@ class WhoopConnectionService : Service() {
      *  actual SoC change keeps the predictive path as cheap as the SoC-only alert beside it. */
     private var lastRuntimeEvalPct: Int? = null
 
+    /**
+     * Last (SoC %, charging) pair the battery-alert policies were evaluated for, so they run on a CHANGE
+     * rather than on every live-state emission.
+     *
+     * The collector below ticks at live-HR cadence (~1/s while connected). Both notifiers early-exit on
+     * their own PERSISTED once-per-crossing gates, but not before each has done a SharedPreferences read,
+     * a `NotificationManagerCompat.areNotificationsEnabled()` binder call and an `ensureChannel()` —
+     * roughly two binder calls and half a dozen prefs reads every second, to re-answer a question the
+     * strap only changes every ~8 minutes.
+     *
+     * Gated on the PAIR, not the percentage alone: [BatteryAlertNotifier.onBatteryUpdate] owns the
+     * charge-complete and re-arm transitions, which key off `charging`. A user plugging in before the
+     * percentage ticks would otherwise have their re-arm deferred by up to a battery-report cycle.
+     */
+    private var lastBatteryAlertKey: Pair<Int?, Boolean?>? = null
+
+    /** The user's LEARNED habitual midsleep (local seconds-of-day), cached for the battery
+     *  night-guard. null = cold start (< [com.noop.analytics.SleepStageTotals.HABITUAL_MIN_DAYS]
+     *  nights), which is what makes `BatteryEstimator.bedtimeAlert` stay silent instead of testing
+     *  against a fabricated bedtime. */
+    private var habitualMidsleepCache: Int? = null
+
+    /** Wall-clock ms of the last [refreshHabitualMidsleep] attempt; 0 = never. */
+    private var habitualMidsleepCachedAtMs: Long = 0L
+
     /** Smart-alarm light-sleep watcher (#207). Feeds the live HR while we're inside the wake window
      *  and, on a lighter-phase reading, advances the GUARANTEED alarm earlier. It can only ever move
      *  the alarm earlier within the window — the hard deadline scheduled via AlarmManager is the floor
@@ -122,6 +212,29 @@ class WhoopConnectionService : Service() {
 
     private val ble get() = (application as NoopApplication).ble
     private val repo get() = (application as NoopApplication).repository
+
+    /**
+     * Watches the OS PAIRING flow (#1635). NOOP has never observed ACTION_BOND_STATE_CHANGED, so whether a
+     * CLIENT_HELLO triggers pairing at all - and whether that pairing fails - has been invisible. A WHOOP
+     * 5/MG shows every CLIENT_HELLO unacknowledged and the link torn down locally on a clockwork timer;
+     * seeing BOND_NONE -> BOND_BONDING -> BOND_NONE across that window decides it, and seeing no transition
+     * at all decides it the other way. Registered and unregistered alongside [bluetoothStateReceiver].
+     */
+    private val bondStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val dev: BluetoothDevice? =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                }
+            val cur = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
+            val prev = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
+            runCatching { ble.onBondStateChanged(prev, cur, dev?.address) }
+        }
+    }
 
     /**
      * Watches the OS Bluetooth radio so turning it off immediately tears down NOOP's orphaned GATT
@@ -144,8 +257,9 @@ class WhoopConnectionService : Service() {
         }
     }
 
-    /** True once [bluetoothStateReceiver] is registered, so repeat onStartCommands don't double-register
-     *  (which would later throw on a single unregister). */
+    /** True once [bluetoothStateReceiver] and [bondStateReceiver] are registered, so repeat
+     *  onStartCommands don't double-register (which would later throw on a single unregister). Both
+     *  register together and unregister together, so one flag covers the pair. */
     private var bluetoothReceiverRegistered = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -178,6 +292,16 @@ class WhoopConnectionService : Service() {
                     IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
                     ContextCompat.RECEIVER_NOT_EXPORTED,
                 )
+
+                // #1635: same lifecycle and the same registration form as the radio receiver above - the FGS
+                // owns the connection, so the pairing flow is only interesting while it is alive, and both are
+                // torn down together in onDestroy.
+                ContextCompat.registerReceiver(
+                    this,
+                    bondStateReceiver,
+                    IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+                    ContextCompat.RECEIVER_NOT_EXPORTED,
+                )
             }.onSuccess { bluetoothReceiverRegistered = true }
         }
 
@@ -195,7 +319,9 @@ class WhoopConnectionService : Service() {
                 // flow completes; combine keeps running on ble.state with days frozen.
                 // #797: the bounded merge (recentDaysMergedFlow) is enough here, the notification only reads
                 // today's row; this stops a years-deep import re-merging the whole history on every change.
-                repo.recentDaysMergedFlow("my-whoop").catch { emit(emptyList()) },
+                // #1304/#512: the active strap's live day is under its own id ("whoop-<uuid>"); a raw
+                // "my-whoop" read (which the union method collapses to) misses it. Same accessor as :606.
+                repo.recentDaysMergedFlow((application as NoopApplication).activeDeviceId).catch { emit(emptyList()) },
             ) { state, days ->
                 // #911: resolve the day the way the dashboard does, via the LOGICAL local day (rolls at
                 // 04:00, with the #304 pre-04:00 carve-out), NOT a naive LocalDate.now() that rolls at
@@ -212,16 +338,17 @@ class WhoopConnectionService : Service() {
                 //    guard). ONLY the widget uses this, so the 2x2 widget shows the same day as Today rather
                 //    than blanking in the small hours before tonight is scored. This keeps the service
                 //    symmetric with AppViewModel, where only the widget push reads the anchor.
-                val todayRow = com.noop.ui.resolveTodayRow(days, logicalKey, localKey)
-                val anchorRow = com.noop.ui.widgetAnchorRow(days, logicalKey, localKey)
                 NotifyTick(
                     state = state,
-                    todayRow = todayRow,
-                    anchorRow = anchorRow,
-                    // Illness watch in the background (gated on the opt-out pref): the FGS is the
-                    // only long-lived collector, so this is what makes the early-warning reach a
-                    // user who hasn't opened the app today.
-                    illness = if (NoopPrefs.illnessWatch(this@WhoopConnectionService)) IllnessWatch.evaluate(days) else null,
+                    dayState = notifyDayStateCache.resolve(
+                        days = days,
+                        logicalKey = logicalKey,
+                        localKey = localKey,
+                        // The preference remains part of the per-tick cache key, so toggling the opt-out
+                        // still takes effect on the next live-state emission without re-running the
+                        // evaluation while the value is unchanged.
+                        illnessEnabled = NoopPrefs.illnessWatch(this@WhoopConnectionService),
+                    ),
                 )
             }.catch { /* belt-and-braces: a frozen notification beats a dead process */ }
                 // conflate + collect, NOT collectLatest (#82): the widget push suspends in Glance
@@ -229,23 +356,41 @@ class WhoopConnectionService : Service() {
                 // every push mid-flight and the widget starved on stale data the moment HR started
                 // streaming. Conflation still processes only the latest value — just without the axe.
                 .conflate()
-                .collect { (state, todayRow, anchorRow, illness) ->
+                .collect { (state, dayState) ->
                 // Honest-null: the notification's Recovery line reads the NAIVE today row, never the
                 // carried anchor, so it stays blank until tonight's recovery actually lands (#911).
-                postNotification(state, todayRow?.recovery)
+                postNotification(state, dayState.todayRecovery)
                 // Banner transition (clear → raised) → real system notification; the notifier's
                 // persisted day gate dedupes against the app-open (AppViewModel) call site.
-                if (lastIllnessAlert == null && illness != null) {
-                    IllnessAlertNotifier.onEvaluated(this@WhoopConnectionService, illness)
+                if (lastIllnessAlert == null && dayState.illness != null) {
+                    IllnessAlertNotifier.onEvaluated(this@WhoopConnectionService, dayState.illness)
                 }
-                lastIllnessAlert = illness
-                // Battery alerts — low (≤15%) and charge-complete (100%). The once-per-crossing
-                // dedupe is persisted in NoopPrefs (BatteryAlertPolicy), so no in-memory pct tracking.
-                BatteryAlertNotifier.onBatteryUpdate(
-                    this@WhoopConnectionService,
-                    currPct = state.batteryPct?.roundToInt(),
-                    charging = state.charging,
-                )
+                lastIllnessAlert = dayState.illness
+                // Evaluated only when (SoC, charging) actually MOVES — see [lastBatteryAlertKey]. Both policies
+                // are once-per-crossing and persisted, so re-running them on an unchanged pair can only repeat
+                // work that already decided nothing.
+                val batteryKey = state.batteryPct?.roundToInt() to state.charging
+                if (batteryKey != lastBatteryAlertKey) {
+                    // Battery alerts — low (≤15%) and charge-complete (100%). The once-per-crossing
+                    // dedupe is persisted in NoopPrefs (BatteryAlertPolicy), so no in-memory pct tracking.
+                    BatteryAlertNotifier.onBatteryUpdate(
+                        this@WhoopConnectionService,
+                        currPct = state.batteryPct?.roundToInt(),
+                        charging = state.charging,
+                    )
+                    // ESCALATION 1 — critical SoC (iOS/macOS twin: BatteryNotifier.onCriticalBattery). A
+                    // SECOND, lower crossing (12%) with its own persisted gate, because the 15% alert above
+                    // latches until the cell recovers to 25%: measured, a user got that one warning and then
+                    // total silence across the final ~3 h down to the ~10% hardware cutoff, and lost the
+                    // night. Sits beside onBatteryUpdate rather than in the estimator block below because it
+                    // is the same kind of pure SoC policy — no Room read, no slope fit.
+                    BatteryAlertNotifier.onCriticalBattery(
+                        this@WhoopConnectionService,
+                        currPct = state.batteryPct?.roundToInt(),
+                        charging = state.charging,
+                    )
+                }
+
                 // Predictive runtime alert (iOS/macOS twin: BatteryNotifier.onRuntimeEstimate):
                 // re-fit the "~X left" estimate from the persisted SoC series and warn at ≤24 h of
                 // runtime, whatever the strap generation. Evaluated only when the battery % actually
@@ -257,13 +402,36 @@ class WhoopConnectionService : Service() {
                     lastRuntimeEvalPct = runtimePct
                     runCatching {
                         val nowS = System.currentTimeMillis() / 1000
-                        val samples = repo.batterySamples("my-whoop", nowS - 14L * 86_400, nowS, limit = 2_000)
+                        // #1304/#512: read the active strap's own SoC (banked under "whoop-<uuid>" for a
+                        // 2nd strap), not the hardcoded canonical id. Same accessor as :606.
+                        val samples = repo.batterySamples((application as NoopApplication).activeDeviceId, nowS - 14L * 86_400, nowS, limit = 2_000)
                             .mapNotNull { s -> s.soc?.let { s.ts to it } }
                         val rated = if (state.whoop5Detected) BatteryEstimator.ratedLifeHoursWhoop5
                                     else BatteryEstimator.ratedLifeHoursWhoop4
+                        val estimate = BatteryEstimator.estimate(samples, rated)
                         BatteryAlertNotifier.onRuntimeEstimate(
                             this@WhoopConnectionService,
-                            remainingHours = BatteryEstimator.estimate(samples, rated)?.hoursRemaining,
+                            remainingHours = estimate?.hoursRemaining,
+                            charging = state.charging,
+                        )
+                        // ESCALATION 2 — bedtime night-guard (iOS/macOS twin:
+                        // BatteryNotifier.onBedtimeRunway). Near the LEARNED habitual bedtime, does the
+                        // strap actually clear TONIGHT? Uses the cutoff-aware runtime, because the raw
+                        // estimate is time-to-0% and the strap dies ~10 pp above that — ~6 h of phantom
+                        // runway at the reference user's drain. Cold start (no learned midsleep, or
+                        // fewer than 7 nights of durations) returns silent rather than inventing a
+                        // bedtime, which would fire at the wrong hour for the shift/late sleepers the
+                        // midsleep learner exists to serve. Rides the same SoC-change gate as the
+                        // runtime alert, so it never adds work to the live-HR path.
+                        refreshHabitualMidsleep()
+                        BatteryAlertNotifier.onBedtimeRunway(
+                            this@WhoopConnectionService,
+                            nowSecOfDay = localSecOfDayNow(),
+                            habitualMidsleepSec = habitualMidsleepCache,
+                            typicalSleepHours = BatteryEstimator.typicalSleepHours(
+                                dayState.days.mapNotNull { d -> d.totalSleepMin?.let { it / 60.0 } },
+                            ),
+                            usableRemainingHours = estimate?.let { BatteryEstimator.usableRemainingHours(it) },
                             charging = state.charging,
                         )
                     }
@@ -275,12 +443,12 @@ class WhoopConnectionService : Service() {
                     WidgetSnapshotStore.push(
                         this@WhoopConnectionService,
                         WidgetSnapshot(
-                            recoveryPct = anchorRow?.recovery?.roundToInt(),
+                            recoveryPct = dayState.widgetRecovery,
                             // Rest = the sleep_performance composite from the anchor row's banked stage
                             // figures (pure, honest-null until last night is scored); Effort = the 0-100
                             // strain. Widget-only carry, so it shows the same day as Today. (#516/#911)
-                            restPct = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
-                            effortPct = anchorRow?.strain?.roundToInt(),
+                            restPct = dayState.widgetRest,
+                            effortPct = dayState.widgetEffort,
                             heartRate = state.heartRate,
                             batteryPct = state.batteryPct?.roundToInt(),
                             connected = state.connected,
@@ -397,6 +565,11 @@ class WhoopConnectionService : Service() {
             state.backfilling,
             recoveryPct?.roundToInt(),
             state.batteryPct?.roundToInt(),
+            // The rendered TEXT depends on the locale, and a Service is never re-posted when the user
+            // switches language — nothing above changes, so the notification would keep the previous
+            // language until the connection or battery state happened to move. On a stable link with a
+            // charged strap that is hours. (#867)
+            resources.configuration.locales[0].toLanguageTag(),
         ).joinToString("|")
         if (key == lastNotificationKey) return
         lastNotificationKey = key
@@ -414,14 +587,17 @@ class WhoopConnectionService : Service() {
         // battery cost for a number nobody reads off the lock screen. The title now reflects only the
         // connection / sync state, which changes rarely — see postNotification's dedup.
         val title = when {
-            !state.connected   -> "Reconnecting to your WHOOP…"
-            state.backfilling  -> "Syncing strap history…"
-            else               -> "Connected to your WHOOP"
+            !state.connected   -> getString(R.string.fgs_title_reconnecting)
+            state.backfilling  -> getString(R.string.fgs_title_syncing)
+            else               -> getString(R.string.fgs_title_connected)
         }
         val detail = buildList {
-            add(if (state.connected) "Streaming in the background" else "Keeping the link open")
-            recoveryPct?.let { add("Recovery ${it.roundToInt()}%") }
-            state.batteryPct?.let { add("Strap ${it.roundToInt()}%") }
+            add(
+                if (state.connected) getString(R.string.fgs_detail_streaming)
+                else getString(R.string.fgs_detail_keeping_link),
+            )
+            recoveryPct?.let { add(getString(R.string.fgs_detail_recovery, it.roundToInt())) }
+            state.batteryPct?.let { add(getString(R.string.fgs_detail_battery, it.roundToInt())) }
         }.joinToString("  ·  ")
 
         val openApp = PendingIntent.getActivity(
@@ -442,7 +618,7 @@ class WhoopConnectionService : Service() {
             .setContentTitle(title)
             .setContentText(detail)
             .setContentIntent(openApp)
-            .addAction(0, "Disconnect", stopAction)
+            .addAction(0, getString(R.string.fgs_action_disconnect), stopAction)
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
@@ -452,19 +628,50 @@ class WhoopConnectionService : Service() {
             .build()
     }
 
+    /**
+     * Refresh [habitualMidsleepCache], at most hourly. `WhoopRepository.habitualMidsleepSec` reads the
+     * WHOLE sleep history (both source namespaces, de-duplicated) and the learned value moves on a
+     * timescale of WEEKS, so recomputing it on every ~8-minute battery reading would be a large read
+     * for a number that cannot have changed. The timestamp advances BEFORE the read, so a failing read
+     * cannot spin the throttle. Mirrors the iOS/macOS `AppModel.refreshHabitualMidsleep` cache.
+     */
+    private suspend fun refreshHabitualMidsleep() {
+        val now = System.currentTimeMillis()
+        if (habitualMidsleepCachedAtMs != 0L && now - habitualMidsleepCachedAtMs < 3_600_000L) return
+        habitualMidsleepCachedAtMs = now
+        // Thread the ACTIVE strap id so the learner unions active + canonical nights (#814/#1008),
+        // exactly as SleepScreen does; the repository resolves the canonical sibling internally.
+        habitualMidsleepCache = runCatching {
+            repo.habitualMidsleepSec((application as NoopApplication).activeDeviceId)?.toInt()
+        }.getOrNull()
+    }
+
+    /**
+     * Local time-of-day in seconds, [0, 86400) — the clock the night-guard's bedtime window is in.
+     * Reads the CURRENT zone, so a traveller's window follows them rather than sticking to home time.
+     * Twin of the Swift `AppModel.localSecOfDayNow`.
+     */
+    private fun localSecOfDayNow(now: java.time.LocalTime = java.time.LocalTime.now()): Int =
+        now.toSecondOfDay()
+
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         // Defensive: channel creation can throw on some OEM ROMs / under memory pressure; never let
         // that crash onStartCommand (it would take the FGS — and the connection — down with it).
         runCatching {
             val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // Deliberately NOT skipping when the channel already exists. createNotificationChannel is
+            // idempotent and updates the name/description of an existing channel, which is the only way
+            // those follow a language change — they are set once at creation and are user-visible in
+            // system Settings, so an early return here left them in the install-time language forever.
+            // Everything else about the channel is unchanged, and importance/sound are not re-applied
+            // by the OS once a user has adjusted them.
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Strap connection",
+                getString(R.string.fgs_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shown while NOOP keeps your WHOOP connected in the background."
+                description = getString(R.string.fgs_channel_desc)
                 setShowBadge(false)
                 enableVibration(false)
                 setSound(null, null)
@@ -478,6 +685,7 @@ class WhoopConnectionService : Service() {
             // unregisterReceiver throws if it was never registered; the flag guards that, and runCatching
             // covers the rare case the OS already reclaimed it.
             runCatching { unregisterReceiver(bluetoothStateReceiver) }
+            runCatching { unregisterReceiver(bondStateReceiver) }
             bluetoothReceiverRegistered = false
         }
         scope.cancel()

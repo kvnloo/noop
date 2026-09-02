@@ -1,6 +1,7 @@
 import SwiftUI
 import StrandDesign
 import StrandAnalytics
+import StrandImport
 import WhoopStore
 import Foundation
 #if canImport(MapKit)
@@ -55,6 +56,9 @@ struct WorkoutDetailView: View {
     /// row's natural key. nil = no route was recorded (honest — the map only shows when points exist).
     @State private var route: [RouteMath.LatLng] = []
 
+    /// Drives the GPX/FIT export chooser for the recorded route.
+    @State private var showRouteExport = false
+
     /// Steps over the session window for an on-foot sport (#398): the count plus whether it came from the
     /// strap's own counter (MG/5.0) or the phone pedometer (fallback for WHOOP 4.0 / not-yet-synced / CSV
     /// import). nil = not an on-foot sport, or no step source had data for the window.
@@ -107,7 +111,7 @@ struct WorkoutDetailView: View {
 
         // HR curve over the exact session window — a finer bucket than the 24h chart so a short run
         // still reads as a curve, not a handful of points.
-        let buckets = await repo.workoutHrBuckets(from: row.startTs, to: row.endTs)
+        let buckets = await repo.workoutHrBuckets(from: row.startTs, to: row.endTs, source: row.source)
         let points = buckets.map { TrendPoint(date: Date(timeIntervalSince1970: TimeInterval($0.ts)), value: $0.bpm) }
 
         // Zones: prefer the imported per-workout percentages (a WHOOP-computed split), and only fall
@@ -123,11 +127,12 @@ struct WorkoutDetailView: View {
             }
         }
         if minutes == nil {
-            minutes = await repo.workoutZoneMinutes(from: row.startTs, to: row.endTs, age: profile.age)
+            minutes = await repo.workoutZoneMinutes(from: row.startTs, to: row.endTs, zoneSet: profile.hrZoneSet,
+                                                    source: row.source)
         }
 
         let hrr = await repo.workoutHeartRateRecovery(
-            from: row.startTs, to: row.endTs, maxHR: Double(profile.hrMax))
+            from: row.startTs, to: row.endTs, maxHR: Double(profile.hrMax), source: row.source)
 
         // Steps for an on-foot session (#398), computed at display time over the exact window so it
         // "fills in after sync": prefer the strap's own counter (MG/5.0) once it has offloaded the window,
@@ -297,7 +302,44 @@ struct WorkoutDetailView: View {
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    showRouteExport = true
+                } label: {
+                    Label("Export route", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                .confirmationDialog("Export route", isPresented: $showRouteExport, titleVisibility: .visible) {
+                    Button("GPX — Strava, Garmin, most apps") { exportRoute(.gpx) }
+                    Button("FIT — Garmin Connect") { exportRoute(.fit) }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Save this route as a standard file you can import into Strava, Garmin Connect, and other apps.")
+                }
             }
+        }
+    }
+
+    /// Write the route to a GPX/FIT file and hand it to the system share sheet (or a Save panel on macOS).
+    /// Points are decoded lat/lon only (the stored polyline), so the exporter interpolates per-point times
+    /// across the session window and carries the workout's summary (sport, distance, calories, HR).
+    ///
+    /// The build + disk write run OFF the main actor (a long route is a non-trivial encode, and blocking
+    /// file IO must never stall the UI); only the share-sheet present hops back to the main actor.
+    @MainActor private func exportRoute(_ format: RouteExporter.Format) {
+        guard route.count >= 2 else { return }
+        let points = route.map { RoutePoint(lat: $0.lat, lon: $0.lon) }
+        // Name the file by the workout's start (not export time) so it's stable + matches the Android twin.
+        let name = "noop-route-\(row.startTs).\(format.ext)"
+        let startTs = row.startTs, endTs = row.endTs, sport = row.sport
+        let distanceM = row.distanceM, energyKcal = row.energyKcal, avgHr = row.avgHr, maxHr = row.maxHr
+        Task.detached(priority: .userInitiated) {
+            let data = RouteExporter.render(
+                format, route: points, startTs: startTs, endTs: endTs, sport: sport,
+                distanceM: distanceM, energyKcal: energyKcal, avgHr: avgHr, maxHr: maxHr)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            do { try data.write(to: url) } catch { return }
+            await MainActor.run { FileExport.exportFile(at: url, suggestedName: name) }
         }
     }
 
@@ -533,13 +575,13 @@ struct WorkoutDetailView: View {
     }()
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale.current
+        f.locale = AppLanguage.activeLocale
         f.setLocalizedDateFormatFromTemplate("jmm")
         return f
     }()
     private static let tooltipTime: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale.current
+        f.locale = AppLanguage.activeLocale
         f.setLocalizedDateFormatFromTemplate("jmm")
         return f
     }()
@@ -678,7 +720,7 @@ struct WorkoutRouteMap: View {
             endTs: Int(Date().timeIntervalSince1970),
             sport: "Running", source: "whoop", durationS: 3600, energyKcal: 712,
             avgHr: 152, maxHr: 178, strain: 14.2, distanceM: 10_400,
-            zonesJSON: #"{"z1":12.5,"z2":28.0,"z3":33.5,"z4":18.0,"z5":6.0}"#, notes: nil))
+            zonesJSON: #"{"z1":12.5,"z2":28.0,"z3":33.5,"z4":18.0,"z5":6.0}"#, notes: nil, steps: nil))
             .environmentObject(Repository(deviceId: "preview"))
     }
     .frame(width: 1040, height: 940)

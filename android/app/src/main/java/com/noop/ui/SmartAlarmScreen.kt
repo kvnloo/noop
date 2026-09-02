@@ -60,6 +60,7 @@ fun SmartAlarmScreen(vm: AppViewModel) {
     val enabled by vm.phoneAlarmEnabled.collectAsStateWithLifecycle()
     val targetMinutes by vm.phoneAlarmTargetMinutes.collectAsStateWithLifecycle()
     val windowMinutes by vm.phoneAlarmWindowMinutes.collectAsStateWithLifecycle()
+    val phoneAlarmWeekdays by vm.phoneAlarmWeekdays.collectAsStateWithLifecycle()
     val buzzWhoop4 by vm.buzzWhoop4Enabled.collectAsStateWithLifecycle()
     // #536: the hint adapts to bond state — the strap can only be armed when a WHOOP 4.0 is connected.
     val liveState = vm.live.collectAsStateWithLifecycle().value
@@ -151,6 +152,18 @@ fun SmartAlarmScreen(vm: AppViewModel) {
                         onChange = { vm.setPhoneAlarmWindowMinutes(it) },
                     )
                 }
+
+                // Days this alarm fires on. The SAME shared picker the strap alarm below uses, and the
+                // same empty-means-every-day contract, so identical-looking circles behave identically on
+                // one screen. Lets a weekend be switched off without disabling the alarm and having to
+                // remember to switch it back on.
+                RowDividerLocal()
+                AlarmWeekdayPicker(
+                    selected = phoneAlarmWeekdays,
+                    onToggle = { dow ->
+                        vm.setPhoneAlarmWeekdays(toggledSmartAlarmWeekday(dow, phoneAlarmWeekdays))
+                    },
+                )
             }
 
             // #536: companion strap-buzz, always visible so it's discoverable. Arms the strap's own firmware
@@ -274,6 +287,22 @@ private fun StrapAlarmCard(vm: AppViewModel) {
                             "Connect your strap to arm this; it's set on the strap's own firmware alarm. Confirmed working on WHOOP 4.0; still experimental on 5.0 and MG. Keep a backup alarm for anything you truly can't miss.",
                         style = NoopType.footnote, color = Palette.textTertiary,
                     )
+                    // #1706: ask the strap what it actually has stored. The readback was previously only
+                    // reachable by ARMING, so anyone whose alarm is off could not produce the evidence
+                    // that explains a wrong reported time. 4.0 only — the 5/MG readback is not decoded.
+                    if (live.bonded) {
+                        RowDividerLocal()
+                        NoopButton(
+                            text = uiString(R.string.smart_alarm_check_strap_alarm),
+                            kind = NoopButtonKind.Secondary,
+                            fullWidth = true,
+                            onClick = { vm.ble.getStrapAlarm() },
+                        )
+                        Text(
+                            uiString(R.string.smart_alarm_check_strap_alarm_help),
+                            style = NoopType.footnote, color = Palette.textTertiary,
+                        )
+                    }
                 }
             }
         }

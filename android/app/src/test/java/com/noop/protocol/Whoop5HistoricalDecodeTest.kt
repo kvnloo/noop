@@ -32,10 +32,37 @@ class Whoop5HistoricalDecodeTest {
         assertNotNull(p)
         p!!
         assertEquals(18, p["hist_version"])
-        assertEquals(1780916150, p["unix"])
+        // Long, not Int: `unix` is an unsigned u32 kept in the unsigned domain so a post-2038 value
+        // cannot go negative on Kotlin's 32-bit Int and get dropped by the #547 gate (see `histU32`).
+        assertEquals(1780916150L, p["unix"])
         assertEquals(102, p["heart_rate"])
         assertEquals(2, p["rr_count"])
         assertEquals(listOf(602, 613), p["rr_intervals"])
+
+        // Physiological cross-check: 60000 / mean(R-R) ≈ heart_rate, from the PARSE rather than literals.
+        // Twin of the Swift `testHistoricalV18HeartRateRRAndGravity` check, which this side never had.
+        //
+        // The pins above already fix both values, so this catches nothing a wrong offset would not
+        // already trip. What it guards is the PINS: a decoder change "fixed" by regenerating the
+        // expected values until they pass has to produce numbers that are still physiologically
+        // coherent. See the Swift twin for the fuller note.
+        //
+        // It does NOT discriminate UNITS and tightening it will not make it: milliseconds and 1/1024-s
+        // ticks differ by 2.4% (~2.5 bpm here), less than a two-beat sample varies against a heart_rate
+        // averaged over the record. See the Swift twin for why, and where the units question was settled.
+        @Suppress("UNCHECKED_CAST")
+        val rr = p["rr_intervals"] as List<Int>
+        assertTrue("no R-R decoded — the cross-check below would be vacuous", rr.isNotEmpty())
+        val meanRr = rr.sum().toDouble() / rr.size
+        // Delta 4.0, bounded from both sides rather than picked: it must exceed this record's real
+        // 3.2 bpm error under the shipped reading (a two-beat sample against an averaged heart_rate
+        // differs by that much, so anything tighter fails on CORRECT data), and stay well below the
+        // ~96 bpm a misread offset produces. Do not tighten it to look stricter.
+        // Fitted to THIS record, not a general invariant. `secondDeviceHR63` below (hr 63, a single
+        // interval of 1020) computes 58.8 bpm, an error of 4.18 — so copying this assertion onto that
+        // frame fails at this tolerance. A single interval against an averaged rate is simply noisier;
+        // widen it there with its own reason rather than loosening this one.
+        assertEquals((p["heart_rate"] as Int).toDouble(), 60_000.0 / meanRr, 4.0)
 
         val gx = p["gravity_x"] as Double
         val gy = p["gravity_y"] as Double
@@ -86,9 +113,12 @@ class Whoop5HistoricalDecodeTest {
         // Fields read off the same real worn frame, justified by observed behaviour (parity with the
         // Swift Whoop5HistoricalTests.testHistoricalV18ObservedFields).
         val p = decodeHistorical(bytes(wornV18), DeviceFamily.WHOOP5)!!
-        assertEquals(25443699, p["record_index"])               // @11 per-record counter
-        assertEquals(25997, p["hr_fixed_8_8"])                  // @36 value/256 ≈ HR (101.55 ≈ 102)
-        assertEquals(101, (p["hr_fixed_8_8"] as Int) / 256)
+        // Long, not Int: record_index is an unsigned u32 and Kotlin's Int is 32-bit while Swift's is
+        // 64-bit, so it is carried as a Long to keep the two decoders' output identical (see the
+        // decoder comment and the high-bit oracle fixture).
+        assertEquals(25443699L, p["record_index"])              // @11 per-record counter
+        assertEquals(141, p["hr_quality_flags"])                // @36 flag byte (0x8D), NOT a fixed-point HR
+        assertEquals(101, p["heart_rate_alt"])                  // @37 duplicate HR (hr@22 = 102)
         assertEquals(170, p["step_cadence"])                    // @59 cadence-like byte (raw)
         assertEquals(1792, p["status_word"])                    // @75 not a deep-sleep marker
         assertEquals(0, p["sleep_state"])                       // @81 worn daytime frame = wake
@@ -191,7 +221,8 @@ class Whoop5HistoricalDecodeTest {
     @Test
     fun sleepStateReachesStreamOnRealFixture() {
         val st = extractHistoricalStreams(listOf(bytes(wornV18)), 1780916150, 1780916150, DeviceFamily.WHOOP5)
-        assertEquals(listOf(com.noop.data.SleepStateRow(1780916150L, 0)), st.sleepState)
+        // The whole @81 byte now rides alongside `state`; on this fixture the byte is 0, so both read 0.
+        assertEquals(listOf(com.noop.data.SleepStateRow(1780916150L, 0, rawByte = 0)), st.sleepState)
     }
 
     // The non-zero codes come only from an in-memory byte override (we hold NO real sleeping-night capture),
@@ -202,7 +233,8 @@ class Whoop5HistoricalDecodeTest {
         for ((raw, expected) in listOf(0x10 to 1, 0x20 to 2, 0x30 to 3)) {
             val frame = mutateAndReCrc(81, raw)
             val st = extractHistoricalStreams(listOf(frame), 1780916150, 1780916150, DeviceFamily.WHOOP5)
-            assertEquals(listOf(com.noop.data.SleepStateRow(1780916150L, expected)), st.sleepState)
+            // `state` must still be exactly the high nibble of the carried raw byte.
+            assertEquals(listOf(com.noop.data.SleepStateRow(1780916150L, expected, rawByte = raw)), st.sleepState)
         }
     }
 
@@ -231,7 +263,7 @@ class Whoop5HistoricalDecodeTest {
         assertNotNull(p)
         p!!
         assertEquals(18, p["hist_version"])
-        assertEquals(1781047486, p["unix"])
+        assertEquals(1781047486L, p["unix"])
         assertEquals(66, p["heart_rate"])
         assertEquals(3238, p["skin_temp_raw"]) // 32.38 °C on the wrist
         val gx = p["gravity_x"] as Double
@@ -251,8 +283,8 @@ class Whoop5HistoricalDecodeTest {
     @Test
     fun decodesV18FromASecondDevice() {
         for ((hex, expectHR, expectUnix) in listOf(
-            Triple(secondDeviceHR57, 57, 1781120109),
-            Triple(secondDeviceHR63, 63, 1781124622),
+            Triple(secondDeviceHR57, 57, 1781120109L),
+            Triple(secondDeviceHR63, 63, 1781124622L),
         )) {
             val p = decodeHistorical(bytes(hex), DeviceFamily.WHOOP5)
             assertNotNull(p); p!!
@@ -269,27 +301,93 @@ class Whoop5HistoricalDecodeTest {
     @Test
     fun decodesV18OpticalRegionFields() {
         // Mirror of Swift testHistoricalV18OpticalRegionFields. The @82-119 "optical/tail" span is ~85%
-        // zero padding; only @106 (u16), @108/@109 (a paired channel) and the @113 float carry data, all
+        // zero padding; only the byte pairs @106/@107 and @108/@109 plus the @113 float carry data, all
         // RAW (no SpO2/respiratory ground truth). Cross-checked on both fixture devices.
         val worn = decodeHistorical(bytes(wornV18), DeviceFamily.WHOOP5)!!
-        assertEquals(28517, worn["optical_baseline_106"])
+        assertEquals(101, worn["optical_baseline_a"])   // @106
+        assertEquals(111, worn["optical_baseline_b"])   // @107
         assertEquals(30, worn["optical_amp_a"])
         assertEquals(30, worn["optical_amp_b"])
-        // Off-wrist: @106 collapses to 0 and BOTH channels read the 128 invalid sentinel.
+        // Off-wrist: BOTH baseline bytes collapse to 0 — the real off-wrist marker (b106 == 0 in exactly
+        // the 8 corpus records that also carry HR == 0, b107 == 0 in those same 8) — and both amp bytes
+        // read the 128 sentinel.
         val off = decodeHistorical(bytes(offWristV18), DeviceFamily.WHOOP5)!!
-        assertEquals(0, off["optical_baseline_106"])
+        assertEquals(0, off["optical_baseline_a"])
+        assertEquals(0, off["optical_baseline_b"])
         assertEquals(128, off["optical_amp_a"])
         assertEquals(128, off["optical_amp_b"])
-        // Cross-device: HR=57 decodes fine yet the optical channel is 128/128 (per-channel invalid,
-        // independent of HR validity); HR=63 on the same strap carries a valid 36/28 pair.
+        // Cross-device: HR=57 decodes fine yet the amp pair is 128/128 — the sentinel marks a bad OPTICAL
+        // read, not an absent HR; HR=63 on the same strap carries a valid 36/28 pair.
         val d57 = decodeHistorical(bytes(secondDeviceHR57), DeviceFamily.WHOOP5)!!
         assertEquals(57, d57["heart_rate"])
         assertEquals(128, d57["optical_amp_a"])
         assertEquals(128, d57["optical_amp_b"])
+        // …and that same worn frame reads 128 on the @107 BASELINE byte while carrying a valid HR: 128 is
+        // not a sentinel there (b106 == 128 in 10 corpus records, b107 == 128 in 103, none off-wrist).
+        assertEquals(128, d57["optical_baseline_b"])
         val d63 = decodeHistorical(bytes(secondDeviceHR63), DeviceFamily.WHOOP5)!!
         assertEquals(63, d63["heart_rate"])
         assertEquals(36, d63["optical_amp_a"])
         assertEquals(28, d63["optical_amp_b"])
+    }
+
+    @Test
+    fun v18Byte36IsAFlagByteNotAFixedPointHR() {
+        // Mirror of Swift testHistoricalV18Byte36IsAFlagByteNotAFixedPointHR. @36/@37 was read as one u16
+        // `hr_fixed_8_8` with bpm = value/256. Over 18,650 real v18 records that model is false: bit 4 of
+        // @36 is NEVER set (0/18,650 — a genuine 8.8 fraction sets it ~50% of the time, and it is the only
+        // bit never set), 95.02% of values land in 0x80-0x8F (uniform = 6.25%) over just 40 distinct
+        // values, sd 26.5 vs 73.9. @37 equals heart_rate@22 exactly in 99.575% (18,523/18,602), differing
+        // only by -6..+2. The "corr 0.989" that justified the old name was circular: the u16 is hr@22 plus
+        // a flag byte over 256, residual +0.504 ± 0.189.
+        val worn = decodeHistorical(bytes(wornV18), DeviceFamily.WHOOP5)!!
+        assertNull(worn["hr_fixed_8_8"])                        // the 8.8 fixed-point reading is retired
+        assertEquals(141, worn["hr_quality_flags"])             // 0x8D
+        assertEquals(101, worn["heart_rate_alt"])               // hr@22 = 102
+        assertEquals(0, (worn["hr_quality_flags"] as Int) and 0x10)      // bit 4 is never set
+        assertEquals(0x80, (worn["hr_quality_flags"] as Int) and 0x80)   // bit 7 = valid
+
+        // Bit 7 is a VALIDITY bit: with it CLEAR (n=748 in the corpus) rr_count == 0 in 70.32% of records
+        // vs 19.82% with it set, and the @108/@109 sentinel fires in 69.65% vs 1.32%. Both second-device
+        // fixtures have it clear — and there @37 is NOT a heart rate (97 and 227 against hr@22 57 and 63),
+        // which the retired model would have surfaced as a 227 bpm "high-precision" reading.
+        for ((hex, expected) in listOf(secondDeviceHR57 to Triple(57, 11, 97),
+                                       secondDeviceHR63 to Triple(63, 2, 227))) {
+            val (hr, flags, alt) = expected
+            val p = decodeHistorical(bytes(hex), DeviceFamily.WHOOP5)!!
+            assertEquals(hr, p["heart_rate"])
+            assertEquals(flags, p["hr_quality_flags"])
+            assertEquals(0, (p["hr_quality_flags"] as Int) and 0x80)   // bit 7 clear ⇒ invalid
+            assertEquals(alt, p["heart_rate_alt"])                     // not a bpm when invalid
+        }
+    }
+
+    @Test
+    fun v18OpticalBaselineIsTwoBytesNotAU16() {
+        // Mirror of Swift testHistoricalV18OpticalBaselineIsTwoBytesNotAU16. @106 was read as a u16 LE. It
+        // cannot be one: across 18,599 consecutive-second pairs the HIGH byte changed while the LOW byte
+        // stayed frozen in 3,514 (18.89%), and the corpus holds ZERO low-byte wrap events — a real u16
+        // cannot step its high byte without a carry. The apparent u16 deltas are just 256·Δb107 + Δb106.
+        // The two bytes are independent u8 channels (corr +0.73, moving in OPPOSITE directions in 5.8% of
+        // pairs), structurally parallel to the @108/@109 pair.
+        val m = decodeHistorical(mutateAndReCrc(107, 0xFF), DeviceFamily.WHOOP5)!!
+        assertNull(m["optical_baseline_106"])                   // the u16 reading is retired
+        // Moving @107 must leave the @106 channel alone — under the u16 model it was worth 256.
+        assertEquals(101, m["optical_baseline_a"])
+        assertEquals(255, m["optical_baseline_b"])
+    }
+
+    @Test
+    fun v18OpticalAmpSentinelIsRecordLevel() {
+        // Mirror of Swift testHistoricalV18OpticalAmpSentinelIsRecordLevel. The 128 sentinel on @108/@109
+        // was noted as invalidating a single CHANNEL. It is RECORD-level: over 18,650 records amp_a == 128
+        // in 757 and amp_b == 128 in 757 — the SAME 757, never one without the other. All four real
+        // fixtures agree, so the two bytes are never split.
+        for (hex in listOf(wornV18, offWristV18, secondDeviceHR57, secondDeviceHR63)) {
+            val p = decodeHistorical(bytes(hex), DeviceFamily.WHOOP5)!!
+            assertEquals("the 128 sentinel must fire on both amp bytes or neither",
+                         p["optical_amp_a"] == 128, p["optical_amp_b"] == 128)
+        }
     }
 
     @Test

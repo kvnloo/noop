@@ -3,13 +3,40 @@ import CoreBluetooth
 import WhoopProtocol
 import StrandAnalytics
 
+/// Fixed physical phases for the passive WHOOP 5/MG optical experiment. A marker starts a phase and
+/// does not write anything to the strap; the next marker ends it. Labels are stable machine keys used
+/// by `whoop-optical-experiment`, while `displayName` is the user-facing action in Settings.
+enum PuffinOpticalExperimentPhase: String, CaseIterable, Sendable {
+    case onWristStill = "on_wrist_still"
+    case gentlePressure = "gentle_pressure"
+    case offWristDark = "off_wrist_dark"
+    case offWristRoomLight = "off_wrist_room_light"
+    case onWristAgain = "on_wrist_again"
+    case pacedBreathingSlow = "paced_breathing_slow"
+    case pacedBreathingNormal = "paced_breathing_normal"
+    case experimentEnd = "experiment_end"
+
+    var displayName: String {
+        switch self {
+        case .onWristStill: return String(localized: "On wrist · still")
+        case .gentlePressure: return String(localized: "On wrist · gentle pressure")
+        case .offWristDark: return String(localized: "Off wrist · sensor covered")
+        case .offWristRoomLight: return String(localized: "Off wrist · room light")
+        case .onWristAgain: return String(localized: "On wrist · again")
+        case .pacedBreathingSlow: return String(localized: "On wrist · slow paced breathing")
+        case .pacedBreathingNormal: return String(localized: "On wrist · normal breathing")
+        case .experimentEnd: return String(localized: "End experiment")
+        }
+    }
+}
+
 /// Durable append-only log of WHOOP 5.0/MG **high-rate deep buffers** — the large type-0x2F (R22)
 /// packets that carry tens-of-Hz sensor data (motion + optical) rather than the 1 Hz historical
 /// rollup NOOP already decodes (#423).
 ///
-/// On-strap probing (#423) established that the 5/MG has no live raw-IMU stream, but it DOES bank
-/// high-rate motion (accel content verified: int16-ish triples sphere-fitting to ~1 g at the 1/4096
-/// scale) and ships it inside big type-0x2F buffers during the connect-time offload burst — 124 B
+/// On-strap probing (#423) established that the 5/MG banks high-rate motion and can stream it live
+/// during an explicitly armed raw-data session (accel content verified: int16-ish triples
+/// sphere-fitting to ~1 g at the 1/4096 scale). History also ships it inside big type-0x2F buffers — 124 B
 /// (≈1 Hz record), 1244 B and 2140 B (≈32 and ≈59 sub-records per timestamped second). NOOP's
 /// historical decoder pulls the 1 Hz gravity vector out and DISCARDS the high-rate remainder. Those
 /// bursts are ephemeral and backlog-gated, so a byte-perfect decoder can't be captured on demand — it
@@ -22,7 +49,10 @@ import StrandAnalytics
 /// buffer (`{"ts_ms":…,"strap_ts":…,"size":…,"offload":…,"char":…,"hex":"…"[,"imu":{…}]}`); `strap_ts`
 /// is the unix second the strap stamped at payload offset 15 (frame byte 15), the load-bearing key for
 /// aligning a buffer with what the wearer was doing. The optional `imu` object is the decoded activity
-/// summary present only on the 1244-B 6-axis buffer (see `decodedImuField`). Rotates at a soft cap keeping one previous
+/// summary present only on the 1244-B 6-axis buffer (see `decodedImuField`). Controlled experiments can
+/// append a second line shape (`{"kind":"optical_phase","label":…,"unix_ts":…,"ts_ms":…}`); the phone
+/// Unix second is compared with `strap_ts`, so a delayed offload is not mistaken for the activity at
+/// arrival time. Rotates at a soft cap keeping one previous
 /// generation, the same idiom as `PuffinEventLog`. Swift-only for now (experimental #423 instrument);
 /// a Kotlin twin follows if this graduates past reverse-engineering.
 @MainActor
@@ -55,6 +85,19 @@ final class PuffinDeepBufferLog {
 
     private var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: PuffinFrameRecorder.enabledKey)
+    }
+
+    private struct MarkerLine: Encodable {
+        let kind: String
+        let label: String
+        let unixTs: Int
+        let tsMs: Int
+
+        enum CodingKeys: String, CodingKey {
+            case kind, label
+            case unixTs = "unix_ts"
+            case tsMs = "ts_ms"
+        }
     }
 
     /// `<AppSupport>/OpenWhoop/puffin-deepbuffers.jsonl` — OUTSIDE `puffin-captures/`, whose soft-cap
@@ -107,22 +150,65 @@ final class PuffinDeepBufferLog {
         let line = "{\"ts_ms\":\(tsMs),\"strap_ts\":\(strapTs),\"size\":\(frame.count),"
             + "\"offload\":\(isOffload),\"char\":\"\(char.uuidString.lowercased())\",\"hex\":\"\(hex)\"\(imu)}\n"
         do {
-            var h = try openHandle()
-            if try h.offset() > UInt64(Self.softCapBytes) {
-                close()
-                h = try openHandle()
-            }
-            try h.write(contentsOf: Data(line.utf8))
+            try append(line)
         } catch {
             // A diagnostics log must never affect the connection path: disable for this launch.
             disabled = true
         }
     }
 
+    /// Append a physical phase boundary using the same durable JSONL as the buffers. This is a local
+    /// file operation only: it does not need a BLE connection and never sends a strap command.
+    @discardableResult
+    func appendOpticalPhase(_ phase: PuffinOpticalExperimentPhase, now: Date = Date()) -> Bool {
+        guard !disabled, isEnabled else { return false }
+        let tsMs = Int(now.timeIntervalSince1970 * 1000)
+        let unixTs = Int(now.timeIntervalSince1970)
+        guard let line = Self.markerJSONLine(phase: phase, tsMs: tsMs, unixTs: unixTs) else {
+            return false
+        }
+        do {
+            try append(line + "\n")
+            return true
+        } catch {
+            disabled = true
+            return false
+        }
+    }
+
+    /// Pure encoder pinned by a unit test so the offline analyzer and app cannot silently drift apart.
+    nonisolated static func markerJSONLine(
+        phase: PuffinOpticalExperimentPhase, tsMs: Int, unixTs: Int
+    ) -> String? {
+        let marker = MarkerLine(kind: "optical_phase", label: phase.rawValue,
+                                unixTs: unixTs, tsMs: tsMs)
+        guard let data = try? JSONEncoder().encode(marker) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Close the handle and return the live generation for sharing. Experiments are intentionally kept
+    /// short enough to stay below the 60 MB rotation cap; the previous generation remains on disk.
+    func opticalExperimentURL() -> URL? {
+        close()
+        guard let url = try? Self.logURL(), FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
+    }
+
     /// Close the handle (e.g. on disconnect) so the file is safe to share/export immediately.
     func close() {
         try? handle?.close()
         handle = nil
+    }
+
+    private func append(_ line: String) throws {
+        var h = try openHandle()
+        if try h.offset() > UInt64(Self.softCapBytes) {
+            close()
+            h = try openHandle()
+        }
+        try h.write(contentsOf: Data(line.utf8))
     }
 
     private func openHandle() throws -> FileHandle {

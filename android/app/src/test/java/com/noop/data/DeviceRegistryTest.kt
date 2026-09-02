@@ -2,8 +2,10 @@ package com.noop.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -53,8 +55,18 @@ class DeviceRegistryTest {
             devices[id]?.let { devices[id] = it.copy(status = DeviceStatus.archived.name) }
         }
 
+        override suspend fun setModel(id: String, model: String) {
+            devices[id]?.let { devices[id] = it.copy(model = model) }
+        }
+
         override suspend fun renameDevice(id: String, nickname: String?) {
             devices[id]?.let { devices[id] = it.copy(nickname = nickname) }
+        }
+        override suspend fun touchLastSeen(id: String, now: Long) {
+            // #1527, mirrors the query's `AND status != 'archived'`.
+            devices[id]?.let {
+                if (it.status != DeviceStatus.archived.name) devices[id] = it.copy(lastSeenAt = now)
+            }
         }
 
         override suspend fun setPeripheralId(id: String, peripheralId: String?) {
@@ -85,7 +97,7 @@ class DeviceRegistryTest {
         override suspend fun deleteStepsFor(deviceId: String) { deletedTables += "stepSample" to deviceId }
         override suspend fun deletePpgHrFor(deviceId: String) { deletedTables += "ppgHrSample" to deviceId }
         override suspend fun deletePpgWaveformFor(deviceId: String) { deletedTables += "ppgWaveformSample" to deviceId }
-        override suspend fun deleteRawImuFor(deviceId: String) { deletedTables += "rawImuSample" to deviceId }
+        override suspend fun deleteV18AuxFor(deviceId: String) { deletedTables += "v18AuxSample" to deviceId }
         override suspend fun deleteEventsFor(deviceId: String) { deletedTables += "event" to deviceId }
         override suspend fun deleteBatteryFor(deviceId: String) { deletedTables += "battery" to deviceId }
         override suspend fun deleteDailyMetricsFor(deviceId: String) { deletedTables += "dailyMetric" to deviceId }
@@ -93,16 +105,58 @@ class DeviceRegistryTest {
         override suspend fun deleteJournalFor(deviceId: String) { deletedTables += "journal" to deviceId }
         override suspend fun deleteWorkoutsFor(deviceId: String) { deletedTables += "workout" to deviceId }
         override suspend fun deleteAppleDailyFor(deviceId: String) { deletedTables += "appleDaily" to deviceId }
+        override suspend fun deleteAppleStepHoursFor(deviceId: String) { deletedTables += "appleStepHour" to deviceId }
         override suspend fun deleteMetricSeriesFor(deviceId: String) { deletedTables += "metricSeries" to deviceId }
         override suspend fun deleteDayOwnershipFor(deviceId: String) {
             deletedTables += "dayOwnership" to deviceId
             owners.entries.removeIf { it.value.deviceId == deviceId }
+        }
+        override suspend fun deleteScoreInputProvenanceFor(deviceId: String) {
+            deletedTables += "scoreInputProvenance" to deviceId
         }
         override suspend fun deleteSleepStatesFor(deviceId: String) { deletedTables += "sleepStateSample" to deviceId }
         override suspend fun deleteLabMarkersFor(deviceId: String) { deletedTables += "labMarker" to deviceId }
         override suspend fun deleteLiveSessionsFor(deviceId: String) { deletedTables += "liveSession" to deviceId }
         override suspend fun deleteDismissedWorkoutsFor(deviceId: String) { deletedTables += "dismissedWorkout" to deviceId }
         override suspend fun deleteDismissedSleepsFor(deviceId: String) { deletedTables += "dismissedSleep" to deviceId }
+
+        // #771 adopt-serial re-key: sample-table re-keys are unmodelled here (no per-table storage in
+        // this fake), same as the delete*For no-ops above for those tables. dayOwnership IS modelled
+        // ([owners]), so its re-key actually mutates state, mirroring `UPDATE OR IGNORE ... WHERE
+        // deviceId = :from` (no PK clash possible since `day`, not `deviceId`, is the row's key).
+        override suspend fun reKeyHr(from: String, to: String) {}
+        override suspend fun reKeyRr(from: String, to: String) {}
+        override suspend fun reKeySpo2(from: String, to: String) {}
+        override suspend fun reKeySkinTemp(from: String, to: String) {}
+        override suspend fun reKeyResp(from: String, to: String) {}
+        override suspend fun reKeyGravity(from: String, to: String) {}
+        override suspend fun reKeySteps(from: String, to: String) {}
+        override suspend fun reKeyPpgHr(from: String, to: String) {}
+        override suspend fun reKeyPpgWaveform(from: String, to: String) {}
+        override suspend fun reKeyV18Aux(from: String, to: String) {}
+        override suspend fun reKeyEvents(from: String, to: String) {}
+        override suspend fun reKeyBattery(from: String, to: String) {}
+        override suspend fun reKeyDailyMetrics(from: String, to: String) {}
+        override suspend fun reKeySleepSessions(from: String, to: String) {}
+        override suspend fun reKeyJournal(from: String, to: String) {}
+        override suspend fun reKeyWorkouts(from: String, to: String) {}
+        override suspend fun reKeyAppleDaily(from: String, to: String) {}
+        override suspend fun reKeyAppleStepHour(from: String, to: String) {}
+        override suspend fun reKeyMetricSeries(from: String, to: String) {}
+        override suspend fun reKeyDayOwnership(from: String, to: String) {
+            for ((day, row) in owners) if (row.deviceId == from) owners[day] = row.copy(deviceId = to)
+        }
+        override suspend fun reKeySleepStates(from: String, to: String) {}
+        override suspend fun reKeyLabMarkers(from: String, to: String) {}
+        override suspend fun reKeyLiveSessions(from: String, to: String) {}
+        override suspend fun reKeyDismissedWorkouts(from: String, to: String) {}
+        override suspend fun reKeyDismissedSleeps(from: String, to: String) {}
+
+        /** The registry row for [id], or null (#771 adopt-serial needs the active row's fields). */
+        override suspend fun pairedDevice(id: String): PairedDeviceRow? = devices[id]
+
+        override suspend fun deletePairedDeviceRow(id: String) { devices.remove(id) }
+        override suspend fun deleteDeviceRow(id: String) {}
     }
 
     /** Registry over the fake DAO with a pass-through transactor (Room's withTransaction stand-in). */
@@ -131,6 +185,16 @@ class DeviceRegistryTest {
         assertEquals(1, all.size)
         assertEquals("my-whoop", all.first().id)
         assertEquals("my-whoop", reg.activeDeviceId())
+    }
+
+    /** #548: stale registry bits listing calibrated SpO₂ must not surface for a live WHOOP. */
+    @Test
+    fun allStripsSpo2FromWhoopCapabilities() = runBlocking {
+        val reg = registryWith(seededDao())
+        val caps = reg.all().first().capabilities
+        assertFalse(caps.split(',').contains("spo2"))
+        assertTrue(caps.contains("hr"))
+        assertTrue(caps.contains("skinTemp"))
     }
 
     @Test
@@ -164,6 +228,17 @@ class DeviceRegistryTest {
         assertEquals(1, reg.all().size)
         assertEquals(DeviceStatus.archived.name, reg.all().first().status)
         assertNull(reg.activeDeviceId())
+    }
+
+    @Test
+    fun forgetRemovesRegistryRowAndWipesData() = runBlocking {
+        // #1193: unlike archive (row kept, I4) and deleteDeviceData (row kept), forget PURGES the registry
+        // entry so a duplicate/stale strap disappears from the list entirely — after wiping its recordings.
+        val dao = seededDao()
+        val reg = registryWith(dao)
+        reg.forget("my-whoop")
+        assertTrue(reg.all().isEmpty())                               // registry row purged, not just archived
+        assertTrue(dao.deletedTables.any { it.second == "my-whoop" }) // its recorded data was wiped first
     }
 
     @Test
@@ -235,9 +310,15 @@ class DeviceRegistryTest {
         // were missing, leaving raw sleep-state, lab markers, live sessions and dismissed markers behind.
         val expectedTables = setOf(
             "hrSample", "rrInterval", "spo2Sample", "skinTempSample", "respSample", "gravitySample",
-            "stepSample", "ppgHrSample", "ppgWaveformSample", "rawImuSample", "event", "battery", "dailyMetric", "sleepSession",
+            "stepSample", "ppgHrSample", "ppgWaveformSample", "v18AuxSample",
+            "event", "battery", "dailyMetric", "sleepSession",
             "journal", "workout", "appleDaily", "metricSeries", "dayOwnership",
+            "scoreInputProvenance",
             "sleepStateSample", "labMarker", "liveSession", "dismissedWorkout", "dismissedSleep",
+            // v38-apple-step-hour: hourly Apple-Health steps. No Android importer writes this table, but a
+            // `.noopbak` restored from iOS carries its rows — and THIS path is "Remove Apple Health
+            // imported data", so leaving them behind would be the plainest form of the defect.
+            "appleStepHour",
         )
         assertEquals(expectedTables, dao.deletedTables.map { it.first }.toSet())
         // Every delete was scoped to the requested device, not the seeded my-whoop.

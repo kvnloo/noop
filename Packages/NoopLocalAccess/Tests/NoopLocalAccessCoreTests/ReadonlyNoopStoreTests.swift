@@ -9,6 +9,9 @@ final class ReadonlyNoopStoreTests: XCTestCase {
 
         XCTAssertTrue(try store.isReadOnlyForTest())
         XCTAssertEqual(try store.latestHRSampleTs(deviceId: "my-whoop"), 102)
+        let buckets = try store.hrBuckets(deviceId: "my-whoop", from: 100, to: 102, bucketSeconds: 1)
+        XCTAssertEqual(buckets.map(\.ts), [100, 101, 102])
+        XCTAssertEqual(buckets.map(\.bpm), [70, 72, 73.2])
         XCTAssertEqual(try store.metricKeys(deviceId: "my-whoop"), ["hrv"])
 
         let daily = try store.dailyMetrics(deviceId: "my-whoop", from: "2026-06-01", to: "2026-06-30")
