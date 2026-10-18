@@ -14,6 +14,7 @@
   The order is deterministic and unit tested; no AI/network inference.
 - **Ephemeral suggestions:** dismiss for the current context only. They return on context
   transitions, and are never saved in the database or preferences.
+  **Dismissed suggestions re-arm on context transitions (time-of-day, BLE state, workout).**
 - **Two-item dock:** Today and More. All advanced features remain in existing routes.
 - **Escape hatch:** Full dashboard reveals the original Today. Use its Quick actions
   drawer → Return to focus to switch back, without altering layout preferences.
@@ -42,7 +43,7 @@ The design uses the current `NoopType`, `Palette`, and `Metrics` tokens.
 
 **Pilot constraint:** #51 is only a UI source branch. A longitudinal Breathe →
 Journal pilot must also incorporate either [#53](https://github.com/kvnloo/noop/pull/53)
-(no implicit previous-answer copy) or [#58](https://github.com/kvnloo/noop/pull/58)
+(no implicit previous-answer copy) or [58](https://github.com/kvnloo/noop/pull/58)
 (explicit copy confirmation), not both without review. Neither PR is an ancestry
 or build-time dependency of this UI port. No pilot or hardware validation is claimed.
 
