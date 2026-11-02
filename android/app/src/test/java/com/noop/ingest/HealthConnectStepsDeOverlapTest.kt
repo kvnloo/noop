@@ -90,4 +90,14 @@ class HealthConnectStepsDeOverlapTest {
             assertNull(result.lastDay)
         }
     }
+
+    @Test fun disjointSameWriterRecordCannotSubtractFromWorkoutCalories() {
+        // Negative control: HealthConnectImporter.kt:1336 skips overlap <= 0L.
+        // Removing it would subtract 80 kcal from the same writer's 100 kcal in-window total.
+        val records = listOf(
+            HealthConnectImporter.KcalRecord(100, 200, 100.0, "phone"),
+            HealthConnectImporter.KcalRecord(300, 400, 80.0, "phone"),
+        )
+        assertEquals(100.0, HealthConnectImporter.sumKcalInWindow(records, 100, 200)!!, 0.001)
+    }
 }
