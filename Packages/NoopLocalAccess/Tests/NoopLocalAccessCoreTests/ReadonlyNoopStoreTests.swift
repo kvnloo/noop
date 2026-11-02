@@ -103,6 +103,33 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         }
     }
 
+    func testReadOnlyConnectionRejectsWriteAndLeavesFixtureUnchanged() throws {
+        try TemporaryDatabase.withFixture(TemporaryDatabase.seeded) { url in
+            let original = try TemporaryDatabase.snapshot(at: url)
+            let store = try ReadonlyNoopStore(path: url.path)
+
+            XCTAssertTrue(try store.isReadOnlyForTest())
+            XCTAssertThrowsError(try store.writeProbeForTest())
+
+            let after = try TemporaryDatabase.snapshot(at: url)
+            XCTAssertEqual(after.bytes, original.bytes)
+            XCTAssertEqual(after, original)
+            XCTAssertFalse(after.schema.contains { $0.contains("__noop_local_access_write_probe") })
+        }
+    }
+
+    func testOpeningMissingStorePathDoesNotCreateDatabaseFile() throws {
+        try TemporaryDatabase.withFixture(TemporaryDatabase.emptyFileURL) { fixture in
+            let missing = fixture.deletingLastPathComponent().appendingPathComponent("missing.sqlite")
+            let fm = FileManager.default
+
+            XCTAssertFalse(fm.fileExists(atPath: missing.path))
+            XCTAssertThrowsError(try ReadonlyNoopStore(path: missing.path))
+            XCTAssertFalse(fm.fileExists(atPath: missing.path))
+            XCTAssertTrue(fm.fileExists(atPath: fixture.path))
+        }
+    }
+
     func testNonSQLiteFileIsNotRewrittenAsAStore() throws {
         try TemporaryDatabase.withFixture(TemporaryDatabase.emptyFileURL) { url in
             let original = Data("not a SQLite database".utf8)
