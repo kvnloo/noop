@@ -179,4 +179,72 @@ final class BehaviorRecipeEvidenceTests: XCTestCase {
         XCTAssertFalse(afterClear.contains { $0.day == days[10] || $0.day == days[11] })
     }
 
+
+    /// Missing wearable samples are not zeroes, even when the user answered the Journal.
+    /// Conversely a sampled day with no answer is neither a Yes nor an explicit No.
+    func testUncoveredOutcomesAndUnansweredDaysFailClosed() throws {
+        let factor = "Did you have caffeine late in the day?"
+        let yes = Set(days.prefix(5))
+        let no = Set(days.dropFirst(5).prefix(5))
+        var outcomes = Dictionary(uniqueKeysWithValues: zip(
+            Array(days.prefix(4)) + Array(days.dropFirst(5).prefix(4)),
+            [82.0, 80.0, 84.0, 78.0, 87.0, 89.0, 85.0, 86.0]
+        ))
+        // Real metric coverage without a Journal answer must not create a control.
+        outcomes[days[10]] = 1000
+        // The fifth Yes and fifth explicit No have no wearable metric samples.
+        XCTAssertNil(outcomes[days[4]])
+        XCTAssertNil(outcomes[days[9]])
+
+        let effect = try XCTUnwrap(BehaviorInsights.effect(
+            behaviorDays: yes, controlDays: no, outcomeByDay: outcomes,
+            behavior: factor, outcome: "sleep_efficiency"
+        ))
+        XCTAssertEqual(effect.nWith, 4)
+        XCTAssertEqual(effect.nWithout, 4)
+        XCTAssertEqual(effect.meanWith, 81, accuracy: 1e-9)
+        XCTAssertEqual(effect.meanWithout, 86.75, accuracy: 1e-9)
+        XCTAssertEqual(effect.delta, -5.75, accuracy: 1e-9)
+        XCTAssertFalse(effect.significant)
+        // With fewer than five paired samples per group, no lag may be promoted.
+        XCTAssertTrue(EffectRanker.rank(
+            behaviors: [factor: yes], controls: [factor: no],
+            outcomeByDay: outcomes, outcome: "sleep_efficiency"
+        ).isEmpty)
+        XCTAssertNil(BehaviorInsights.effect(
+            behaviorDays: yes, controlDays: no,
+            outcomeByDay: [days[10]: 1000],
+            behavior: factor, outcome: "sleep_efficiency"
+        ))
+    }
+
+    /// Journal dates are wake-day keys; a next-morning result crosses New Year
+    /// without shifting the question into an unlogged day or losing a paired row.
+    func testWakeDayNextMorningJoinAcrossYearBoundary() {
+        let journalDays = [
+            "2026-12-26", "2026-12-27", "2026-12-28", "2026-12-29",
+            "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02",
+            "2027-01-03", "2027-01-04"
+        ]
+        let nextMornings = [
+            "2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30",
+            "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03",
+            "2027-01-04", "2027-01-05"
+        ]
+        let outcomes = Dictionary(uniqueKeysWithValues: zip(
+            nextMornings, [82.0, 80.0, 84.0, 78.0, 81.0, 87.0, 89.0, 85.0, 86.0, 88.0]
+        ))
+        let factor = "Did you have caffeine late in the day?"
+        let ranked = EffectRanker.rank(
+            behaviors: [factor: Set(journalDays.prefix(5))],
+            controls: [factor: Set(journalDays.suffix(5))],
+            outcomeByDay: outcomes, outcome: "sleep_efficiency"
+        )
+        XCTAssertEqual(ranked.count, 1)
+        XCTAssertEqual(ranked.first?.lag, 1)
+        XCTAssertEqual(ranked.first?.effect.nWith, 5)
+        XCTAssertEqual(ranked.first?.effect.nWithout, 5)
+        XCTAssertEqual(ranked.first?.effect.delta ?? .nan, -6, accuracy: 1e-9)
+    }
+
 }

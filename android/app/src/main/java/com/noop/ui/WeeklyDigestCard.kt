@@ -2,7 +2,6 @@ package com.noop.ui
 
 import com.noop.R
 import androidx.compose.ui.res.stringResource
-import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -245,7 +244,7 @@ private fun MetricRow(s: WeeklyMetricSummary, effortScale: EffortScale) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            uiString(s.metric.labelRes()),
+            s.metric.label,
             style = NoopType.subhead,
             color = Palette.textSecondary,
             modifier = Modifier.width(92.dp),
@@ -326,16 +325,6 @@ private fun chipTone(s: WeeklyMetricSummary): Color = when {
     s.wowGoodness == 1 -> Palette.statusPositive
     s.wowGoodness == -1 -> Palette.statusCritical
     else -> Palette.textTertiary
-}
-
-/** The localized display name for a digest metric; [WeeklyMetric.label] stays English for narration. */
-@StringRes
-private fun WeeklyMetric.labelRes(): Int = when (this) {
-    WeeklyMetric.CHARGE -> R.string.today_metric_charge
-    WeeklyMetric.EFFORT -> R.string.today_metric_effort
-    WeeklyMetric.REST -> R.string.today_metric_rest
-    WeeklyMetric.RHR -> R.string.today_metric_resting_hr
-    WeeklyMetric.HRV -> R.string.today_metric_hrv
 }
 
 private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale): String {

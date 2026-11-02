@@ -91,4 +91,61 @@ class BehaviorRecipeEvidenceTest {
         assertEquals(73.0, result.meanWithout, 1e-9)
         assertEquals(-12.0, result.delta, 1e-9)
     }
+
+    @Test fun uncoveredOutcomesAndUnansweredDaysFailClosed() {
+        val factor = "Did you have caffeine late in the day?"
+        val yes = days.take(5).toSet()
+        val no = days.drop(5).take(5).toSet()
+        val outcomes = ((days.take(4) + days.drop(5).take(4)) zip listOf(
+            82.0, 80.0, 84.0, 78.0, 87.0, 89.0, 85.0, 86.0,
+        )).toMap() + (days[10] to 1000.0)
+        // Missing WHOOP samples, even on explicit Yes/No Journal days, are not zero outcomes.
+        assertTrue(days[4] !in outcomes && days[9] !in outcomes)
+
+        val effect = requireNotNull(EffectRanker.effect(
+            yes, no, outcomes, factor, "sleep_efficiency",
+        ))
+        assertEquals(4, effect.nWith)
+        assertEquals(4, effect.nWithout)
+        assertEquals(81.0, effect.meanWith, 1e-9)
+        assertEquals(86.75, effect.meanWithout, 1e-9)
+        assertEquals(-5.75, effect.delta, 1e-9)
+        assertTrue(!effect.significant)
+        // No lag qualifies below the five-per-group gate, even with an unlogged metric day.
+        assertTrue(EffectRanker.rank(
+            behaviors = mapOf(factor to yes), controls = mapOf(factor to no),
+            outcomeByDay = outcomes, outcome = "sleep_efficiency",
+        ).isEmpty())
+        assertTrue(EffectRanker.effect(
+            yes, no, mapOf(days[10] to 1000.0), factor, "sleep_efficiency",
+        ) == null)
+    }
+
+    @Test fun wakeDayNextMorningJoinAcrossYearBoundary() {
+        val journalDays = listOf(
+            "2026-12-26", "2026-12-27", "2026-12-28", "2026-12-29",
+            "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02",
+            "2027-01-03", "2027-01-04",
+        )
+        val nextMornings = listOf(
+            "2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30",
+            "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03",
+            "2027-01-04", "2027-01-05",
+        )
+        val outcome = (nextMornings zip listOf(
+            82.0, 80.0, 84.0, 78.0, 81.0, 87.0, 89.0, 85.0, 86.0, 88.0,
+        )).toMap()
+        val factor = "Did you have caffeine late in the day?"
+        val ranked = EffectRanker.rank(
+            behaviors = mapOf(factor to journalDays.take(5).toSet()),
+            controls = mapOf(factor to journalDays.takeLast(5).toSet()),
+            outcomeByDay = outcome, outcome = "sleep_efficiency",
+        )
+        assertEquals(1, ranked.size)
+        assertEquals(1, ranked.single().lag)
+        assertEquals(5, ranked.single().effect.nWith)
+        assertEquals(5, ranked.single().effect.nWithout)
+        assertEquals(-6.0, ranked.single().effect.delta, 1e-9)
+    }
+
 }

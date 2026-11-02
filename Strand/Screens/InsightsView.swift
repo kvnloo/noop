@@ -750,8 +750,9 @@ struct InsightsView: View {
 
     /// Behaviours the user actually has data for: distinct logged journal questions
     /// (`behaviours.keys`) ∪ imported-export questions, minus the catalog's hidden set.
-    /// The full catalog resolver includes starter questions without history. Experiment eligibility
-    /// instead includes only behaviours with history and excludes hidden questions.
+    /// Triage fix (a)/(b): we do NOT route this through `mergeCatalog`, which would inject
+    /// the whole starter catalog (and re-surface hidden behaviours) as eligible, so the
+    /// empty-state guard is real and only behaviours with history can be tested.
     private var experimentCandidates: [String] {
         let saved = experimentBehaviour.trimmingCharacters(in: .whitespacesAndNewlines)
         let hidden = Set(catalog.hiddenQuestions.map { $0.trimmingCharacters(in: .whitespaces).lowercased() })

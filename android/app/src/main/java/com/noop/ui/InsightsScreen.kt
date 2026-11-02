@@ -1281,8 +1281,9 @@ private fun ExperimentBehaviourPicker(
 /**
  * Behaviours the user actually has data for: distinct logged journal questions
  * (`behaviours.keys`) ∪ imported-export questions, minus the catalog's hidden set.
- * The full catalog resolver includes starter questions without history. Experiment eligibility
- * instead includes only behaviours with history and excludes hidden questions.
+ * Triage fix (a)/(b): we do NOT route this through `mergeJournalCatalog`, which would
+ * inject the whole starter catalog (and re-surface hidden behaviours), so only
+ * behaviours with real history are eligible, and the empty-state guard is real.
  */
 private fun experimentCandidates(
     behaviours: Map<String, Set<String>>,
