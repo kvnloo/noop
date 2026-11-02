@@ -49,4 +49,10 @@ class HealthConnectSelfWriteSkipTest {
             )
         }
     }
+
+    @Test fun blankInstalledAndBlankOriginAreNotTreatedAsSelfWrites() {
+        // Negative control: HealthConnectImporter.kt:1137 guards equality with selfPackage.isNotEmpty().
+        // Without that guard, "" == "" would skip an unknown-origin record.
+        assertFalse(HealthConnectImporter.isSelfWritten("", ""))
+    }
 }
