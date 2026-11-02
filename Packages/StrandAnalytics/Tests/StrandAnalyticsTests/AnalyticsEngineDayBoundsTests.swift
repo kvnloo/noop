@@ -119,4 +119,69 @@ final class AnalyticsEngineDayBoundsTests: XCTestCase {
             XCTAssertNotNil(full.daily.activeKcalEst)
         }
     }
+
+    // MARK: - Rest with missing coverage at the day boundary
+
+    /// A day with no asleep time keeps Rest UNKNOWN. That holds at fractional offsets, with samples
+    /// spilling into both neighbour days. The fixture is steps only: the day has activity, and
+    /// nothing in it can be staged as sleep. Unknown means a nil score and a `.calibrating`
+    /// confidence. A persisted row with no sleep totals must not make a 0 Rest either: a 0 would
+    /// enter Insights as the worst possible night.
+    func testDayWithoutAsleepCoverageKeepsRestUnknownAtFractionalOffsets() {
+        for off in [5 * 3600 + 1800, -(9 * 3600 + 1800)] {   // +5:30 and −9:30
+            let day = "2021-06-15"
+            let localMid = AnalyticsEngine.dayStartUtcSeconds(day) - off
+            var counter = 100
+            let steps: [StepSample] = stride(from: localMid - 7_200,
+                                             to: localMid + 86_400 + 7_200, by: 60).map { ts in
+                counter += 7
+                return StepSample(ts: ts, counter: counter & 0xFFFF)
+            }
+            let r = AnalyticsEngine.analyzeDay(day: day, steps: steps, daySteps: steps,
+                                               profile: UserProfile(weightKg: 75, heightCm: 178,
+                                                                    age: 30, sex: "male"),
+                                               tzOffsetSeconds: off)
+            XCTAssertNotNil(r.daily.steps, "off=\(off): the day must have computed something")
+            XCTAssertNil(r.daily.totalSleepMin, "off=\(off)")
+            XCTAssertNil(r.restScore, "off=\(off): no asleep time is unknown Rest, not 0")
+            XCTAssertEqual(r.restConfidence, .calibrating, "off=\(off)")
+            XCTAssertNil(AnalyticsEngine.Rest.composite(daily: r.daily),
+                         "off=\(off): the persisted row must not derive a Rest either")
+        }
+    }
+
+    /// `Rest.composite(daily:)` is the single source for the `sleep_performance` series and for
+    /// the Insights Rest outcome. A row whose sleep total is absent, zero or negative returns nil,
+    /// whatever other components the row still carries. Leftover efficiency, stage minutes,
+    /// recovery or strain must not combine into a current-looking Rest for that day.
+    func testRestFromDailyIsNilWhenAsleepTotalIsMissingWhateverElseTheRowCarries() {
+        func row(tst: Double?, eff: Double?, deep: Double? = 90, rem: Double? = 100) -> DailyMetric {
+            DailyMetric(day: "2021-06-15", totalSleepMin: tst, efficiency: eff, deepMin: deep,
+                        remMin: rem, lightMin: 200, disturbances: 3, restingHr: 52, avgHrv: 61,
+                        recovery: 74, strain: 11.5, exerciseCount: 1)
+        }
+        // Absent / zero / negative asleep total, with efficiency and stage minutes still present.
+        XCTAssertNil(AnalyticsEngine.Rest.composite(daily: row(tst: nil, eff: 0.93)))
+        XCTAssertNil(AnalyticsEngine.Rest.composite(daily: row(tst: 0, eff: 0.93)))
+        XCTAssertNil(AnalyticsEngine.Rest.composite(daily: row(tst: -15, eff: 0.93)))
+        // An asleep total with no efficiency is also unknown: the composite cannot be formed.
+        XCTAssertNil(AnalyticsEngine.Rest.composite(daily: row(tst: 420, eff: nil)))
+        // Control: the same row with both totals present does score, so the nils above are the
+        // guard working and not a fixture that never scores.
+        XCTAssertNotNil(AnalyticsEngine.Rest.composite(daily: row(tst: 420, eff: 0.93)))
+    }
+
+    /// Rest confidence with no matched session is `.calibrating`, whatever the stage inputs say.
+    /// Stage totals left over from another night ("staged", high efficiency, good restorative
+    /// share) must not raise an absent night to `.building` or `.solid`.
+    func testRestConfidenceWithoutSessionIsCalibratingWhateverTheStageInputsSay() {
+        XCTAssertEqual(ScoreConfidence.rest(hasSession: false, hasStagedSleep: true), .calibrating)
+        XCTAssertEqual(ScoreConfidence.rest(hasSession: false, hasStagedSleep: true,
+                                            asleepSeconds: 7 * 3600, restorativeSeconds: 3 * 3600,
+                                            efficiency: 0.95, gravitySparse: false,
+                                            stageCoverage: 1.0), .calibrating)
+        XCTAssertEqual(ScoreConfidence.rest(hasSession: false, hasStagedSleep: false,
+                                            asleepSeconds: 0, restorativeSeconds: 0,
+                                            efficiency: 0), .calibrating)
+    }
 }
