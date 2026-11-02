@@ -20,6 +20,7 @@ public enum JournalConsistency {
     /// Baselines.isoEpochDay deliberately accepts some impossible dates (e.g. day 32),
     /// so validate imported keys first rather than turning malformed Journal rows into
     /// observations on a different date. Identical check in the Kotlin twin.
+    /// Kotlin twin: `JournalConsistency.canonicalEpochDay`.
     private static func canonicalEpochDay(_ iso: String) -> Int? {
         let bytes = Array(iso.utf8)
         guard bytes.count == 10, bytes[4] == 45, bytes[7] == 45,
@@ -40,6 +41,7 @@ public enum JournalConsistency {
     /// excluded from both streaks and the window. A missing today gives yesterday's Yes
     /// streak one day of grace; an explicit No today ends that streak immediately.
     /// All calculations are local, deterministic and side-effect-free.
+    /// Kotlin twin: `JournalConsistency.summarize`.
     public static func summarize(
         dayKeys: [String],
         answeredYes: [Bool],

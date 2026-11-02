@@ -22,6 +22,7 @@ object JournalConsistency {
     // Baselines.isoEpochDay intentionally accepts day 32. Imported Journal keys
     // must be canonical dates so impossible dates cannot become false evidence.
     // Keep this calendar gate value-for-value with the Swift twin.
+    /** Swift twin: `JournalConsistency.canonicalEpochDay`. */
     private fun canonicalEpochDay(iso: String): Int? {
         if (iso.length != 10 || iso[4] != '-' || iso[7] != '-' ||
             iso.indices.any { i -> i != 4 && i != 7 && iso[i] !in '0'..'9' }) return null
@@ -39,6 +40,7 @@ object JournalConsistency {
      * Later duplicate rows win; tomorrow/future rows do not count today.
      * A missing today preserves yesterday's Yes streak, but an explicit No
      * ends the current streak. Window clamps to 1..90 local civil days.
+     * Swift twin: `JournalConsistency.summarize`.
      */
     fun summarize(
         dayKeys: List<String>,
