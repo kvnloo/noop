@@ -80,6 +80,16 @@ object HealthExportPlan {
      *  dedup identity — a user edit must never change it), [startTs] the EFFECTIVE onset that drives
      *  the exported span (`startTsAdjusted ?: startTs`, iOS parity #318). */
     data class SleepInput(val keyStartTs: Long, val startTs: Long, val endTs: Long, val stagesJSON: String?)
+
+    /**
+     * Full-resolution HR applies to completed sleep sessions only, from the effective (possibly
+     * user-edited) onset. The caller uses the merged raw + computed "-noop" sleep view, matching
+     * the sleep writer; an unfinished or inverted session must not widen HR export resolution.
+     */
+    fun finalizedSleepWindows(sessions: List<SleepInput>, nowSec: Long): List<Window> =
+        sessions.filter { it.endTs > it.startTs && it.endTs <= nowSec }
+            .map { Window(it.startTs, it.endTs) }
+
     enum class StageKind { AWAKE, SLEEPING, LIGHT, DEEP, REM }
     data class StagePlan(val startSec: Long, val endSec: Long, val kind: StageKind)
     data class SleepPlan(
