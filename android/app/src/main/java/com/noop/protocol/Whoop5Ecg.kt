@@ -838,9 +838,9 @@ object Whoop5Ecg {
 
     // The revision-16 layout.
     //
-    // The flash-banked record that `TOGGLE_LABRADOR_RAW_SAVE(125)=1` produces. It arrives in the ordinary
-    // history offload as a type-47 HISTORICAL_DATA frame of data revision 16, not on a live channel, which
-    // is why a realtime listen never saw it (#891).
+    // Revision 16 arrives as type 47 HISTORICAL_DATA when banked by command 125, and as type 43
+    // REALTIME_RAW_DATA when command 126 enables the live mirror (#2882). Both share the same
+    // 1,584-byte layout. This decoder sends no commands.
     //
     // Offsets are INNER, like the R17 block above; `docs/PROTOCOL_ECG.md` states the same layout in FRAME
     // offsets, which are these plus [RAW_TYPE_OFFSET]. The status region is byte-identical to R17 and is
