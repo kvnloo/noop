@@ -1350,13 +1350,15 @@ private fun buildExperimentSnapshot(
     val interventionWindow = experimentValidObservationDays(
         outcomeDays = outcomeDays, from = startedDay,
         through = today, limit = duration,
-    )
+    ).filter { ExperimentAdherence.includes(it, startedDay, today, duration) }
     val interventionKeys = interventionWindow.filter { it in loggedDays }
 
     val baselineValues = baselineKeys.mapNotNull { outcomeDays[it] }
     val interventionValues = interventionKeys.mapNotNull { outcomeDays[it] }
     val daysElapsed = (dayDistance(startedDay, today) + 1).coerceIn(1, duration)
-    val complianceFraction = interventionKeys.size.toDouble() / daysElapsed.coerceAtLeast(1)
+    // Compliance tracks explicit Journal Yes, independent of wearable outcome coverage.
+    // The intervention mean still requires measured outcome days.
+    val complianceFraction = ExperimentAdherence.fraction(loggedDays, startedDay, today, duration)
     val confidence = experimentConfidence(baselineValues.size, interventionValues.size, complianceFraction)
 
     return ExperimentSnapshot(
