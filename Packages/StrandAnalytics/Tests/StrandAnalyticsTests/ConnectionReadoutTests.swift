@@ -218,6 +218,30 @@ final class ConnectionReadoutTests: XCTestCase {
             "yes")
     }
 
+    // #2809: a working 5/MG can have a seeded range with newestUnix=0 until a REAL
+    // data-range reply arrives. The placeholder is unknown, never evidence of 1970/71.
+    func testUnpopulatedFiveMGRangeDoesNotClaimAnEpochClockFault() {
+        XCTAssertEqual(
+            ConnectionReadout.clockLatchedLabel(deviceClockUnix: nil, strapNewestUnix: 0),
+            "n/a (no banked record timestamp)")
+        XCTAssertEqual(
+            ConnectionReadout.clockLatchedLabel(deviceClockUnix: nil, strapNewestUnix: -1),
+            "n/a (no banked record timestamp)")
+        XCTAssertNil(ConnectionReadout.rtcWarning(deviceClockUnix: nil, strapNewestUnix: 0))
+        XCTAssertNil(ConnectionReadout.rtcWarning(deviceClockUnix: nil, strapNewestUnix: -1))
+        // Pin the exact 1972 boundary, not just a modern vs epoch-era example.
+        XCTAssertEqual(ConnectionReadout.clockLatchedLabel(deviceClockUnix: nil, strapNewestUnix: 63_071_999),
+                       "no (records dated 1970/71)")
+        XCTAssertEqual(ConnectionReadout.clockLatchedLabel(deviceClockUnix: nil, strapNewestUnix: 63_072_000),
+                       "yes")
+        XCTAssertNotNil(ConnectionReadout.rtcWarning(deviceClockUnix: nil, strapNewestUnix: 63_071_999))
+        XCTAssertNil(ConnectionReadout.rtcWarning(deviceClockUnix: nil, strapNewestUnix: 63_072_000))
+        // A real correlated GET_CLOCK response wins over an unpopulated data range.
+        XCTAssertEqual(
+            ConnectionReadout.clockLatchedLabel(deviceClockUnix: 1_782_475_600, strapNewestUnix: 0),
+            "yes")
+    }
+
     func testRtcWarningFiresOnEpochEraClockOrNewest() {
         XCTAssertNotNil(ConnectionReadout.rtcWarning(deviceClockUnix: 40_000_000, strapNewestUnix: nil))
         XCTAssertNotNil(ConnectionReadout.rtcWarning(deviceClockUnix: nil, strapNewestUnix: 30_000_000))
