@@ -674,6 +674,13 @@ CATALOGS = [
         [ROOT / "Strand", ROOT / "StrandiOS", ROOT / "StrandiOSShared", ROOT / "StrandiOSWidgets"],
         ROOT / "Strand/Resources/Localizable.xcstrings",
     ),
+    # Separate, small translation table for the Journal habit composer. Empty
+    # source dirs prevent scanning every Swift literal twice; scan_ios below
+    # resolves strings against both app tables before declaring a missing key.
+    (
+        [],
+        ROOT / "Strand/Resources/HabitStacking.xcstrings",
+    ),
 ]
 
 SWIFT_CALL_START_PATTERN = re.compile(
@@ -1204,6 +1211,16 @@ def scan_ios(read: Reader | None = None) -> tuple[list[tuple[str, int, str]], di
     for dirs, catalog_path in CATALOGS:
         cat_text = read(catalog_path)
         cat = json.loads(cat_text) if cat_text else {"strings": {}}
+        # The Journal habit composer uses a dedicated String Catalog to avoid
+        # rewriting the 6 MB app catalog for six translated labels. The app's
+        # Swift literals may legitimately live in either table, but are scanned
+        # once. The base-ref reader returns None before the new file existed.
+        overlay_text = (
+            read(ROOT / "Strand/Resources/HabitStacking.xcstrings")
+            if catalog_path == ROOT / "Strand/Resources/Localizable.xcstrings"
+            else None
+        )
+        overlay = json.loads(overlay_text) if overlay_text else {"strings": {}}
         for base in dirs:
             if not base.exists():
                 continue
@@ -1224,7 +1241,7 @@ def scan_ios(read: Reader | None = None) -> tuple[list[tuple[str, int, str]], di
                     # Preview fixtures are not copy; see `_swift_debug_spans`.
                     if any(lo <= offset < hi for lo, hi in debug_spans):
                         continue
-                    entry = swift_catalog_lookup(cat, literal)
+                    entry = swift_catalog_lookup(cat, literal) or swift_catalog_lookup(overlay, literal)
                     line_no = text.count("\n", 0, offset) + 1
                     rel = path.relative_to(ROOT).as_posix()
                     if entry is None:
