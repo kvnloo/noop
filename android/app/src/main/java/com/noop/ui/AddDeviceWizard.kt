@@ -205,7 +205,23 @@ fun AddDeviceWizard(
         }
     }
 
+    // A scan is started only after permission AND the system radio-enable consent have completed.
+    // Preserve the chosen device family across both dialogs, including rescan and Oura's own flow.
+    var pendingScanType by remember { mutableStateOf<DeviceType?>(null) }
+    val requestBluetoothScan = rememberRequestScan {
+        pendingScanType?.let { t ->
+            pendingScanType = null
+            startScan(t)
+            if (t == DeviceType.Oura) ouraStep = OuraStep.Pick else step = WizardStep.Pick
+        }
+    }
+    fun requestScan(t: DeviceType) {
+        pendingScanType = t
+        requestBluetoothScan()
+    }
+
     fun stopAllScans() {
+        pendingScanType = null
         viewModel.stopWhoopScan()
         hrScanner.stopScan()
         ftmsScanner.stopScan()
@@ -230,10 +246,16 @@ fun AddDeviceWizard(
                 OuraStep.Pick -> { ouraScanner.stop(); pickedOura = null; ouraStep = if (ouraAdvanced) OuraStep.Gate else OuraStep.Prep }
                 OuraStep.Confirm -> {
                     // Re-enter the pick step and rescan so the user can choose a different ring.
-                    ouraScanner.scan(); pickedOura = null; ouraStep = OuraStep.Pick
+                    pickedOura = null
+                    ouraStep = if (ouraAdvanced) OuraStep.Gate else OuraStep.Prep
+                    requestScan(DeviceType.Oura)
                 }
                 // Adopting / Failed have no meaningful back; return to the pick step to try again.
-                OuraStep.Adopting, OuraStep.Failed -> { ouraScanner.scan(); pickedOura = null; ouraStep = OuraStep.Pick }
+                OuraStep.Adopting, OuraStep.Failed -> {
+                    pickedOura = null
+                    ouraStep = if (ouraAdvanced) OuraStep.Gate else OuraStep.Prep
+                    requestScan(DeviceType.Oura)
+                }
             }
             return
         }
@@ -243,9 +265,9 @@ fun AddDeviceWizard(
             WizardStep.Pick -> { stopAllScans(); step = WizardStep.Prep }
             WizardStep.Confirm -> {
                 // Re-enter the pick step and restart its scan so the user can choose a different device.
-                type?.let { startScan(it) }
                 pickedWhoop = null; pickedStrap = null; pickedMachine = null; pickedHuami = null
-                step = WizardStep.Pick
+                step = WizardStep.Prep
+                type?.let { requestScan(it) }
             }
         }
     }
@@ -482,7 +504,7 @@ fun AddDeviceWizard(
                     // key field the user scans straight through to the pick step (no factory-reset prep,
                     // because the supplied key authenticates without resetting the ring).
                     onAdvanced = { ouraAdvanced = true; ouraStep = OuraStep.Gate },
-                    onScan = { ouraScanner.scan(); ouraStep = OuraStep.Pick },
+                    onScan = { requestScan(DeviceType.Oura) },
                     onPick = { ring ->
                         pickedOura = ring
                         // Confirm the generation from the picked ring's best-effort detection, defaulting to
@@ -492,7 +514,7 @@ fun AddDeviceWizard(
                         ouraScanner.stopScan()
                         ouraStep = OuraStep.Confirm
                     },
-                    onRescan = { ouraScanner.scan() },
+                    onRescan = { requestScan(DeviceType.Oura) },
                     onAdopt = {
                         // The standard adopt is destructive (it installs NOOP's key on the ring), so it
                         // gates behind the final "Take over this ring?" alert. The Advanced key path is
@@ -502,7 +524,7 @@ fun AddDeviceWizard(
                         if (ouraAdvanced) finishAddOura(closeAfter = true)
                         else ouraConfirmAdopt = true
                     },
-                    onTryAgain = { ouraScanner.scan(); pickedOura = null; ouraStep = OuraStep.Pick },
+                    onTryAgain = { pickedOura = null; requestScan(DeviceType.Oura) },
                 )
             } else {
                 when (step) {
@@ -516,7 +538,7 @@ fun AddDeviceWizard(
                         }
                     })
                     WizardStep.Prep -> type?.let { t ->
-                        PrepStep(t, onScan = { startScan(t); step = WizardStep.Pick })
+                        PrepStep(t, onScan = { requestScan(t) })
                     }
                     WizardStep.Pick -> type?.let { t ->
                         when {
@@ -528,7 +550,7 @@ fun AddDeviceWizard(
                                     viewModel.stopWhoopScan()
                                     step = WizardStep.Confirm
                                 },
-                                onRescan = { viewModel.presentWhoopScan(t.whoopModel ?: WhoopModel.WHOOP4) },
+                                onRescan = { requestScan(t) },
                             )
                             t == DeviceType.GymEquipment -> FtmsPickStep(
                                 scanner = ftmsScanner,
@@ -539,7 +561,7 @@ fun AddDeviceWizard(
                                     ftmsScanner.stopScan()
                                     step = WizardStep.Confirm
                                 },
-                                onRescan = { ftmsScanner.scan() },
+                                onRescan = { requestScan(t) },
                             )
                             t == DeviceType.Amazfit || t == DeviceType.MiBand -> HuamiPickStep(
                                 scanner = huamiScanner,
@@ -550,7 +572,7 @@ fun AddDeviceWizard(
                                     huamiScanner.stopScan()
                                     step = WizardStep.Confirm
                                 },
-                                onRescan = { huamiScanner.scan() },
+                                onRescan = { requestScan(t) },
                             )
                             else -> HrPickStep(
                                 // Heart-rate strap AND Garmin (Broadcast HR is the standard 0x180D path).
@@ -562,7 +584,7 @@ fun AddDeviceWizard(
                                     hrScanner.stopScan()
                                     step = WizardStep.Confirm
                                 },
-                                onRescan = { hrScanner.scan() },
+                                onRescan = { requestScan(t) },
                             )
                         }
                     }
