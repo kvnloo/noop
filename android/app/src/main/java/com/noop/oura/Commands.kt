@@ -34,6 +34,10 @@ object OuraCommands {
     // client asks or whether that client is cloud-authenticated. Do not assume "off for NOOP" without
     // checking a live read.
     const val featureRealSteps = 0x0b
+    // The exercise-HR (AWHR) feature, reported as 0x73/0x74 events. Test Centre only.
+    const val featureExerciseHR = 0x03
+    // CVA raw-PPG sampling feature. Test Centre only; never consumed as a scored value.
+    const val featureCvaPpg = 0x0D
 
     // MARK: - Pre-auth / identity (unauthenticated OK)
 
@@ -192,6 +196,34 @@ object OuraCommands {
      */
     fun realStepsReadStatus(): OuraCommand =
         OuraCommand("realsteps_status", intArrayOf(0x2F, 0x02, 0x20, featureRealSteps))
+
+    /**
+     * The four features covered by the experimental Test Centre mode write, and only the two
+     * reversible modes: 0 = off and 1 = automatic. Daytime HR (0x02) has its own live-HR
+     * triplet; resting HR has no user-controlled mode. See OURA_PROTOCOL.md s7.5 and
+     * the Swift twin in OuraProtocol/Commands.swift.
+     */
+    fun featureModeWriteAllowed(feature: Int, mode: Int): Boolean =
+        feature in setOf(featureSpO2, featureRealSteps, featureExerciseHR, featureCvaPpg) &&
+            mode in 0..1
+
+    /** GetFeature status: `2f 02 20 <feature>` (read only). */
+    fun featureReadStatus(feature: Int): OuraCommand {
+        require(feature in 0..0xFF) { "feature id must be a byte" }
+        return OuraCommand("feature_status_${feature.toString(16)}",
+            intArrayOf(0x2F, 0x02, 0x20, feature))
+    }
+
+    /**
+     * SetFeatureMode: `2f 03 22 <feature> <mode>`. The caller MUST present a per-feature
+     * confirmation before sending. No driver state transition or auto-connect path calls this.
+     * The physical mode flip was verified on Gen 3 for SpO2; account-gate bypass was NOT.
+     */
+    fun setFeatureMode(feature: Int, mode: Int): OuraCommand {
+        require(featureModeWriteAllowed(feature, mode)) { "unsupported experimental feature or mode" }
+        return OuraCommand("EXPERIMENT_set_feature_${feature.toString(16)}_mode$mode",
+            intArrayOf(0x2F, 0x03, 0x22, feature, mode))
+    }
 
     /**
      * The ordered live-HR enable triplet (read, enable, subscribe). The driver gates each on its ACK.
