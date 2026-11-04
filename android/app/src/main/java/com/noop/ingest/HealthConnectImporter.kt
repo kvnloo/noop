@@ -359,6 +359,9 @@ object HealthConnectImporter {
         // #528: skip our own writes on import (see readAll / isSelfWritten).
         val selfPackage = context.packageName
         val selectedRecordTypes = readableRecordTypes(effectiveCategories, granted)
+        // Health Connect exposes the app that wrote each record, not the wearable model.
+        // Capture only selected, non-self-authored records; no import or scoring changes.
+        val observedOriginPackages = linkedSetOf<String>()
 
         // A granted permission can outlive the category selection that originally requested it. Gate
         // on BOTH here so switching a category off stops its reads immediately without requiring the
@@ -369,7 +372,12 @@ object HealthConnectImporter {
             onRecord: (T) -> Unit,
         ): Boolean {
             if (type !in selectedRecordTypes) return false
-            return readAll(client, type, range, selfPackage, onRecord)
+            return readAll(client, type, range, selfPackage) { record ->
+                record.metadata.dataOrigin.packageName.takeIf { it.isNotBlank() }?.let {
+                    observedOriginPackages.add(it)
+                }
+                onRecord(record)
+            }
         }
 
         // Per-day accumulators. Keyed by "YYYY-MM-DD" (local).
@@ -733,6 +741,13 @@ object HealthConnectImporter {
         // strap-write path already uses. Best-effort - a stamp failure must not sink a good import.
             // Stamped on the EMPTY path too, deliberately: "ran and found nothing" and "never ran" are
             // different diagnoses and this is the only line that separates them.
+
+            // Update only after a completed import. Failed reads keep the last successful snapshot.
+            runCatching {
+                prefs(context).edit()
+                    .putStringSet("hc.lastImportOriginPackages", observedOriginPackages.toSet())
+                    .apply()
+            }
             recordImportRun(context, rows = 0, throughDay = null)
             return ImportSummary(
                 source = SOURCE,
@@ -893,6 +908,12 @@ object HealthConnectImporter {
         // there" cannot be told from "Health Connect never imported it" without this: the log had per-source
         // row counts but nothing about WHEN they last moved. Mirrors the sync.lastWriteOkAt pattern the
         // strap-write path already uses. Best-effort - a stamp failure must not sink a good import.
+        // A successful import replaces the previous local writer-app snapshot.
+        runCatching {
+            prefs(context).edit()
+                .putStringSet("hc.lastImportOriginPackages", observedOriginPackages.toSet())
+                .apply()
+        }
         recordImportRun(context, rows = total, throughDay = lastDay)
         return ImportSummary(
             source = SOURCE,
