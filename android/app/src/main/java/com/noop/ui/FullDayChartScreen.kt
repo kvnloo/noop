@@ -30,6 +30,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.noop.R
 import com.noop.analytics.HrvAnalyzer
+import com.noop.analytics.IntelligenceEngine
+import com.noop.analytics.StreamReadCap
+import com.noop.data.SkinTempSample
+import com.noop.protocol.Whoop4SkinTemp
 import com.noop.data.OuraRespScale
 import com.noop.protocol.DeviceFamily
 import com.noop.protocol.skinTempCelsius
@@ -383,6 +387,24 @@ private fun TimelineStat(label: String, value: String, modifier: Modifier = Modi
 
 // MARK: - Read
 
+/** Exactly the default 21-day scoring anchor window, independent of chart zoom/pan (#2884).
+ *  Twin of Repository.skinTempTimelineAnchorWindow. */
+internal fun timelineSkinAnchorWindow(nowSeconds: Long, offsetSec: Long): LongRange {
+    val midnight = IntelligenceEngine.midnightLocal(nowSeconds, offsetSec)
+    return (midnight - 20L * 86_400L - StreamReadCap.LOOKBACK_SECONDS)..(midnight + 18L * 3_600L)
+}
+
+/** Convert the visible rows with the device's whole-window anchor, not their own median (#2884).
+ *  WHOOP 5/MG keeps its direct centidegree scale; sparse 4.0 history keeps the existing fallback. */
+internal fun timelineSkinTempPoints(
+    visible: List<SkinTempSample>, family: DeviceFamily, anchorWindowRaws: List<Int>,
+): List<TimelinePoint> {
+    val anchor = if (family == DeviceFamily.WHOOP4)
+        Whoop4SkinTemp.deviceAnchorRaw(anchorWindowRaws) else null
+    return visible.map { TimelinePoint(it.ts, skinTempCelsius(it.raw, family,
+        anchor ?: Whoop4SkinTemp.ANCHOR_RAW)) }
+}
+
 /** Adaptive read: HR rides the COALESCE-preserving Room reads (buckets at day scale, raw when zoomed);
  *  other metrics read their raw sample tables and bin in-process when zoomed out. */
 private suspend fun readTimeline(
@@ -441,8 +463,18 @@ private suspend fun readTimeline(
             val d = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
                 .firstOrNull { it.id == deviceId }
             val family = DeviceFamily.forRegistryDevice(d?.model, d?.brand) ?: DeviceFamily.WHOOP5
-            runCatching { repo.skinTempSamples(deviceId, from, to, 200_000) }.getOrDefault(emptyList())
-                .map { TimelinePoint(it.ts, skinTempCelsius(it.raw, family)) }
+            val visible = runCatching { repo.skinTempSamples(deviceId, from, to, 200_000) }
+                .getOrDefault(emptyList())
+            // #2884: learn from the SAME 21-day per-device window as nightly scoring, never the
+            // chart's zoomed/panned range; WHOOP 5/MG needs no second read.
+            val anchorRaws = if (family == DeviceFamily.WHOOP4) {
+                val now = System.currentTimeMillis() / 1_000L
+                val offsetSec = java.util.TimeZone.getDefault().getOffset(now * 1_000L) / 1_000L
+                val bounds = timelineSkinAnchorWindow(now, offsetSec)
+                runCatching { repo.skinTempSamples(deviceId, bounds.first, bounds.last, StreamReadCap.SKIN) }
+                    .getOrDefault(emptyList()).map { it.raw }
+            } else emptyList()
+            timelineSkinTempPoints(visible, family, anchorRaws)
         }
         TimelineMetric.Respiration ->
             // Two quantities share this table: a WHOOP's raw respiration ADC waveform (plotted verbatim,
