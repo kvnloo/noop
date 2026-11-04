@@ -1675,7 +1675,7 @@ class OuraLiveSource(
         // Ready is the step that writes `get_nonce`; from here the session waits on the ring, and nothing
         // else is armed until `auth OK`. Start the clock on that wait (#2304).
         if (transition == OuraTransition.Ready && d.phase == OuraDriverPhase.Authenticating) armAuthWatchdog()
-        when (d.phase) {
+        when (val state = d.phase) {
             OuraDriverPhase.EnablingLiveHR -> authRefusalRetries = 0
             OuraDriverPhase.Streaming -> {
                 authRefusalRetries = 0
@@ -1725,7 +1725,7 @@ class OuraLiveSource(
             is OuraDriverPhase.AuthFailed -> {
                 if (authRefusalRetries == 0) {
                     authRefusalRetries = 1
-                    log("Oura: auth status ${d.phase.status.name} - retrying once before a pairing verdict")
+                    log("Oura: auth status ${state.status.name} - retrying once before a pairing verdict")
                     clearAuthWatchdog()
                     d.stop()
                     runCatching { gatt?.disconnect() }
