@@ -1587,7 +1587,7 @@ public final class BLEManager: NSObject, ObservableObject {
         state.seedBatterySamples(seed)
     }
 
-        /// Designated initializer for testing and preview use: accepts a pre-built Collector.
+    /// Designated initializer for testing and preview use: accepts a pre-built Collector.
     init(state: LiveState, deviceId: String = "my-whoop", collector: Collector?) {
         self.state = state
         self.deviceId = deviceId
