@@ -231,11 +231,11 @@ data class RawLabradorPacket(
 }
 
 /**
- * The flash-banked raw ECG record: type 47 HISTORICAL_DATA, data revision 16, exactly 1584 bytes.
+ * The raw ECG record: type 43 live or type 47 stored, data revision 16, exactly 1584 bytes.
  *
- * `TOGGLE_LABRADOR_RAW_SAVE(125)=1` banks the generation to flash as these, which arrive in the ordinary
- * history offload rather than on a live channel. That delivery path is why every 30-second realtime listen
- * in #891 reported silence while the strap was in fact recording.
+ * Command 125 banks R16 to flash (type 47); command 126 can mirror it live (type 43), as observed
+ * on one MG running 50.40.1.0 (#2882). The decoder sends no commands and assumes no waveform units,
+ * toggle persistence, or battery cost.
  *
  * Carries wire structure only: 500 three-byte slots holding signed 18-bit samples plus two flag bits, and
  * a fixed lead-off diagnostic trailer. It establishes no volts per count and nothing clinical.
@@ -585,7 +585,7 @@ object Whoop5Ecg {
      * Decode a [LabradorR16] from a complete INNER record — the bytes from the packet-type byte onwards,
      * which on a 5/MG frame means `frame[8..]`.
      *
-     * Accepts only a type-47 record of data revision 16 whose inner length is exactly [R16_INNER_LENGTH].
+     * Accepts type 43 (live) or type 47 (stored) of revision 16, with exact [R16_INNER_LENGTH].
      * The length is REQUIRED rather than derived, unlike R17: every region after the waveform sits at a
      * FIXED offset, so a short buffer cannot be decoded by shrinking the sample block — it would read the
      * lead-off arrays from inside the waveform. A declared `sampleCount` above [R16_MAX_SAMPLES] is an
@@ -597,7 +597,7 @@ object Whoop5Ecg {
     fun parseR16(inner: List<Int>): LabradorR16? {
         if (inner.size != R16_INNER_LENGTH) return null
         for (i in inner.indices) if (inner[i] !in 0..255) return null
-        if (inner[0] != STORED_RECORD_TYPE || inner[1] != R16_REVISION) return null
+        if ((inner[0] != RAW_RECORD_TYPE && inner[0] != STORED_RECORD_TYPE) || inner[1] != R16_REVISION) return null
         val count = u16le(inner, 24)
         if (count > R16_MAX_SAMPLES) return null
 
@@ -694,7 +694,8 @@ object Whoop5Ecg {
     /** True for an R16-shaped frame. Shape only. Swift twin: `Whoop5Ecg.isR16Record`. */
     fun isR16Record(frame: ByteArray): Boolean =
         frame.size == R16_RECORD_LENGTH &&
-            (frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == STORED_RECORD_TYPE &&
+            ((frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == RAW_RECORD_TYPE ||
+                (frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == STORED_RECORD_TYPE) &&
             (frame[RAW_TYPE_OFFSET + 1].toInt() and 0xFF) == R16_REVISION
 
     /** Swift twin: `Whoop5Ecg.u16le`. */
@@ -837,9 +838,9 @@ object Whoop5Ecg {
 
     // The revision-16 layout.
     //
-    // The flash-banked record that `TOGGLE_LABRADOR_RAW_SAVE(125)=1` produces. It arrives in the ordinary
-    // history offload as a type-47 HISTORICAL_DATA frame of data revision 16, not on a live channel, which
-    // is why a realtime listen never saw it (#891).
+    // Revision 16 arrives as type 47 HISTORICAL_DATA when banked by command 125, and as type 43
+    // REALTIME_RAW_DATA when command 126 enables the live mirror (#2882). Both share the same
+    // 1,584-byte layout. This decoder sends no commands.
     //
     // Offsets are INNER, like the R17 block above; `docs/PROTOCOL_ECG.md` states the same layout in FRAME
     // offsets, which are these plus [RAW_TYPE_OFFSET]. The status region is byte-identical to R17 and is

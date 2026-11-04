@@ -2670,7 +2670,7 @@ class WhoopBleClient(
      * Fail-safe for a producer left armed by a crash, another client, or a lost stop write.
      *
      * A live MG ECG record is EXEMPT (#2846). Type 43 is `REALTIME_RAW_DATA`, which is also the type an
-     * MG emits during an ECG capture: an R17 record is type 43, revision 17. Nothing else in this guard
+     * MG emits during an ECG capture: an R16 or R17 record is type 43, revision 16 or 17. Nothing else in this guard
      * knows a capture exists, so before the exemption the fail-safe fired every 30 s for as long as
      * generation ran, which was measured as 49 unrequested `STOP_RAW_DATA` + `TOGGLE_IMU_MODE` pairs in
      * one 25-minute session (#891). The recording survived it; the app was still telling the strap to
@@ -2683,11 +2683,10 @@ class WhoopBleClient(
      * recording. [ecgMayBeRunning] does outlive the window, and is the worse choice for the opposite
      * reason: it stays latched until a completed stop, so keying on it would disarm the fail-safe for
      * exactly the abandoned sessions it exists to recover. Per-frame keeps that recovery intact, because
-     * an orphaned IMU producer streaming alongside a capture emits frames that do not decode as R17.
+     * an orphaned IMU producer streaming alongside a capture emits frames that do not decode as R16 or R17.
      *
-     * [Whoop5Ecg.r17FromFrame] is the same predicate [noteEcgProbeCandidate] counts a packet with, so the
-     * probe and this guard cannot disagree about whether a frame is ECG. It is checked last because it is
-     * the only test that walks the body: the state and rate-limit checks short-circuit ahead of it.
+     * R16 and R17 are both CRC-gated, revision- and length-aware. R17 is also the probe predicate; R16
+     * adds the raw live form (#2882). The session and rate-limit guards short-circuit before decoding.
      * Swift twin: `BLEManager.stopUnexpectedRealtimeImu`.
      */
     @Synchronized
@@ -2700,6 +2699,7 @@ class WhoopBleClient(
         if (now - groundTruthImuStoppedAtMs < 3_000L || now - unexpectedImuStopAtMs < 30_000L) return
         if (gatt == null || cmdCharacteristic == null) return
         if (Whoop5Ecg.r17FromFrame(frame) != null) return
+        if (Whoop5Ecg.r16FromFrame(frame) != null) return
         unexpectedImuStopAtMs = now
         groundTruthImuCommandAllowed = true
         try {

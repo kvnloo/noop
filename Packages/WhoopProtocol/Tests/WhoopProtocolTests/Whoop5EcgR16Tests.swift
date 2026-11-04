@@ -1,7 +1,7 @@
 import XCTest
 @testable import WhoopProtocol
 
-/// #891: the flash-banked ECG record — type 47 HISTORICAL_DATA, data revision 16, 1584 bytes.
+/// #891/#2882: the R16 ECG record — type 43 live or type 47 stored, revision 16, 1584 bytes.
 ///
 /// Twin of the Kotlin `Whoop5EcgR16Test`. The layout is a protocol fact, so both platforms carry the decode
 /// and both pin it; a test only on the side that happens to call it today would not stop the other drifting.
@@ -85,13 +85,51 @@ final class Whoop5EcgR16Tests: XCTestCase {
         XCTAssertNil(Whoop5Ecg.r16FromFrame(f))
     }
 
-    func testOnlyType47Revision16IsAnR16Record() {
+    func testOnlyType43And47Revision16AreR16Records() {
+        for type in [Whoop5Ecg.rawRecordType, Whoop5Ecg.storedRecordType] {
+            let frame = r16Frame(declaredCount: 0, type: type)
+            XCTAssertTrue(Whoop5Ecg.isR16Record(frame))
+            XCTAssertEqual(Whoop5Ecg.r16FromFrame(frame)?.packetType, type)
+        }
         XCTAssertNil(Whoop5Ecg.r16FromFrame(r16Frame(declaredCount: 0, revision: 17)))
-        XCTAssertNil(Whoop5Ecg.r16FromFrame(r16Frame(declaredCount: 0, type: 43)))
+        XCTAssertNil(Whoop5Ecg.r16FromFrame(r16Frame(declaredCount: 0, type: 51)))
+        XCTAssertFalse(Whoop5Ecg.isR16Record(r16Frame(declaredCount: 0, type: 51)))
         XCTAssertFalse(Whoop5Ecg.isR16Record(r16Frame(declaredCount: 0, revision: 17)))
         // An R17 frame must not decode as an R16, and vice versa: the two revisions share a header and are
         // told apart ONLY by inner[1], so a decoder that ignored it would read 240 bytes as 1584.
         XCTAssertNil(Whoop5Ecg.parseR16(inner: [UInt8](repeating: 0, count: 228)))
+    }
+
+
+    func testLiveAndStoredR16ShareAllRecordBytesExceptTypeAndCRC() {
+        // Synthetic 500-slot record, not a hardware claim. Values 0...499 in 18-bit coding.
+        let slots: [(UInt8, UInt8, UInt8)] = (0..<Whoop5Ecg.r16MaxSamples).map { i in
+            (UInt8(0), UInt8((i >> 8) & 0xff), UInt8(i & 0xff))
+        }
+        let live = r16Frame(declaredCount: 500, slots: slots, type: Whoop5Ecg.rawRecordType)
+        let stored = r16Frame(declaredCount: 500, slots: slots, type: Whoop5Ecg.storedRecordType)
+        XCTAssertEqual(live.count, 1584)
+        XCTAssertTrue(verifyFrame(live, family: .whoop5).ok)
+        XCTAssertTrue(verifyFrame(stored, family: .whoop5).ok)
+        XCTAssertEqual(Array(live[0..<8]), Array(stored[0..<8]))
+        XCTAssertEqual(live[8], 43)
+        XCTAssertEqual(stored[8], 47)
+        XCTAssertEqual(Array(live[9..<(live.count - 4)]), Array(stored[9..<(stored.count - 4)]))
+        XCTAssertNotEqual(Array(live.suffix(4)), Array(stored.suffix(4)))
+
+        let decodedLive = Whoop5Ecg.r16FromFrame(live)
+        let decodedStored = Whoop5Ecg.r16FromFrame(stored)
+        XCTAssertEqual(decodedLive?.sampleCount, 500)
+        XCTAssertEqual(decodedLive?.samples.first, 0)
+        XCTAssertEqual(decodedLive?.samples.last, 499)
+        XCTAssertEqual(decodedLive?.samples, decodedStored?.samples)
+        XCTAssertEqual(decodedLive?.sampleTags, decodedStored?.sampleTags)
+        XCTAssertEqual(decodedLive?.leadsOffIRaw, decodedStored?.leadsOffIRaw)
+        XCTAssertEqual(decodedLive?.leadsOffQRaw, decodedStored?.leadsOffQRaw)
+
+        var badCRC = live
+        badCRC[600] ^= 0x01
+        XCTAssertNil(Whoop5Ecg.r16FromFrame(badCRC))
     }
 
     func testAShortInnerRecordIsRefusedRatherThanDecodedWithAShrunkSampleBlock() {

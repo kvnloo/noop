@@ -61,8 +61,8 @@ final class RawDataCollectorParityTests: XCTestCase {
     ///
     /// Asserted as source rather than behaviour because `stopUnexpectedRealtimeImu` is private to the
     /// manager and reaching it needs a live `CBCentralManager`. What the clause DECIDES is covered where
-    /// it can be run: `Whoop5EcgTests` pins `r17FromFrame` accepting a well-formed R17 record and
-    /// rejecting the wrong revision, the wrong type, a bad CRC and the IMU stream type.
+    /// it can be run: `Whoop5EcgTests` and `Whoop5EcgR16Tests` pin both frame decoders accepting their
+    /// matching live records and rejecting other revisions, a bad CRC and IMU stream type.
     ///
     /// Scoped to the function's own text rather than to the file, because a whole-file `contains` is not
     /// the assertion this test's name makes: it passes while the clause sits in any of ten thousand other
@@ -77,6 +77,8 @@ final class RawDataCollectorParityTests: XCTestCase {
                                     "the fail-safe's log line not found after its signature")
         let body = source[signature.lowerBound..<logLine.lowerBound]
         XCTAssertTrue(body.contains("Whoop5Ecg.r17FromFrame(frame) == nil"),
-                      "the ECG exemption must sit INSIDE stopUnexpectedRealtimeImu, not merely in the file")
+                      "the filtered ECG exemption must be inside stopUnexpectedRealtimeImu")
+        XCTAssertTrue(body.contains("Whoop5Ecg.r16FromFrame(frame) == nil"),
+                      "the raw ECG exemption must be inside stopUnexpectedRealtimeImu")
     }
 }
