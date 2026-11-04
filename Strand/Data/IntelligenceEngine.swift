@@ -674,10 +674,13 @@ final class IntelligenceEngine: ObservableObject {
     /// Cached-only days are preserved, changing the old Effort-only repair from broad-window writes to
     /// writes only for days that were recomputed.
     static let sleepWearRescoreFlagKey = "intelligence.sleepWearRescore.v1.done"
+    /// One-shot source replay of historical daily-aggregate Charge after the RHR baseline gate (#1987).
+    static let watchRecoveryRescoreFlagKey = "intelligence.watchRecoveryRescore.v1987.done"
     private var sleepWearRescoreRunning = false
 
-    static func historyRepairIsPending(effortDone: Bool, sleepWearDone: Bool) -> Bool {
-        !effortDone || !sleepWearDone
+    static func historyRepairIsPending(effortDone: Bool, sleepWearDone: Bool,
+                                       watchRecoveryDone: Bool = true) -> Bool {
+        !effortDone || !sleepWearDone || !watchRecoveryDone
     }
 
     func runSleepWearRescoreIfNeeded(historyDays: Int = 4000) async {
@@ -687,7 +690,8 @@ final class IntelligenceEngine: ObservableObject {
     private func runHistoryRepairIfNeeded(historyDays: Int) async {
         guard Self.historyRepairIsPending(
                   effortDone: UserDefaults.standard.bool(forKey: Self.effortRescoreFlagKey),
-                  sleepWearDone: UserDefaults.standard.bool(forKey: Self.sleepWearRescoreFlagKey)),
+                  sleepWearDone: UserDefaults.standard.bool(forKey: Self.sleepWearRescoreFlagKey),
+                  watchRecoveryDone: UserDefaults.standard.bool(forKey: Self.watchRecoveryRescoreFlagKey)),
               !sleepWearRescoreRunning, !computing, !Task.isCancelled,
               !RescoreBackgroundScheduler.isBackgrounded else { return }
         // Launch and scene activation can overlap while the store handle is being awaited.
@@ -697,6 +701,7 @@ final class IntelligenceEngine: ObservableObject {
                             preserveUnscoredHistory: true) {
             UserDefaults.standard.set(true, forKey: Self.effortRescoreFlagKey)
             UserDefaults.standard.set(true, forKey: Self.sleepWearRescoreFlagKey)
+            UserDefaults.standard.set(true, forKey: Self.watchRecoveryRescoreFlagKey)
         }
     }
 
