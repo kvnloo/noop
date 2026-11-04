@@ -35,6 +35,12 @@ public struct SleepInterval: Identifiable, Sendable {
     public var duration: TimeInterval { max(0, end - start) }
 }
 
+/// An exact clock offset and optional stage; a gap has time but no invented stage.
+struct HypnogramTouchHit: Equatable {
+    let offset: TimeInterval
+    let intervalIndex: Int?
+}
+
 public struct Hypnogram: View {
 
     public var intervals: [SleepInterval]
@@ -148,6 +154,8 @@ public struct Hypnogram: View {
 
     /// Index of the hovered interval, or nil.
     @State private var hoverIndex: Int? = nil
+    @State private var touchHit: HypnogramTouchHit? = nil
+    @State private var touchScrubEngaged = false
 
     private static let clockFormatter: DateFormatter = {
         // "jmm" respects the device's 12-/24-hour setting (#337) rather than forcing 24-hour.
@@ -279,7 +287,8 @@ public struct Hypnogram: View {
                                              height: max(0, geo.size.height - band.midY))
                                     : band
                                 let color = stageColor(interval.stage)
-                                let hoverDimmed = hoverIndex != nil && hoverIndex != idx
+                                let inspected = touchHit == nil ? hoverIndex : touchHit?.intervalIndex
+                                let hoverDimmed = inspected != nil && inspected != idx
                                 let stageDimmed = highlightedStage != nil && interval.stage != highlightedStage
                                 // WHOOP hypnogram: squared segments — the night reads as one continuous
                                 // step line (ribbon) or filled staircase. No pill caps: a brief stage draws
@@ -298,25 +307,40 @@ public struct Hypnogram: View {
                         .accessibilityHidden(true)
 
                         // Hover affordance: crosshair, band highlight ring, tooltip.
-                        if showsHover, let idx = hoverIndex, idx < intervals.count {
+                        if showsHover, let idx = (touchHit == nil ? hoverIndex : touchHit?.intervalIndex),
+                           idx < intervals.count {
                             let interval = intervals[idx]
                             let rect = bandRect(for: interval, in: geo.size)
                             let color = stageColor(interval.stage)
-                            // vertical crosshair across the full height at band centre
-                            CrosshairRule(x: rect.midX, height: geo.size.height)
+                            // On touch, the crosshair follows the real time under the finger.
+                            let x = touchHit.map { CGFloat(($0.offset - origin) / span) * geo.size.width }
+                                ?? rect.midX
+                            CrosshairRule(x: x, height: geo.size.height)
                             // ring around the hovered band
                             RoundedRectangle(cornerRadius: (rect.height + 6) / 2)
                                 .stroke(StrandPalette.hairlineStrong, lineWidth: 1.5)
                                 .frame(width: rect.width + 6, height: rect.height + 6)
                                 .position(x: rect.midX, y: rect.midY)
                             PositionedTooltip(
-                                anchor: CGPoint(x: rect.midX, y: rect.midY),
+                                anchor: CGPoint(x: x, y: rect.midY),
                                 container: geo.size,
                                 tooltip: ChartTooltip(
                                     value: interval.stage.label,
-                                    label: "\(timeLabel(interval.start))-\(timeLabel(interval.end)) · \(Int((interval.duration / 60).rounded()))m",
+                                    label: touchHit.map { timeLabel($0.offset) }
+                                        ?? "\(timeLabel(interval.start))-\(timeLabel(interval.end)) · \(Int((interval.duration / 60).rounded()))m",
                                     accent: color
                                 )
+                            )
+                        }
+                        // A stored gap still has an exact time, but no identifiable stage.
+                        if showsHover, let hit = touchHit, hit.intervalIndex == nil {
+                            let x = CGFloat((hit.offset - origin) / span) * geo.size.width
+                            CrosshairRule(x: x, height: geo.size.height)
+                            PositionedTooltip(
+                                anchor: CGPoint(x: x, y: geo.size.height / 2),
+                                container: geo.size,
+                                tooltip: ChartTooltip(value: "—", label: timeLabel(hit.offset),
+                                                      accent: StrandPalette.textTertiary)
                             )
                         }
                     }
@@ -332,6 +356,33 @@ public struct Hypnogram: View {
                             hoverIndex = nil
                         }
                     }
+                    #if os(iOS)
+                    // Keep ordinary drags for scrolling; a 250ms hold enters precise time inspection.
+                    // This matches OverviewHRChart's established touch-scrub gesture.
+                    .gesture(
+                        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
+                            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                            .onChanged { phase in
+                                guard showsHover, case .second(true, let drag) = phase else { return }
+                                if !touchScrubEngaged {
+                                    touchScrubEngaged = true
+                                    StrandHaptic.selection.play()
+                                }
+                                if let drag {
+                                    var tx = Transaction()
+                                    tx.disablesAnimations = true
+                                    withTransaction(tx) {
+                                        touchHit = scrubHit(atX: drag.location.x, in: geo.size)
+                                    }
+                                }
+                            }
+                            .onEnded { _ in
+                                touchScrubEngaged = false
+                                touchHit = nil
+                            },
+                        including: showsHover ? .all : .subviews
+                    )
+                    #endif
                     // ONE collapsed VoiceOver element for the whole hypnogram (per-stage totals), instead
                     // of the old O(intervals) per-band layer the accessibility walk re-copied each scroll
                     // frame (#707). The visual bands already live in a `.drawingGroup()` marked
@@ -368,6 +419,16 @@ public struct Hypnogram: View {
         return intervals.enumerated().min(by: { a, b in
             abs(midTime(a.element) - t) < abs(midTime(b.element) - t)
         })?.offset
+    }
+
+    /// Same time scale as bandRect; preserve origin on a partial night and never
+    /// snap a missing stage to its neighbour. This is pure, for XCTest fixtures.
+    func scrubHit(atX x: CGFloat, in size: CGSize) -> HypnogramTouchHit? {
+        guard !intervals.isEmpty, size.width.isFinite, size.width > 0, x.isFinite else { return nil }
+        let fraction = min(1.0, max(0.0, Double(x / size.width)))
+        let offset = origin + fraction * span
+        let index = intervals.firstIndex { offset >= $0.start && offset <= $0.end }
+        return HypnogramTouchHit(offset: offset, intervalIndex: index)
     }
 
     private func midTime(_ iv: SleepInterval) -> TimeInterval { (iv.start + iv.end) / 2 }
