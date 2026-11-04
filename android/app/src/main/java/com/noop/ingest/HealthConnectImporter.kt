@@ -23,6 +23,7 @@ import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import com.noop.R
 import com.noop.analytics.FitnessAgeEngine
 import com.noop.analytics.HydrationStore
 import com.noop.analytics.RouteMath
@@ -718,7 +719,8 @@ object HealthConnectImporter {
         if (selectedReadsAttempted > 0 && selectedReadsCompleted == 0) {
             // readAll catches individual SDK/permission failures so other types can succeed.
             // When NONE completes, do not stamp an empty import as a successful sync.
-            return ImportSummary.failure(SOURCE, "Every selected Health Connect record read failed.")
+            // Reuse the translated retry text for this user-visible import status.
+            return ImportSummary.failure(SOURCE, context.getString(R.string.l10n_settings_screen_couldn_t_check_try_again_b3c885d9))
         }
 
         // Zero-fill the whole hydration window and write it, BEFORE the "nothing found" bail below:
