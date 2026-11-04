@@ -286,4 +286,32 @@ class EffectRankerTest {
         assertEquals("Half", ranked.first().behavior)
     }
 
+
+    @Test fun wakeDayNextMorningJoinAcrossYearBoundary() {
+        val journalDays = listOf(
+            "2026-12-26", "2026-12-27", "2026-12-28", "2026-12-29",
+            "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02",
+            "2027-01-03", "2027-01-04",
+        )
+        val nextMornings = listOf(
+            "2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30",
+            "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03",
+            "2027-01-04", "2027-01-05",
+        )
+        val outcome = (nextMornings zip listOf(
+            82.0, 80.0, 84.0, 78.0, 81.0, 87.0, 89.0, 85.0, 86.0, 88.0,
+        )).toMap()
+        val factor = "Did you have caffeine late in the day?"
+        val ranked = EffectRanker.rank(
+            behaviors = mapOf(factor to journalDays.take(5).toSet()),
+            controls = mapOf(factor to journalDays.takeLast(5).toSet()),
+            outcomeByDay = outcome, outcome = "sleep_efficiency",
+        )
+        assertEquals(1, ranked.size)
+        assertEquals(1, ranked.single().lag)
+        assertEquals(5, ranked.single().effect.nWith)
+        assertEquals(5, ranked.single().effect.nWithout)
+        assertEquals(-6.0, ranked.single().effect.delta, 1e-9)
+    }
+
 }
