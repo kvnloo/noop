@@ -107,6 +107,15 @@ struct LiveView: View {
     /// the Session console and is only enabled while bonded (the reading needs the live R-R stream).
     @State private var showHRVSnapshot = false
 
+    /// Tapping the Live heart vessel opens the same opt-in session as Android #125.
+    @State private var showHeartMeditation = false
+    private var heartMeditationAction: String {
+        String(localized: String.LocalizationValue("Open heart meditation"), table: "HeartMeditation")
+    }
+    private var heartMeditationHint: String {
+        String(localized: String.LocalizationValue("Tap the heart for a beat-synced meditation"), table: "HeartMeditation")
+    }
+
     var body: some View {
         ScreenScaffold(title: "Live Body Console",
                        subtitle: "Current physiology, strap trust, and session controls in one working view.",
@@ -180,6 +189,10 @@ struct LiveView: View {
         // off the activeWorkout change above, so no extra navigation is needed here.
         .workoutSelectionCover(isPresented: $showStartSport) {
             StartWorkoutSheet { name in model.startWorkout(sport: name) }
+        }
+        .sheet(isPresented: $showHeartMeditation) {
+            HeartMeditationView(onClose: { showHeartMeditation = false })
+                .environmentObject(live)
         }
         // Manual HRV snapshot (#127) — a still, seated 60s R-R reading.
         .sheet(isPresented: $showHRVSnapshot) {
@@ -302,14 +315,24 @@ struct LiveView: View {
         card {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .center, spacing: NoopMetrics.space6) {
-                    LiveHeartReadout(activeIsWhoop: activeIsWhoop, activeIsOura: activeIsOura, hrMax: model.profile.hrMax)
-                        .frame(minWidth: 260, maxWidth: 340)
+                    Button { showHeartMeditation = true } label: {
+                        LiveHeartReadout(activeIsWhoop: activeIsWhoop, activeIsOura: activeIsOura, hrMax: model.profile.hrMax)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: heartMeditationAction))
+                    .accessibilityHint(Text(verbatim: heartMeditationHint))
+                    .frame(minWidth: 260, maxWidth: 340)
                     Divider().overlay(StrandPalette.hairline)
                     LivePhysiology(activeIsWhoop: activeIsWhoop)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 VStack(alignment: .leading, spacing: 18) {
-                    LiveHeartReadout(activeIsWhoop: activeIsWhoop, activeIsOura: activeIsOura, hrMax: model.profile.hrMax)
+                    Button { showHeartMeditation = true } label: {
+                        LiveHeartReadout(activeIsWhoop: activeIsWhoop, activeIsOura: activeIsOura, hrMax: model.profile.hrMax)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: heartMeditationAction))
+                    .accessibilityHint(Text(verbatim: heartMeditationHint))
                     Divider().overlay(StrandPalette.hairline)
                     LivePhysiology(activeIsWhoop: activeIsWhoop)
                 }
@@ -905,7 +928,7 @@ private struct LiveHeartReadout: View {
                 .foregroundStyle(StrandPalette.textSecondary)
             ZStack {
                 // The live BPM gauge: a liquid vessel that fills to the HR-zone fraction and sloshes.
-                LiquidVessel(value: hrFrac, tint: tint, animated: displayHR != nil)
+                LiquidVessel(value: hrFrac, tint: tint, animated: displayHR != nil, tapPassesThrough: true)
                     .frame(width: 210, height: 210)
                 VStack(spacing: 0) {
                     // The big focal HR numeral counts up to the live value (the hero number); a crisp
