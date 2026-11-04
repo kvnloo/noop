@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fork-only Android contextual home: translated for the existing shipped locale. -->
+    <string name="contextual_status_connected">Connesso</string>
+    <string name="contextual_status_searching">Ricerca in corso</string>
+    <string name="contextual_status_offline">Non connesso</string>
+    <string name="contextual_charge_day">Carica · %1$s</string>
+    <string name="contextual_no_charge_day">Carica non disponibile · %1$s</string>
+    <string name="contextual_no_score">Nessun punteggio registrato</string>
+    <string name="contextual_heart_rate">Frequenza cardiaca</string>
+    <string name="contextual_effort">Sforzo</string>
+    <string name="contextual_in_context">NEL CONTESTO</string>
+    <string name="contextual_dismiss">Nascondi questo suggerimento</string>
+    <string name="contextual_breathe_wake_day_hint">Se fa parte della routine serale, seleziona Domani nel diario per associare le osservazioni al mattino successivo.</string>
+    <string name="contextual_journal">Diario</string>
+    <string name="contextual_full_dashboard">Dashboard completa</string>
+    <string name="contextual_return_focus">Torna alla vista essenziale</string>
+    <string name="contextual_active_title">Sessione in corso</string>
+    <string name="contextual_active_detail">Puoi riprendere la sessione attiva.</string>
+    <string name="contextual_resume">Riprendi</string>
+    <string name="contextual_scanning_title">Ricerca del bracciale</string>
+    <string name="contextual_scanning_detail">Connessione in corso.</string>
+    <string name="contextual_offline_title">Bracciale non connesso</string>
+    <string name="contextual_offline_detail">Apri Dispositivi per verificare la connessione.</string>
+    <string name="contextual_waiting_title">In attesa del punteggio</string>
+    <string name="contextual_waiting_detail">I dati del sonno e del recupero appariranno dopo la loro elaborazione.</string>
+    <string name="contextual_review_title">Le letture sono pronte</string>
+    <string name="contextual_review_detail">Confronta i dati degli ultimi giorni.</string>
+</resources>

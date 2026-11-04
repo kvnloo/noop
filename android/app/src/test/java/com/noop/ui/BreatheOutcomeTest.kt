@@ -2,7 +2,10 @@ package com.noop.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 
 /**
  * Pins the Breathe end-of-session outcome line: the 2-minute floor, the honest "—"
@@ -49,6 +52,24 @@ class BreatheOutcomeTest {
             "-12% vs start · peak 41 ms",
             breatheOutcomeCore(baseline = 40.0, sum = 352.0, count = 10, peak = 41.0, seconds = 300),
         )
+    }
+
+    @Test
+    fun journalCheckInIsOnlyOfferedForFreshNonAbandonedSession() {
+        assertFalse(shouldOfferBreatheJournal(running = true, freshOutcome = "+18% vs start"))
+        assertFalse(shouldOfferBreatheJournal(running = false, freshOutcome = null))
+        // A completed timer without usable R-R is self-reportable but not an HRV observation.
+        assertTrue(shouldOfferBreatheJournal(running = false, freshOutcome = "—"))
+        assertTrue(shouldOfferBreatheJournal(running = false, freshOutcome = "+18% vs start"))
+    }
+
+    @Test
+    fun eveningCheckInUsesTheNextWakeDayAcrossYearAndLeapBoundaries() {
+        // A completed Breathe timer never records an answer. The selected
+        // Journal day must still be chosen explicitly by the user.
+        assertEquals("2027-01-01", journalDayKey(-1L, LocalDate.of(2026, 12, 31)))
+        assertEquals("2028-02-29", journalDayKey(-1L, LocalDate.of(2028, 2, 28)))
+        assertEquals("2026-12-31", journalDayKey(0L, LocalDate.of(2026, 12, 31)))
     }
 
     @Test

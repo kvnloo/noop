@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fork-only Android contextual home: translated for the existing shipped locale. -->
+    <string name="contextual_status_connected">已连接</string>
+    <string name="contextual_status_searching">搜索中</string>
+    <string name="contextual_status_offline">离线</string>
+    <string name="contextual_charge_day">能量 · %1$s</string>
+    <string name="contextual_no_charge_day">能量数据不可用 · %1$s</string>
+    <string name="contextual_no_score">尚无评分记录</string>
+    <string name="contextual_heart_rate">心率</string>
+    <string name="contextual_effort">负荷</string>
+    <string name="contextual_in_context">当前提示</string>
+    <string name="contextual_dismiss">关闭此建议</string>
+    <string name="contextual_breathe_wake_day_hint">如果这是晚间习惯的一部分，请在日记中选择“明天”，以便将记录对应到次日早晨。</string>
+    <string name="contextual_journal">日记</string>
+    <string name="contextual_full_dashboard">完整仪表盘</string>
+    <string name="contextual_return_focus">返回精简视图</string>
+    <string name="contextual_active_title">正在进行训练</string>
+    <string name="contextual_active_detail">可继续当前训练。</string>
+    <string name="contextual_resume">继续</string>
+    <string name="contextual_scanning_title">正在寻找腕带</string>
+    <string name="contextual_scanning_detail">正在连接。</string>
+    <string name="contextual_offline_title">腕带未连接</string>
+    <string name="contextual_offline_detail">打开“设备”查看连接状态。</string>
+    <string name="contextual_waiting_title">等待评分</string>
+    <string name="contextual_waiting_detail">睡眠和恢复数据将在处理后显示。</string>
+    <string name="contextual_review_title">指标已就绪</string>
+    <string name="contextual_review_detail">查看最近几天的数据对比。</string>
+</resources>
