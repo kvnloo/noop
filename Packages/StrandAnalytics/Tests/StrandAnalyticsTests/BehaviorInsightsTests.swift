@@ -1,5 +1,6 @@
 import XCTest
 @testable import StrandAnalytics
+import WhoopStore
 
 final class BehaviorInsightsTests: XCTestCase {
 
@@ -258,4 +259,116 @@ final class BehaviorInsightsTests: XCTestCase {
                                             outcomeByDay: outcome, outcome: "Recovery").isEmpty)
     }
 
+    // MARK: - Rest outcome: missing coverage and day-boundary keys
+
+    /// One synthetic night as the persisted row Insights reads. Only the sleep totals matter to
+    /// `Rest.composite(daily:)`; the other fields are left empty.
+    private func restRow(_ day: String, tstMin: Double?, eff: Double?,
+                         deepMin: Double? = 80, remMin: Double? = 90) -> DailyMetric {
+        DailyMetric(day: day, totalSleepMin: tstMin, efficiency: eff, deepMin: deepMin, remMin: remMin,
+                    lightMin: nil, disturbances: nil, restingHr: nil, avgHrv: nil, recovery: nil,
+                    strain: nil, exerciseCount: nil)
+    }
+
+    /// The Rest outcome series, built the way the `sleep_performance` series is: one point per
+    /// row that `Rest.composite(daily:)` can score, and none for a row it cannot.
+    private func restOutcome(_ rows: [DailyMetric]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for r in rows { if let v = AnalyticsEngine.Rest.composite(daily: r) { out[r.day] = v } }
+        return out
+    }
+
+    /// Journal days with no Rest coverage leave both groups. They do not join a group as a 0 Rest.
+    /// The fixture has six scored days on each side, plus answered days with no asleep total: absent,
+    /// zero, or only a leftover efficiency. Were any of those to count as 0, `nWith` or `nWithout`
+    /// would grow and one mean would drop towards 0.
+    func testAnsweredDaysWithoutRestCoverageLeaveBothGroups() {
+        var rows: [DailyMetric] = []
+        var yes: Set<String> = []
+        var no: Set<String> = []
+        for d in 1...6 { let k = "y\(d)"; yes.insert(k); rows.append(restRow(k, tstMin: 300 + Double(d), eff: 0.80)) }
+        for d in 1...6 { let k = "n\(d)"; no.insert(k); rows.append(restRow(k, tstMin: 450 + Double(d), eff: 0.92)) }
+        // Answered, but no scorable night: missing total, zero total, efficiency with no total.
+        let gaps: [(String, Double?, Double?)] = [("y-gap1", nil, 0.95), ("y-gap2", 0.0, 0.95),
+                                                  ("n-gap1", nil, nil), ("n-gap2", nil, 0.97)]
+        for (k, tst, eff) in gaps {
+            if k.hasPrefix("y") { yes.insert(k) } else { no.insert(k) }
+            rows.append(restRow(k, tstMin: tst, eff: eff))
+        }
+        let outcome = restOutcome(rows)
+        XCTAssertEqual(outcome.count, 12, "only the twelve scorable nights enter the series")
+        for k in ["y-gap1", "y-gap2", "n-gap1", "n-gap2"] {
+            XCTAssertNil(outcome[k], "\(k): unknown Rest has no point, not a 0 point")
+        }
+
+        let e = BehaviorInsights.effect(behaviorDays: yes, controlDays: no, outcomeByDay: outcome,
+                                        behavior: "Late meal", outcome: "Rest")!
+        XCTAssertEqual(e.nWith, 6)
+        XCTAssertEqual(e.nWithout, 6)
+        let yesMean = yes.compactMap { outcome[$0] }.reduce(0, +) / 6.0
+        let noMean = no.compactMap { outcome[$0] }.reduce(0, +) / 6.0
+        XCTAssertEqual(e.meanWith, yesMean, accuracy: 1e-9)
+        XCTAssertEqual(e.meanWithout, noMean, accuracy: 1e-9)
+        XCTAssertGreaterThan(e.meanWith, 40.0, "a 0 leaking in would drag this mean down")
+    }
+
+    /// When every Yes day lacks Rest coverage, there is nothing to compare, so the result is no
+    /// insight. It is not an effect with `meanWith` 0 that reads as "Rest collapses on Yes days".
+    func testBehaviourWhoseYesDaysAllLackRestYieldsNoInsight() {
+        var rows: [DailyMetric] = []
+        var yes: Set<String> = []
+        var no: Set<String> = []
+        for d in 1...6 { let k = "y\(d)"; yes.insert(k); rows.append(restRow(k, tstMin: nil, eff: 0.9)) }
+        for d in 1...6 { let k = "n\(d)"; no.insert(k); rows.append(restRow(k, tstMin: 420, eff: 0.9)) }
+        let outcome = restOutcome(rows)
+        XCTAssertNil(BehaviorInsights.effect(behaviorDays: yes, controlDays: no, outcomeByDay: outcome,
+                                             behavior: "Alcohol", outcome: "Rest"))
+        XCTAssertTrue(BehaviorInsights.rank(behaviors: ["Alcohol": yes], controls: ["Alcohol": no],
+                                            outcomeByDay: outcome, outcome: "Rest").isEmpty)
+    }
+
+    /// The Rest outcome is the composite, not a raw component. Take a 4 h night at 80% efficiency
+    /// with 1 h deep and 1 h REM, against the default 8 h need and neutral consistency:
+    ///   0.50·(4/8) + 0.20·0.80 + 0.20·min(1, (2/4)/0.50)·1 + 0.10·0.5 = 0.66 → 66.0.
+    /// Efficiency alone would read 80, and the asleep minutes alone would read 240.
+    func testRestOutcomeValueIsTheCompositeNotARawComponent() {
+        let outcome = restOutcome([restRow("d", tstMin: 240, eff: 0.80, deepMin: 60, remMin: 60)])
+        XCTAssertEqual(outcome["d"]!, 66.0, accuracy: 1e-9)
+    }
+
+    /// Journal answers and Rest join on the LOCAL day key, `AnalyticsEngine.dayString(ts, offsetSec:)`.
+    /// At +5:30, a check-in in the first half hour after local midnight falls on the PREVIOUS UTC day.
+    /// Keyed by UTC, the No days would shift onto the Yes days. The groups would overlap, and the last
+    /// No day would drop out. Keyed by local day, they stay disjoint, six against six. The fixture first
+    /// checks that UTC keys really differ, so the edge is exercised.
+    func testJournalAndRestJoinOnTheLocalDayKeyAtAFractionalOffset() {
+        let off = 5 * 3600 + 1800   // +5:30
+        func local(_ day: String, _ secondsAfterMidnight: Int) -> Int {
+            AnalyticsEngine.dayStartUtcSeconds(day) - off + secondsAfterMidnight
+        }
+        let yesDays = (10...15).map { "2021-06-\($0)" }
+        let noDays = (16...21).map { "2021-06-\($0)" }
+        // Yes check-ins at 23:59:59 local, the last second of the day. No check-ins at 00:00:30 local.
+        let yesTs = yesDays.map { local($0, 86_399) }
+        let noTs = noDays.map { local($0, 30) }
+
+        let yesLocal = Set(yesTs.map { AnalyticsEngine.dayString($0, offsetSec: off) })
+        let noLocal = Set(noTs.map { AnalyticsEngine.dayString($0, offsetSec: off) })
+        XCTAssertEqual(yesLocal, Set(yesDays))
+        XCTAssertEqual(noLocal, Set(noDays))
+        let noUtc = Set(noTs.map { AnalyticsEngine.dayString($0, offsetSec: 0) })
+        XCTAssertNotEqual(noUtc, noLocal, "fixture must straddle the UTC/local day edge")
+        XCTAssertFalse(noUtc.isDisjoint(with: yesLocal), "UTC keys would mix No into Yes days")
+
+        // Short nights on Yes days and long nights on No days, keyed by the row's own local day.
+        let rows = yesDays.map { restRow($0, tstMin: 330, eff: 0.82) } + noDays.map { restRow($0, tstMin: 470, eff: 0.93) }
+        let outcome = restOutcome(rows)
+        let e = BehaviorInsights.effect(behaviorDays: yesLocal, controlDays: noLocal, outcomeByDay: outcome,
+                                        behavior: "Late screen", outcome: "Rest")!
+        XCTAssertEqual(e.nWith, 6)
+        XCTAssertEqual(e.nWithout, 6)
+        XCTAssertEqual(e.meanWith, outcome["2021-06-10"]!, accuracy: 1e-9)
+        XCTAssertEqual(e.meanWithout, outcome["2021-06-16"]!, accuracy: 1e-9)
+        XCTAssertLessThan(e.delta, 0)
+    }
 }
