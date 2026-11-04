@@ -56,8 +56,8 @@ class RawDataCollectorParityTest {
      *
      * Asserted as source rather than behaviour because `stopUnexpectedRealtimeImu` is private and
      * reaching it needs a live GATT. What the clause DECIDES is covered where it can be run:
-     * `Whoop5EcgTest` pins `r17FromFrame` accepting a well-formed R17 record and rejecting the wrong
-     * revision, the wrong type, a bad CRC and the IMU stream type. Apple twin:
+     * `Whoop5EcgTest` and `Whoop5EcgR16Test` pin both decoders accepting live ECG records,
+     * and rejecting other revisions, a bad CRC and the IMU stream type. Apple twin:
      * `testAppleExemptsALiveEcgRecordFromTheImuFailSafe`.
      *
      * Scoped to the function's own text rather than to the file, because a whole-file `contains` is not
@@ -79,6 +79,10 @@ class RawDataCollectorParityTest {
         assertTrue(
             "the ECG exemption must sit INSIDE stopUnexpectedRealtimeImu, not merely in the file",
             body.contains("if (Whoop5Ecg.r17FromFrame(frame) != null) return"),
+        )
+        assertTrue(
+            "the raw ECG exemption must sit INSIDE stopUnexpectedRealtimeImu, not merely in the file",
+            body.contains("if (Whoop5Ecg.r16FromFrame(frame) != null) return"),
         )
     }
 }
