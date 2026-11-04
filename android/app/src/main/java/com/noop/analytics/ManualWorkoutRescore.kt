@@ -27,6 +27,46 @@ object ManualWorkoutRescore {
      *  window (recompute ≈ current) is a no-op and the pass is idempotent. */
     const val IMPROVEMENT_MARGIN_KCAL = 1.0
 
+    /** Existing calories and any user-edited value, even a typed zero or blank, take precedence. */
+    fun shouldPrefillCalories(existingKcal: Double?, userEdited: Boolean): Boolean =
+        existingKcal == null && !userEdited
+
+    /**
+     * Estimate editable manual calories only with >= 60 distinct HR seconds, >= 50% coverage
+     * and <= 30 s gaps including the window edges. Unlike motion-gated detector bouts, a
+     * manually selected span must not extrapolate an isolated HR reading across a dropout.
+     * Reuses the shipped Keytel bout formula; does not alter stored scores or typed values.
+     * Swift twin: ManualWorkoutRescore.suggestedCalories.
+     */
+    fun suggestedCalories(
+        windowSamples: List<HrSample>,
+        startTs: Long,
+        endTs: Long,
+        profile: UserProfile,
+        hrMax: Double,
+        restingHR: Double? = null,
+    ): Double? {
+        if (endTs <= startTs || endTs - startTs > 20_000L) return null
+        val ordered = windowSamples.filter { it.ts >= startTs && it.ts < endTs }.sortedBy { it.ts }
+        val distinct = ArrayList<HrSample>(ordered.size)
+        for (sample in ordered) {
+            val last = distinct.lastOrNull()
+            if (last != null) {
+                if (sample.ts == last.ts) continue
+                if (sample.ts - last.ts > 30L) return null
+            } else if (sample.ts - startTs > 30L) {
+                return null
+            }
+            distinct.add(sample)
+        }
+        if (distinct.size < 60 ||
+            distinct.size.toLong() < (endTs - startTs + 1L) / 2L ||
+            endTs - distinct.last().ts > 30L
+        ) return null
+        val kcal = Calories.estimateBoutCalories(distinct, profile, hrMax, restingHR).first
+        return kcal.takeIf { it.isFinite() && it > 0.0 && it <= 20_000.0 }
+    }
+
     /** Does this manual workout currently look under-scored? The gate the post-sync pass uses so a
      *  well-scored workout (a 4.0's dense live HR) is never touched. */
     fun looksUnderScored(currentKcal: Double?): Boolean =
