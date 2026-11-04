@@ -59,6 +59,15 @@ class IntelligenceWatchRecoveryTest {
         assertTrue(scored.all { it.confidence == ScoreConfidence.CALIBRATING })
     }
 
+    /** Historical 98.57 from a synthetic RHR midpoint must rescore to HRV-only 57.9324252. */
+    @Test
+    fun legacyInflatedChargeReplaysFromSource() {
+        val prior = (1..9).map { importRow("2026-06-%02d".format(it), 45.0, null) }
+        val old = importRow("2026-06-10", 45.0, 52).copy(recovery = 98.57)
+        val rescored = IntelligenceEngine.watchRecoveries(prior + old)
+        assertEquals(57.932425214874954, rescored.last().recovery!!, 1e-12)
+    }
+
     @Test
     fun unorderedInputIsSortedBeforeFolding() {
         val ordered = (1..10).map { importRow("2026-06-%02d".format(it), 50.0, 50) }

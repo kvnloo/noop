@@ -15,6 +15,7 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             "profile.stepsCalibrationConfidence", "profile.stepsCalibrationManual",
             "profile.stepsManualCoefficient", "profile.stepsHasBankedMotion",
             IntelligenceEngine.effortRescoreFlagKey, IntelligenceEngine.sleepWearRescoreFlagKey,
+            IntelligenceEngine.watchRecoveryRescoreFlagKey,
             "noop.analyzeWatermark", "analyzeRecent.stepsMotionCache.v1",
             "noop.hrvBaselineEpoch", "noop.recoveryBaselineEpoch", UnitPrefs.hrvWindowKey,
             RescoreBackgroundScheduler.owedKey, RescoreBackgroundScheduler.owedTokenKey,
@@ -40,6 +41,10 @@ final class SleepWearHistoryRepairTests: XCTestCase {
         XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(effortDone: true, sleepWearDone: false))
         XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(effortDone: false, sleepWearDone: true))
         XCTAssertFalse(IntelligenceEngine.historyRepairIsPending(effortDone: true, sleepWearDone: true))
+        XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(
+            effortDone: true, sleepWearDone: true, watchRecoveryDone: false))
+        XCTAssertFalse(IntelligenceEngine.historyRepairIsPending(
+            effortDone: true, sleepWearDone: true, watchRecoveryDone: true))
     }
 
     func testRepairsOlderThan21DaysPersistsAndRunsOnlyOnce() async throws {
@@ -112,6 +117,7 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             // Assert before yielding to the queued pass: only the repair itself may mark its flags.
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.sleepWearRescoreFlagKey))
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.effortRescoreFlagKey))
+            XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.watchRecoveryRescoreFlagKey))
             if queueForcedRescore {
                 await queuedCall?.value
                 XCTAssertTrue(queuedWasObserved, "The forced update must actually overlap the repair")
@@ -134,6 +140,7 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             XCTAssertEqual(editedAfter.first?.userEdited, true)
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.sleepWearRescoreFlagKey))
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.effortRescoreFlagKey))
+            XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.watchRecoveryRescoreFlagKey))
             await engine.runSleepWearRescoreIfNeeded(historyDays: 40)
             XCTAssertEqual(triggers, 1, "Completed history repair must not run on every launch")
         }
