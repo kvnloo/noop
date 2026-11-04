@@ -124,7 +124,7 @@ struct LiquidTodayView: View {
     @State private var kSparks: [String: [(String, Double)]] = [:]
     private var enabledKeyMetrics: [KeyMetric] { KeyMetricPrefs.decodeEnabled(keyMetricsRaw) }
 
-    /// The Android and classic Today default: three compact rows, six selected tiles.
+    /// Match Android and classic Today: show six selected tiles before expanding.
     static let metricsCollapsedCap = 6
 
     /// Display-only. An expanded grid returns the entire saved selection in its original order.
@@ -1375,11 +1375,9 @@ struct LiquidTodayView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit Key Metrics")
             }
-            // #430 parity: the grid honours the Key-Metrics editor (selection + order, all ten metrics)
-            // instead of a hard-coded six — the bespoke Sleep-hours ktile gives way to the shared REST
-            // score tile, aligning the liquid grid with the classic macOS grid and Android.
-            // Show the first six saved metrics by default, without altering the user's
-            // enabled selection or order. Full detail is one tap away.
+            // #430 / #2711: the editor still owns every selected metric and its order.
+            // Initially show the first six (like Android and classic Today); expansion
+            // reveals the remainder without modifying saved preferences.
             LazyVGrid(
                 columns: Array(
                     repeating: GridItem(.flexible(), spacing: NoopMetrics.gap),
