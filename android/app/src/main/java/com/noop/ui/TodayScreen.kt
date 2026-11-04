@@ -4093,6 +4093,9 @@ private fun HostedCardsSection(
                     onMark = { type ->
                         val mark = SleepMark.now(type)
                         viewModel.ble.externalLog(mark.logLine())
+                        if (type == com.noop.analytics.SleepMarkType.WAKE) {
+                            viewModel.ble.stopOvernightCaptureOnManualWake()
+                        }
                         scope.launch {
                             runCatching {
                                 viewModel.repo.upsertMetricSeries(listOf(mark.metricPoint("my-whoop")))

@@ -2105,6 +2105,21 @@ class WhoopBleClient(
         // DST-agnostic the same way quiet hours are: a DST jump moves the wall clock, the window
         // definition never changes.
 
+        private const val WAKE_SUPPRESSED_WINDOW_KEY = "noopContinuousHrvWakeSuppressedWindow"
+
+        /** yyyyMMdd of the active window's local starting date. Early morning on a
+         *  cross-midnight window belongs to the preceding evening. */
+        fun activeOvernightWindowId(calendar: java.util.Calendar, startMin: Int, endMin: Int): Int? {
+            val minute = calendar.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                calendar.get(java.util.Calendar.MINUTE)
+            if (!overnightWindowContains(minute, startMin, endMin)) return null
+            val anchor = calendar.clone() as java.util.Calendar
+            if (startMin > endMin && minute < endMin) anchor.add(java.util.Calendar.DAY_OF_MONTH, -1)
+            return anchor.get(java.util.Calendar.YEAR) * 10_000 +
+                (anchor.get(java.util.Calendar.MONTH) + 1) * 100 +
+                anchor.get(java.util.Calendar.DAY_OF_MONTH)
+        }
+
         /** Wrap-aware membership: is [minuteOfDay] inside `[startMin, endMin)`, where the window may
          *  cross midnight? Byte-for-byte the quiet-hours semantics. Mirrors the Swift
          *  `ContinuousHrvSchedule.windowContains`. */
@@ -2122,10 +2137,13 @@ class WhoopBleClient(
             minuteOfDay: Int,
             startMin: Int,
             endMin: Int,
+            suppressedWindowId: Int? = null,
+            windowId: Int? = null,
         ): Boolean {
             if (!continuousHrv) return false
             if (!overnightOnly) return true
-            return overnightWindowContains(minuteOfDay, startMin, endMin)
+            return overnightWindowContains(minuteOfDay, startMin, endMin) &&
+                (windowId == null || suppressedWindowId != windowId)
         }
     }
 
@@ -9594,6 +9612,17 @@ class WhoopBleClient(
         reconcileRealtime()
     }
 
+    /** Explicit wake stops this overnight-only window, across relaunch/reconnect.
+     *  The foreground Live screen retains its separate stream want. */
+    fun stopOvernightCaptureOnManualWake() {
+        if (!keepStreamForData || !NoopPrefs.continuousHrvOvernight(context)) return
+        val start = NotifPrefs.getInt(context, NotifPrefs.QUIET_START, 22 * 60)
+        val end = NotifPrefs.getInt(context, NotifPrefs.QUIET_END, 7 * 60)
+        val id = activeOvernightWindowId(java.util.Calendar.getInstance(), start, end) ?: return
+        NoopPrefs.of(context).edit().putInt(WAKE_SUPPRESSED_WINDOW_KEY, id).apply()
+        reconcileRealtime()
+    }
+
     /** #927: the continuous-capture side of the realtime want, window-gated. True while the "Continuous
      *  HRV capture" preference wants the stream held open AND, when "overnight only" is on, the local
      *  wall clock sits inside the nightly window (the reused quiet-hours window, 22:00 → 07:00 by
@@ -9614,12 +9643,15 @@ class WhoopBleClient(
         }
         val cal = java.util.Calendar.getInstance()
         val minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val start = NotifPrefs.getInt(context, NotifPrefs.QUIET_START, 22 * 60)
+        val end = NotifPrefs.getInt(context, NotifPrefs.QUIET_END, 7 * 60)
         return continuousHrvStreamWanted(
             continuousHrv = true,
             overnightOnly = NoopPrefs.continuousHrvOvernight(context),
             minuteOfDay = minuteOfDay,
-            startMin = NotifPrefs.getInt(context, NotifPrefs.QUIET_START, 22 * 60),
-            endMin = NotifPrefs.getInt(context, NotifPrefs.QUIET_END, 7 * 60),
+            startMin = start, endMin = end,
+            suppressedWindowId = NoopPrefs.of(context).getInt(WAKE_SUPPRESSED_WINDOW_KEY, 0),
+            windowId = activeOvernightWindowId(cal, start, end),
         )
     }
 
