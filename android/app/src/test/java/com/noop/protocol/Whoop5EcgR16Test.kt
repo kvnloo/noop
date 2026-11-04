@@ -1,5 +1,6 @@
 package com.noop.protocol
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -8,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #891: the flash-banked ECG record — type 47 HISTORICAL_DATA, data revision 16, 1584 bytes.
+ * #891/#2882: the R16 ECG record — type 43 live or type 47 stored, revision 16, 1584 bytes.
  *
  * Twin of the Swift `Whoop5EcgR16Tests`. The layout is a protocol fact, so both platforms carry the decode
  * and both pin it; a test only on the side that happens to call it today would not stop the other drifting.
@@ -106,9 +107,15 @@ class Whoop5EcgR16Test {
     }
 
     @Test
-    fun onlyType47Revision16IsAnR16Record() {
+    fun onlyType43And47Revision16AreR16Records() {
+        for (type in listOf(Whoop5Ecg.RAW_RECORD_TYPE, Whoop5Ecg.STORED_RECORD_TYPE)) {
+            val frame = r16Frame(0, type = type)
+            assertTrue(Whoop5Ecg.isR16Record(frame))
+            assertEquals(type, Whoop5Ecg.r16FromFrame(frame)?.packetType)
+        }
         assertNull(Whoop5Ecg.r16FromFrame(r16Frame(0, revision = 17)))
-        assertNull(Whoop5Ecg.r16FromFrame(r16Frame(0, type = 43)))
+        assertNull(Whoop5Ecg.r16FromFrame(r16Frame(0, type = 51)))
+        assertFalse(Whoop5Ecg.isR16Record(r16Frame(0, type = 51)))
         assertFalse(Whoop5Ecg.isR16Record(r16Frame(0, revision = 17)))
         // An R17 frame must not decode as an R16, and vice versa: the two revisions share a header and are
         // told apart ONLY by inner[1], so a decoder that ignored it would read 240 bytes as 1584.
@@ -116,6 +123,40 @@ class Whoop5EcgR16Test {
     }
 
     @Test
+
+    @Test
+    fun liveAndStoredR16ShareAllRecordBytesExceptTypeAndCRC() {
+        // Synthetic 500-slot record, not a hardware claim. Values 0..499 in 18-bit coding.
+        val slots = (0 until Whoop5Ecg.R16_MAX_SAMPLES).map { i ->
+            Triple(0, (i shr 8) and 0xff, i and 0xff)
+        }
+        val live = r16Frame(500, slots, type = Whoop5Ecg.RAW_RECORD_TYPE)
+        val stored = r16Frame(500, slots, type = Whoop5Ecg.STORED_RECORD_TYPE)
+        assertEquals(1584, live.size)
+        assertTrue(Framing.verifyFrame(live, DeviceFamily.WHOOP5).ok)
+        assertTrue(Framing.verifyFrame(stored, DeviceFamily.WHOOP5).ok)
+        assertArrayEquals(live.copyOfRange(0, 8), stored.copyOfRange(0, 8))
+        assertEquals(43, live[8].toInt() and 0xff)
+        assertEquals(47, stored[8].toInt() and 0xff)
+        assertArrayEquals(live.copyOfRange(9, live.size - 4), stored.copyOfRange(9, stored.size - 4))
+        assertFalse(live.copyOfRange(live.size - 4, live.size)
+            .contentEquals(stored.copyOfRange(stored.size - 4, stored.size)))
+
+        val decodedLive = Whoop5Ecg.r16FromFrame(live)
+        val decodedStored = Whoop5Ecg.r16FromFrame(stored)
+        assertEquals(500, decodedLive?.sampleCount)
+        assertEquals(0, decodedLive?.samples?.first())
+        assertEquals(499, decodedLive?.samples?.last())
+        assertEquals(decodedStored?.samples, decodedLive?.samples)
+        assertEquals(decodedStored?.sampleTags, decodedLive?.sampleTags)
+        assertEquals(decodedStored?.leadsOffIRaw, decodedLive?.leadsOffIRaw)
+        assertEquals(decodedStored?.leadsOffQRaw, decodedLive?.leadsOffQRaw)
+
+        val badCRC = live.copyOf()
+        badCRC[600] = (badCRC[600].toInt() xor 1).toByte()
+        assertNull(Whoop5Ecg.r16FromFrame(badCRC))
+    }
+
     fun aShortInnerRecordIsRefusedRatherThanDecodedWithAShrunkSampleBlock() {
         // R17 derives its extent from the declared count; R16 cannot. Every region after the waveform is
         // at a FIXED offset, so decoding a short buffer would read the lead-off arrays from inside the
