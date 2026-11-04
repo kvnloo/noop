@@ -35,6 +35,8 @@ class CoachBriefNotificationRouteTest {
         assertTrue(brief.contains("context, 6, coachBriefLaunchIntent(context),"))
         val generic = source("android/app/src/main/java/com/noop/notif/ScheduledReportNotifier.kt")
         assertTrue(generic.contains("appLaunchIntent(context)"))
+        val activity = source("android/app/src/main/java/com/noop/ui/MainActivity.kt")
+        assertTrue(activity.contains("appLaunchIntent(context).putExtra(EXTRA_NOTIFICATION_ROUTE, Destination.Coach.route)"))
     }
 
     @Test
