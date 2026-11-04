@@ -31,6 +31,51 @@ enum TemporaryDatabase {
         return url
     }
 
+    /// Runs a synthetic SQLite fixture and removes only its owned test directory afterwards.
+    static func withFixture<T>(_ create: () throws -> URL, _ body: (URL) throws -> T) throws -> T {
+        let url = try create()
+        defer {
+            let directory = url.deletingLastPathComponent()
+            let fm = FileManager.default
+            if directory.lastPathComponent.hasPrefix("NoopLocalAccessTests-"),
+               directory.deletingLastPathComponent().standardizedFileURL == fm.temporaryDirectory.standardizedFileURL {
+                try? fm.removeItem(at: directory)
+            }
+        }
+        return try body(url)
+    }
+
+    struct Snapshot: Equatable {
+        let bytes: Data
+        let schema: [String]
+        let heartRateValues: [Int]
+        let dailyKeys: [String]
+        let migrationIDs: [String]
+    }
+
+    /// Captures both the SQLite file and read-only schema/data queries for a before/after comparison.
+    static func snapshot(at url: URL) throws -> Snapshot {
+        let bytes = try Data(contentsOf: url)
+        var config = Configuration()
+        config.readonly = true
+        let queue = try DatabaseQueue(path: url.path, configuration: config)
+        return try queue.read { db in
+            Snapshot(
+                bytes: bytes,
+                schema: try String.fetchAll(
+                    db,
+                    sql: "SELECT type || ':' || name || ':' || COALESCE(sql, '') FROM sqlite_master ORDER BY type, name"
+                ),
+                heartRateValues: try Int.fetchAll(db, sql: "SELECT bpm FROM hrSample ORDER BY deviceId, ts"),
+                dailyKeys: try String.fetchAll(
+                    db,
+                    sql: "SELECT deviceId || ':' || day FROM dailyMetric ORDER BY deviceId, day"
+                ),
+                migrationIDs: try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations ORDER BY identifier")
+            )
+        }
+    }
+
     private static func createSchema(_ db: Database) throws {
         try db.execute(sql: "CREATE TABLE grdb_migrations(identifier TEXT PRIMARY KEY)")
         try db.execute(sql: """
