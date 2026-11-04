@@ -232,10 +232,15 @@ object HealthConnectWriter {
             .map { HealthExportPlan.HrPoint(it.ts, it.bpm) }
         if (samples.isEmpty()) return 0
 
-        // Workout + sleep windows where the full-resolution series matters; everything else decimates.
+        // Locally computed nights live under the "-noop" sibling, not the raw strap id.
+        // Use the same merged view as writeSleep, or a strap-only night's HR is decimated
+        // even though NOOP has a completed sleep session (#1525). A night may start before
+        // the last writeback frontier; look back one day to recover its window for NEW HR.
+        val sleepInputs = repo.sleepSessionsMerged(deviceId, maxOf(floor, frontier - 86_400L), now)
+            .map { HealthExportPlan.SleepInput(it.startTs, it.effectiveStartTs, it.endTs, it.stagesJSON) }
         val windows = buildList {
             repo.workouts(deviceId, frontier, now).forEach { add(HealthExportPlan.Window(it.startTs, it.endTs)) }
-            repo.sleepSessionsForDevice(deviceId, frontier, now).forEach { add(HealthExportPlan.Window(it.startTs, it.endTs)) }
+            addAll(HealthExportPlan.finalizedSleepWindows(sleepInputs, now))
         }
 
         val plan = HealthExportPlan.heartRate(samples, windows, frontier)
