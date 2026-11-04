@@ -483,12 +483,20 @@ enum DataBackup {
         let dbURL = URL(fileURLWithPath: dbPath)
 
         do {
-            // Snapshot the current DB (+ sidecars) to a timestamped side file so the user can roll back.
+            // Snapshot the logical database, including committed pages still in the live WAL.
+            // A filesystem copy of only .sqlite silently loses those pages on rollback.
             var sidecar = dbURL.deletingLastPathComponent()
                 .appendingPathComponent("whoop-replaced-\(timestamp()).sqlite")
             if fm.fileExists(atPath: dbURL.path) {
                 if fm.fileExists(atPath: sidecar.path) { try fm.removeItem(at: sidecar) }
-                try fm.copyItem(at: dbURL, to: sidecar)
+                do {
+                    try snapshotDatabase(from: dbURL, to: sidecar)
+                } catch {
+                    // A partial SQLite backup is not a usable rollback image. Fail BEFORE
+                    // removing the live database or its WAL, and discard only our new sidecar.
+                    removeIfPresent(sidecar)
+                    throw error
+                }
             } else {
                 // Nothing to preserve (fresh install); report a placeholder so the message reads sensibly.
                 sidecar = dbURL
@@ -573,6 +581,41 @@ enum DataBackup {
             return .imported(sidecar: sidecar)
         } catch {
             return .failure(String(localized: "Import failed: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Copy a consistent SQLite snapshot while the app's GRDB pool is still open.
+    /// SQLite's backup API reads committed WAL frames as well as main-file pages and
+    /// produces one standalone database. A busy or failed copy must never be used for
+    /// rollback; its caller leaves the original database and WAL in place.
+    private static func snapshotDatabase(from sourceURL: URL, to destinationURL: URL) throws {
+        var sourceHandle: OpaquePointer?
+        let sourceStatus = sqlite3_open_v2(sourceURL.path, &sourceHandle, SQLITE_OPEN_READONLY, nil)
+        guard sourceStatus == SQLITE_OK, let source = sourceHandle else {
+            sqlite3_close(sourceHandle)
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(sourceStatus))
+        }
+        defer { sqlite3_close(source) }
+
+        var destinationHandle: OpaquePointer?
+        let destinationStatus = sqlite3_open_v2(
+            destinationURL.path, &destinationHandle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil
+        )
+        guard destinationStatus == SQLITE_OK, let destination = destinationHandle else {
+            sqlite3_close(destinationHandle)
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(destinationStatus))
+        }
+        defer { sqlite3_close(destination) }
+
+        guard let backup = sqlite3_backup_init(destination, "main", source, "main") else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot",
+                          code: Int(sqlite3_errcode(destination)))
+        }
+        let stepStatus = sqlite3_backup_step(backup, -1)
+        let finishStatus = sqlite3_backup_finish(backup)
+        guard stepStatus == SQLITE_DONE, finishStatus == SQLITE_OK else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot",
+                          code: Int(stepStatus == SQLITE_DONE ? finishStatus : stepStatus))
         }
     }
 
