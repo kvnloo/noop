@@ -45,4 +45,38 @@ final class StressModelCarryTests: XCTestCase {
         XCTAssertEqual(model?.score ?? -1, 2.5, accuracy: 0.001,
                        "the latest day's stored stress must win over a carry")
     }
+    /// #2818: a Charge reset must not compare new HRV/RHR with the discarded era.
+    func testEpochCutsAreIndependentAndKeepHistoricalDayContext() throws {
+        let old = (14...18).map {
+            day(String(format: "2026-07-%02d", $0), rhr: 55, hrv: 90)
+        }
+        let recent = [
+            day("2026-07-19", rhr: 59, hrv: 77),
+            day("2026-07-20", rhr: 60, hrv: 78),
+            day("2026-07-21", rhr: 61, hrv: 79),
+            day("2026-07-22", rhr: 60, hrv: 78),
+        ]
+        let all = old + recent + [day("2026-07-23", rhr: 59, hrv: 82)]
+        let legacy = try XCTUnwrap(StressModel(days: all, stored: []))
+        // HRV reset Jul 18 noon -> Jul 19 kept. RHR reset Jul 20 noon -> Jul 21 kept.
+        let recalibrated = try XCTUnwrap(StressModel(
+            days: all, stored: [], hrvBaselineEpoch: 1_784_376_000,
+            recoveryBaselineEpoch: 1_784_548_800
+        ))
+        XCTAssertEqual(legacy.hrvDelta ?? .nan, -8.0 / 3.0, accuracy: 1e-9)
+        XCTAssertEqual(legacy.rhrDelta ?? .nan, 16.0 / 9.0, accuracy: 1e-9)
+        XCTAssertEqual(recalibrated.hrvDelta ?? .nan, 4.0, accuracy: 1e-9)
+        XCTAssertEqual(recalibrated.rhrDelta ?? .nan, -1.5, accuracy: 1e-9)
+        XCTAssertLessThan(recalibrated.score, 1.0)
+
+        // An historical, pre-reset scored day retains its own preceding nights.
+        let historical = Array(old.prefix(4))
+        let before = try XCTUnwrap(StressModel(days: historical, stored: []))
+        let withFutureReset = try XCTUnwrap(StressModel(
+            days: historical, stored: [], hrvBaselineEpoch: 1_784_376_000,
+            recoveryBaselineEpoch: 1_784_548_800
+        ))
+        XCTAssertEqual(before.hrvDelta ?? .nan, withFutureReset.hrvDelta ?? .nan, accuracy: 1e-9)
+        XCTAssertEqual(before.rhrDelta ?? .nan, withFutureReset.rhrDelta ?? .nan, accuracy: 1e-9)
+    }
 }

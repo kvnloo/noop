@@ -579,11 +579,15 @@ fun TodayScreen(
     var fitnessAgeToday by remember { mutableStateOf(viewModel.todayFitnessAgeCache) }
     var vo2maxToday by remember { mutableStateOf(viewModel.todayVo2maxCache) }
     var vitalityToday by remember { mutableStateOf(viewModel.todayVitalityCache) }
-    LaunchedEffect(days) {
-        // #849 re-mount guard: skip the whole-history scan when `days` is content-identical to the last load
-        // (data class hashCode is a stable structural signature). The marker + cached values live on the
-        // long-lived ViewModel, so a tab-return / post-import re-mount restores the numbers without re-reading.
-        val sig = days.hashCode()
+    // The pinned Stress card must use the same epochs as the Stress detail screen.
+    // Include them in the cached signature: a recalibration with unchanged days
+    // changes Stress's answer and must invalidate the prior card value.
+    val stressPrefs = NoopPrefs.of(context)
+    val stressHrvEpoch = stressPrefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
+    val stressRecoveryEpoch = stressPrefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble()
+    LaunchedEffect(days, stressHrvEpoch, stressRecoveryEpoch) {
+        // #849: skip unchanged history AND unchanged epochs across tab re-mounts.
+        val sig = 31 * (31 * days.hashCode() + stressHrvEpoch.hashCode()) + stressRecoveryEpoch.hashCode()
         if (viewModel.todayCardsLoadedSig == sig) return@LaunchedEffect
         // Read each pinned card from the SAME source its own detail screen reads, the proven path that
         // already shows real numbers there (and the resolution iOS's exploreSeries uses). Stress is derived
@@ -608,7 +612,7 @@ fun TodayScreen(
             withContext(Dispatchers.Default) {
                 val stored = viewModel.repo.metricSeries("my-whoop", "stress", "0000-01-01", "9999-12-31")
                     .associate { it.day to it.value.coerceIn(0.0, 3.0) }
-                StressModel.build(days, stored)?.score
+                StressModel.build(days, stored, stressHrvEpoch, stressRecoveryEpoch)?.score
             }
         }.getOrNull()
         fitnessAgeToday = runCatching {

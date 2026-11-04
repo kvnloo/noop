@@ -440,6 +440,22 @@ public enum Baselines {
         defaults.double(forKey: hrvBaselineEpochKey)
     }
 
+    /// First UTC day key whose midnight the epoch-aware fold does not discard.
+    /// A reset after midnight drops the reset day's night too; a reset at midnight keeps it.
+    /// nil means no recalibration (the legacy 30-day window remains intact).
+    /// Same strict day-start < epoch rule as foldHistory and the Kotlin twin.
+    public static func firstCountedDay(baselineEpoch: Double) -> String? {
+        guard baselineEpoch > 0, baselineEpoch.isFinite,
+              let interval = utcCalendar.dateInterval(of: .day, for: Date(timeIntervalSince1970: baselineEpoch))
+        else { return nil }
+        let first = interval.start.timeIntervalSince1970 < baselineEpoch ? interval.end : interval.start
+        let fmt = DateFormatter()
+        fmt.calendar = utcCalendar
+        fmt.timeZone = utcCalendar.timeZone
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: first)
+    }
+
     /// Read the persisted manual-recalibration epoch (epoch SECONDS) for the wider RECOVERY baseline
     /// (resting HR / respiration / skin temp). 0 = no recalibration. Written alongside the HRV epoch by
     /// `recalibrateRecoveryBaselines`. A fold that wants to honour this passes it through the day-keyed

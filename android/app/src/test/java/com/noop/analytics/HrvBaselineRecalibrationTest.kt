@@ -95,6 +95,18 @@ class HrvBaselineRecalibrationTest {
     }
 
     @Test
+    fun firstCountedDay_matchesStrictUtcFold() {
+        val midnight = LocalDate.parse("2026-07-19").atStartOfDay(ZoneOffset.UTC).toEpochSecond().toDouble()
+        assertEquals(null, Baselines.firstCountedDay(0.0))
+        assertEquals(null, Baselines.firstCountedDay(Double.POSITIVE_INFINITY))
+        assertEquals("2026-07-19", Baselines.firstCountedDay(midnight))
+        assertEquals("2026-07-20", Baselines.firstCountedDay(midnight + 1))
+        val days = listOf("2026-07-18", "2026-07-19", "2026-07-20")
+        val values: List<Double?> = listOf(90.0, 78.0, 79.0)
+        assertEquals(1, Baselines.foldHistory(values, days, hrvCfg, midnight + 1).nValid)
+    }
+
+    @Test
     fun recalibrateEpoch_zeroIsNoOp() {
         val days = listOf("2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04")
         val vals: List<Double?> = listOf(60.0, 61.0, 59.0, 62.0)
