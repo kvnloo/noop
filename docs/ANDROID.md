@@ -10,8 +10,8 @@ Optional network features and the default-on update check are documented in the
 This document covers the **Android client** under [`android/`](../android). The macOS app is the
 reference implementation; the Android app is a native re-implementation of the same wire protocol
 and on-device data model, not a wrapper around the Swift code. (A third target, **iOS**, is folded
-into the main project as a **build-from-source-only** client — see the macOS/iOS docs — and shares
-the same analytics so results match macOS.)
+into the main project and ships a sideloadable `.ipa` or builds from source (see [iOS installation](IOS.md));
+it shares the same analytics so results match macOS.)
 
 > **Not affiliated with WHOOP, and not a medical device.** "WHOOP" is used nominatively only to
 > identify the hardware this software interoperates with. NOOP contains no WHOOP code, firmware, or
