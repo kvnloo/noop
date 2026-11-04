@@ -2859,4 +2859,33 @@
     <string name="raw_diag_ecg_probe_running">Une capture est peut-être encore active sur ce bracelet. Le verdict est écrit dans le strap log.</string>
     <string name="today_customize_live_session_availability">Apparaît aujourd’hui si les sessions en direct sont activées dans Paramètres ou si une session est active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Aujourd\'hui à votre façon, fréquence cardiaque lisible par toute application, et l\'italien</string>
+
+    <!-- Oura Test Centre feature mode control (#2119); translated across every shipped locale. -->
+    <string name="oura_test_section_title">OURA</string>
+    <string name="oura_test_section_desc">Commandes expérimentales pour une bague Oura associée. Chaque changement de mode doit être confirmé.</string>
+    <string name="oura_onset_title">Début du sommeil Oura (expérimental)</string>
+    <string name="oura_onset_desc">Utilise le début de sommeil stable de la bague pour éviter les nuits en double. Désactivé par défaut ; consulter le journal.</string>
+    <string name="oura_feature_title">Activer les fonctions Oura (expérimental)</string>
+    <string name="oura_feature_desc">Modes Arrêt ou Automatique uniquement. Le statut vient de la bague. Le contournement du verrou de compte reste non vérifié. FC de jour et au repos exclues.</string>
+    <string name="oura_feature_spo2">SpO2</string>
+    <string name="oura_feature_real_steps">Pas réels</string>
+    <string name="oura_feature_exercise_hr">FC pendant le sport</string>
+    <string name="oura_feature_cva_ppg">Échantillonneur PPG CVA</string>
+    <string name="oura_feature_off">Arrêt</string>
+    <string name="oura_feature_automatic">Automatique</string>
+    <string name="oura_feature_requested">Demandé</string>
+    <string name="oura_feature_connected_live">Direct connecté</string>
+    <string name="oura_feature_unknown">Inconnu</string>
+    <string name="oura_feature_active">actif</string>
+    <string name="oura_feature_searching">recherche</string>
+    <string name="oura_feature_no_ppg">sans PPG</string>
+    <string name="oura_feature_cold">froid</string>
+    <string name="oura_feature_status_format">%1$s · %2$s</string>
+    <string name="oura_feature_enable">Activer</string>
+    <string name="oura_feature_disable">Désactiver</string>
+    <string name="oura_feature_write_title">Envoyer à la bague ?</string>
+    <string name="oura_feature_write_confirm">Envoyer %1$s à la bague ? Cette commande expérimentale est réversible. Vérifiez le statut renvoyé. Le contournement du verrou de compte reste non prouvé.</string>
+    <string name="oura_feature_write">Envoyer</string>
+    <string name="oura_feature_not_written_title">Non envoyé</string>
+    <string name="oura_feature_not_written_desc">Aucune bague Oura authentifiée ni connectée, ou Android a refusé la commande. Connectez la bague et réessayez.</string>
 </resources>
