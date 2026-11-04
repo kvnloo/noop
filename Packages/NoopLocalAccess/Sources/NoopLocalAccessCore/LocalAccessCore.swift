@@ -175,6 +175,12 @@ public struct StorageStats: Equatable, Sendable {
     public let rawBytes: Int
 }
 
+public struct EventRow: Equatable, Sendable {
+    public let ts: Int
+    public let kind: String
+    public let payloadJSON: String
+}
+
 public final class ReadonlyNoopStore {
     private let dbQueue: DatabaseQueue
     private let tableNames: Set<String>
@@ -316,6 +322,22 @@ public final class ReadonlyNoopStore {
             case (false, false):
                 return nil
             }
+        }
+    }
+
+    public func events(deviceId: String, kind: String, from: Int, to: Int, limit: Int) throws -> [EventRow] {
+        guard tableNames.contains("event") else { return [] }
+        let cap = max(1, limit)
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT ts, kind, payloadJSON FROM event
+                WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ?
+                ORDER BY ts DESC, kind DESC LIMIT ?
+                """, arguments: [deviceId, kind, from, to, cap])
+                .map {
+                    EventRow(ts: $0["ts"], kind: $0["kind"], payloadJSON: $0["payloadJSON"])
+                }
+            return Array(rows.reversed())
         }
     }
 
@@ -534,6 +556,59 @@ public final class NoopDataAccess {
         ])
     }
 
+    public func eventSeries(
+        kind: String,
+        hours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
+        }
+
+        let now = Int(Date().timeIntervalSince1970)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            fromTs = now - hours * 3_600
+            toTs = now
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let rows = try store.events(
+            deviceId: resolvedDeviceId,
+            kind: kind,
+            from: fromTs,
+            to: toTs,
+            limit: limit + 1
+        )
+        let truncated = rows.count > limit
+        let points = Array(rows.suffix(limit))
+        return .object([
+            "kind": .string(kind),
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(hours),
+            ]),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                .object([
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "kind": .string(row.kind),
+                    "payload": parseEventPayloadJSON(row.payloadJSON),
+                ])
+            }),
+        ])
+    }
+
     public static func metricCatalog() -> JSONValue {
         .object([
             "sources": sources(),
@@ -717,6 +792,15 @@ private func optionalDouble(_ value: Double?) -> JSONValue {
 
 private func optionalInt(_ value: Int?) -> JSONValue {
     value.map { .int($0) } ?? .null
+}
+
+private func parseEventPayloadJSON(_ raw: String) -> JSONValue {
+    guard let data = raw.data(using: .utf8),
+          let decoded = try? JSONDecoder().decode(JSONValue.self, from: data)
+    else {
+        return .string(raw)
+    }
+    return decoded
 }
 
 func boundedDays(_ value: JSONValue?, default defaultValue: Int, max maxValue: Int) -> Int {
