@@ -1838,7 +1838,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // The Workouts screen collects this list even while the live capture sheet is open. Refresh
             // after the row and HR are persisted so its sessions, stats and first-workout empty state
             // update without leaving and re-entering the screen.
-            if (saved) loadWorkouts()
+            if (saved) {
+                loadWorkouts()
+                // #2682: only an already-saved GPS route, with persisted wearer consent, is exported.
+                AutoRouteExport.afterSaved(appContext, row)
+            }
             if (_hcWriteback.value) {
                 runCatching { HealthConnectWriter.writeExercise(appContext, row, w.sport.exerciseType) }
                 // #528: export the just-captured HR series now (workout row already upserted above, so

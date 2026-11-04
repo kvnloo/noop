@@ -2876,4 +2876,14 @@
     <string name="raw_diag_ecg_probe_running">Na tym pasku może nadal trwać zapis. Werdykt trafia do strap log.</string>
     <string name="today_customize_live_session_availability">Pojawia się dzisiaj, gdy sesje na żywo są włączone w Ustawieniach lub trwa sesja.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Dziś po swojemu, tętno dostępne dla każdej aplikacji i język włoski</string>
+
+    <!-- #2682: consented Android GPS route output into a wearer-selected SAF folder. -->
+    <string name="route_auto_export_title">Automatyczny eksport tras GPX</string>
+    <string name="route_auto_export_disclosure">Po zapisaniu treningu GPS NOOP zapisuje trasę w wybranym folderze. Ślady GPX ujawniają odwiedzone miejsca. Folder synchronizowany może udostępniać je innym aplikacjom lub usługom.</string>
+    <string name="route_auto_export_default_off">Domyślnie wyłączone. Inne aplikacje nie mogą pobierać tras bezpośrednio z NOOP.</string>
+    <string name="route_auto_export_failed">Ostatni eksport nie powiódł się lub cofnięto dostęp do folderu. Wybierz folder ponownie.</string>
+    <string name="route_auto_export_choose">Wybierz folder, aby włączyć</string>
+    <string name="route_auto_export_change">Zmień folder eksportu</string>
+    <string name="route_auto_export_disable">Wyłącz automatyczny eksport</string>
+    <string name="route_auto_export_denied">Nie przyznano dostępu do folderu. Ustawienie nie zostało zmienione.</string>
 </resources>
