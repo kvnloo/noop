@@ -11,6 +11,34 @@ import StrandDesign
 /// WhoopStore via the DEBUG `setStoreForTesting` seam.
 final class DeepTimelineFacadeTests: XCTestCase {
 
+    // MARK: - Empty zoom-window navigation (#2775)
+
+    @MainActor
+    func testZoomedEmptyWindowKeepsInteractiveChartMounted() {
+        // A real data gap after the async read must not replace the chart with a gesture-less view.
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: false, hasPoints: false, isZoomed: true),
+                       .chartWithEmptyState)
+        // While an empty zoomed window is still loading, keep the axes and gesture host active.
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: true, hasPoints: false, isZoomed: true),
+                       .chart)
+        // Once the pan/zoom reaches measured samples, draw the line again normally.
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: false, hasPoints: true, isZoomed: true),
+                       .chart)
+    }
+
+    @MainActor
+    func testUnzoomedEmptyDayRetainsExistingLoadingAndEmptyStates() {
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: true, hasPoints: false, isZoomed: false),
+                       .loading)
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: false, hasPoints: false, isZoomed: false),
+                       .empty)
+        // A loaded day continues to display its chart, whether a reload is in flight or not.
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: true, hasPoints: true, isZoomed: false),
+                       .chart)
+        XCTAssertEqual(FullDayChartView.chartPresentation(isLoading: false, hasPoints: true, isZoomed: false),
+                       .chart)
+    }
+
     // MARK: - Pure adaptive-resolution decision
 
     /// A whole DAY at the default budget picks a COARSE bucket — never raw (raw 86k seconds would be the
