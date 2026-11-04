@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Доступ агента Hermes</string>
+    <string name="agent_settings_title">Доступ Hermes (экспериментально)</string>
+    <string name="agent_settings_blurb">По умолчанию выключено. Hermes читает ограниченные сводки через Tailscale. Для действий нужно отдельное разрешение; обращения записываются.</string>
+    <string name="agent_subtitle">Экспериментально · только форк · выключено</string>
+    <string name="agent_intro">Hermes читает ограниченные сводки NOOP через Tailscale и с разрешения открывает экраны или отправляет заметки. Запросы доступны только при активном разрешении; все фиксируются. Данные по дням требуют отдельного разрешения. Это не медицинская рекомендация.</string>
+    <string name="agent_pair_section">1 · Связать с брокером</string>
+    <string name="agent_link_hint">Вставьте ссылку сопряжения Hermes</string>
+    <string name="agent_pair_button">Сопрячь</string>
+    <string name="agent_confirm_pair">Подтвердить сопряжение по ссылке</string>
+    <string name="agent_forget_pair">Забыть сопряжение и закрыть доступ</string>
+    <string name="agent_grant_section">2 · Разрешить сеанс</string>
+    <string name="agent_minutes">%1$d мин</string>
+    <string name="agent_hours">%1$d ч</string>
+    <string name="agent_detail">Также разрешить данные по дням (иначе только сводки)</string>
+    <string name="agent_actions">Разрешить безопасные действия: открыть NOOP или отправить заметку</string>
+    <string name="agent_allow">Разрешить доступ Hermes</string>
+    <string name="agent_stop">Закрыть доступ сейчас</string>
+    <string name="agent_audit_section">3 · Журнал действий (только этот телефон)</string>
+    <string name="agent_clear_audit">Очистить журнал действий</string>
+    <string name="agent_checking">Проверка у брокера…</string>
+    <string name="agent_pair_failed">Сопряжение не удалось. Проверьте ссылку, срок и Tailscale.</string>
+    <string name="agent_paired">Связан с %1$s · устройство …%2$s</string>
+    <string name="agent_not_paired">Не сопряжено.</string>
+    <string name="agent_grant_on">ВКЛ до %1$s · %2$s · адрес %3$s</string>
+    <string name="agent_grant_off_error">ВЫКЛ · %1$s</string>
+    <string name="agent_grant_off">ВЫКЛ</string>
+    <string name="agent_no_activity">Действий агента пока нет.</string>
+    <string name="agent_channel_desc">Показывается при доступе Hermes и для заметок.</string>
+    <string name="agent_nav_suggest">Hermes предлагает открыть %1$s</string>
+    <string name="agent_nav_tap">Нажмите, чтобы открыть NOOP.</string>
+    <string name="agent_note_footer">От Hermes через NOOP. Не медицинская рекомендация.</string>
+    <string name="agent_fgs_until">Hermes имеет доступ к NOOP до %1$s</string>
+    <string name="agent_starting">Запуск…</string>
+    <string name="agent_fgs_detail">%1$s · только tailnet · вызовы записаны</string>
+    <string name="agent_stop_now">Остановить сейчас</string>
+    <string name="agent_summaries">сводки</string>
+    <string name="agent_daily_detail">данные по дням</string>
+    <string name="agent_safe_actions">безопасные действия</string>
+    <string name="agent_error_foreground">Android запретил службу переднего плана.</string>
+    <string name="agent_error_tailnet">Tailscale не подключён на телефоне.</string>
+    <string name="agent_error_pair_first">Сначала выполните сопряжение с брокером.</string>
+    <string name="agent_error_bind">Не удаётся слушать адрес tailnet (%1$s).</string>
+    <string name="agent_special_use">Локальный доступ через Tailscale с разрешения владельца на ограниченное время.</string>
+</resources>

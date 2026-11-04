@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Hermes-Agent-Zugriff</string>
+    <string name="agent_settings_title">Hermes-Agent-Zugriff (Experimentell)</string>
+    <string name="agent_settings_blurb">Standardmäßig aus. Dein Hermes liest begrenzte Zusammenfassungen über Tailscale. Aktionen erfordern eigene Freigabe; jeder Aufruf wird protokolliert.</string>
+    <string name="agent_subtitle">Experimentell · nur Fork · standardmäßig aus</string>
+    <string name="agent_intro">Hermes kann über dein Tailscale-Netz begrenzte NOOP-Zusammenfassungen lesen und mit Erlaubnis Ansichten öffnen oder Hinweise senden. Nur aktive Freigaben erlauben Anfragen; alle werden protokolliert. Tagesdetails brauchen eine eigene Freigabe. Keine medizinische Beratung.</string>
+    <string name="agent_pair_section">1 · Mit Broker koppeln</string>
+    <string name="agent_link_hint">Kopplungslink von Hermes einfügen</string>
+    <string name="agent_pair_button">Koppeln</string>
+    <string name="agent_confirm_pair">Kopplung per Link bestätigen</string>
+    <string name="agent_forget_pair">Kopplung vergessen und Zugriff stoppen</string>
+    <string name="agent_grant_section">2 · Sitzung freigeben</string>
+    <string name="agent_minutes">%1$d Min.</string>
+    <string name="agent_hours">%1$d Std.</string>
+    <string name="agent_detail">Tageswerte ebenfalls erlauben (sonst nur Zusammenfassungen)</string>
+    <string name="agent_actions">Sichere Aktionen erlauben: NOOP-Ansicht öffnen oder Hinweis senden</string>
+    <string name="agent_allow">Hermes-Zugriff erlauben</string>
+    <string name="agent_stop">Zugriff jetzt stoppen</string>
+    <string name="agent_audit_section">3 · Aktivitätsprotokoll (nur dieses Telefon)</string>
+    <string name="agent_clear_audit">Aktivitätsprotokoll leeren</string>
+    <string name="agent_checking">Broker wird geprüft…</string>
+    <string name="agent_pair_failed">Kopplung fehlgeschlagen. Link, Gültigkeit und Tailscale prüfen.</string>
+    <string name="agent_paired">Gekoppelt mit %1$s · Gerät …%2$s</string>
+    <string name="agent_not_paired">Nicht gekoppelt.</string>
+    <string name="agent_grant_on">AN bis %1$s · %2$s · erreichbar unter %3$s</string>
+    <string name="agent_grant_off_error">AUS · %1$s</string>
+    <string name="agent_grant_off">AUS</string>
+    <string name="agent_no_activity">Noch keine Agent-Aktivität.</string>
+    <string name="agent_channel_desc">Wird bei Hermes-Zugriff und für Hinweise angezeigt.</string>
+    <string name="agent_nav_suggest">Hermes empfiehlt: %1$s öffnen</string>
+    <string name="agent_nav_tap">Tippen, um NOOP zu öffnen.</string>
+    <string name="agent_note_footer">Von Hermes über NOOP. Keine medizinische Beratung.</string>
+    <string name="agent_fgs_until">Hermes hat bis %1$s Zugriff auf NOOP</string>
+    <string name="agent_starting">Startet…</string>
+    <string name="agent_fgs_detail">%1$s · nur Tailnet · alle Aufrufe protokolliert</string>
+    <string name="agent_stop_now">Jetzt stoppen</string>
+    <string name="agent_summaries">Zusammenfassungen</string>
+    <string name="agent_daily_detail">Tagesdetails</string>
+    <string name="agent_safe_actions">sichere Aktionen</string>
+    <string name="agent_error_foreground">Android hat den Vordergrunddienst verweigert.</string>
+    <string name="agent_error_tailnet">Tailscale ist auf diesem Telefon nicht verbunden.</string>
+    <string name="agent_error_pair_first">Zuerst mit deinem Broker koppeln.</string>
+    <string name="agent_error_bind">Tailnet-Adresse nicht erreichbar (%1$s).</string>
+    <string name="agent_special_use">Vom Eigentümer erlaubter, zeitlich begrenzter lokaler Tailscale-Zugriff.</string>
+</resources>
