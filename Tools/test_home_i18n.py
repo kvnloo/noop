@@ -408,6 +408,20 @@ class HomeLocalizationTest(unittest.TestCase):
         scoped = [row for row in findings if row[0] in APPLE_HOME_FILES]
         self.assertEqual([], scoped, "Unlocalized Apple Home UI:\n" + _format_findings(scoped))
 
+    def test_apple_classic_today_customize_survives_hidden_sections(self) -> None:
+        """The root editor must stay above the hideable Today sections on iOS."""
+        source = (ROOT / "Strand/Screens/TodayView.swift").read_text(encoding="utf-8")
+        body = source.split("struct TodayView: View {", 1)[1].split("    var body: some View {", 1)[1]
+        before_sections = body.split("                ForEach(sectionOrder)", 1)[0]
+        after_header = before_sections.split("                todayTopBar", 1)[1]
+        pinned = after_header.split("                if selectedDayOffset == 0", 1)[0]
+        self.assertIn("Button { customizationDestination = .today } label: {", pinned)
+        self.assertIn('Label("Customize Today", systemImage: "slider.horizontal.3")', pinned)
+        self.assertNotRegex(pinned, r"(?m)^\s*if\b", "Root customize must not be conditionally hidden")
+        self.assertNotIn("sectionOrder", pinned)
+        self.assertNotIn("enabledDashboardCards", pinned)
+
+
     def test_apple_day_nav_dynamic_date_avoids_multiline_interpolation(self) -> None:
         source = (ROOT / "Packages/StrandDesign/Sources/StrandDesign/DayNavBar.swift").read_text(encoding="utf-8")
         self.assertIn("let formattedDay = selectedDay.formatted(", source)

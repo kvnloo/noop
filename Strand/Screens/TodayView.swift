@@ -1473,6 +1473,21 @@ struct TodayView: View {
                 // Compact top bar: profile/settings (left) · ‹ Today › day-nav (centre, bold) · strap
                 // battery (right). Replaces the big title + the full-width day-nav pill (WHOOP-style).
                 todayTopBar
+                // The Key Metrics / Your Cards inline editors disappear if those sections are hidden.
+                // Keep the root layout editor reachable independently of the user's saved section order.
+                HStack {
+                    Spacer()
+                    Button { customizationDestination = .today } label: {
+                        Label("Customize Today", systemImage: "slider.horizontal.3")
+                            .font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.accent)
+                            .padding(.horizontal, NoopMetrics.space4)
+                            .padding(.vertical, NoopMetrics.space2)
+                            .frame(minHeight: NoopMetrics.compactControlSize)
+                            .background(Capsule().fill(StrandPalette.surfaceInset))
+                    }
+                    .buttonStyle(.plain)
+                }
                 if selectedDayOffset == 0, let currentDay = repo.today?.day,
                    currentDay == repo.days.last?.day { HealthAlertBanner() }
                 #else
