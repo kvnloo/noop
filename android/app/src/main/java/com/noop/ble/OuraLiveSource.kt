@@ -387,6 +387,9 @@ class OuraLiveSource(
      */
     @Volatile
     private var intentionalDisconnect = false
+    /** One retry for a refusal without foreign-nonce evidence; never latch on the first status (#2508). */
+    @Volatile
+    private var authRefusalRetries = 0
     /**
      * Consecutive involuntary reconnect attempts, feeding the capped-exponential [ReconnectBackoff] (3, 6,
      * 12, 24, 48, 60s). Reset to 0 on a successful connect and on an explicit [connect] so a ring genuinely
@@ -1191,6 +1194,7 @@ class OuraLiveSource(
      */
     fun reconnect() {
         _needsPairing.value = null
+        authRefusalRetries = 0
         intentionalDisconnect = false
         failedReconnectAttempts = 0
         handler.removeCallbacks(reconnectRunnable)
@@ -1306,6 +1310,7 @@ class OuraLiveSource(
 
     /** Tear down: cancel the connection and stop scanning, persisting anything still buffered. Idempotent. */
     override fun stop() {
+        authRefusalRetries = 0
         // A deliberate teardown (device switch / removal) must NOT auto-reconnect: mark it intentional and
         // drop the reconnect target so any pending backoff bails and no fresh one is scheduled (#912). Remove
         // any already-posted reconnect from the main-looper handler too, so it isn't retained for the full
@@ -1671,7 +1676,9 @@ class OuraLiveSource(
         // else is armed until `auth OK`. Start the clock on that wait (#2304).
         if (transition == OuraTransition.Ready && d.phase == OuraDriverPhase.Authenticating) armAuthWatchdog()
         when (d.phase) {
+            OuraDriverPhase.EnablingLiveHR -> authRefusalRetries = 0
             OuraDriverPhase.Streaming -> {
+                authRefusalRetries = 0
                 // The driver returns to Streaming after EACH history-fetch pass completes, so gate all the
                 // one-shot streaming work on reachedStreaming (twin of Swift's `if !reachedStreaming`) - it
                 // must run exactly once per connection, not on every history summary.
@@ -1716,8 +1723,21 @@ class OuraLiveSource(
                 if (adoptIntent) provisionKeyInstall(d) else announceNeedsPairing(KEY_INSTALL_MESSAGE)
             }
             is OuraDriverPhase.AuthFailed -> {
-                log("Oura: auth failed - the stored install key does not match this ring")
-                announceNeedsPairing(AUTH_FAILED_MESSAGE)
+                if (authRefusalRetries == 0) {
+                    authRefusalRetries = 1
+                    log("Oura: auth status ${d.phase.status.name} - retrying once before a pairing verdict")
+                    clearAuthWatchdog()
+                    d.stop()
+                    runCatching { gatt?.disconnect() }
+                } else {
+                    announceNeedsPairing(AUTH_FAILED_MESSAGE)
+                }
+            }
+            OuraDriverPhase.RetryableAuthFailure -> {
+                log("Oura: shared-link auth refusal after unexpected nonce - reconnecting, not a pairing verdict")
+                clearAuthWatchdog()
+                d.stop()
+                runCatching { gatt?.disconnect() }
             }
             else -> Unit
         }
@@ -1939,8 +1959,12 @@ class OuraLiveSource(
     private fun routeSecure(d: OuraDriver, secure: com.noop.oura.OuraSecureFrame) = guardedCallback("secure-route") {
         when (val routing = d.handleSecureFrame(secure)) {
             is OuraDriver.SecureRouting.Nonce -> {
-                clearAuthWatchdog()   // the ring answered: the healthy path, and the watchdog's only exit
-                silentSessionsInARow = 0
+                if (d.expectsAuthNonce) {
+                    clearAuthWatchdog()   // the ring answered our outstanding request
+                    silentSessionsInARow = 0
+                } else {
+                    log("Oura: foreign nonce ignored (no get_nonce outstanding)")
+                }
                 advance(OuraTransition.NonceReceived(routing.nonce))
             }
             is OuraDriver.SecureRouting.AuthStatus -> {
