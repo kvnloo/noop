@@ -1,5 +1,7 @@
 package com.noop.ble
 
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -111,4 +113,34 @@ class ContinuousHrvWindowTest {
         assertFalse(WhoopBleClient.overnightWindowContains(0, 9 * 60, 17 * 60))
         assertFalse(WhoopBleClient.overnightWindowContains(1439, 9 * 60, 17 * 60))
     }
+    /** Early morning belongs to the previous evening, while the next night re-arms. */
+    @Test
+    fun manualWakeStopsCurrentNightButNotNextNight() {
+        fun utcClock(hour: Int, minute: Int) =
+            java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC")).apply {
+                set(2026, java.util.Calendar.OCTOBER, 16, hour, minute, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+        val wakeId = WhoopBleClient.activeOvernightWindowId(utcClock(5, 48), start, end)
+        assertEquals(20261015, wakeId)
+        assertEquals(wakeId, WhoopBleClient.activeOvernightWindowId(utcClock(6, 59), start, end))
+        assertNull(WhoopBleClient.activeOvernightWindowId(utcClock(7, 0), start, end))
+        assertFalse(WhoopBleClient.continuousHrvStreamWanted(
+            true, true, 5 * 60 + 48, start, end, wakeId, wakeId))
+        val nextId = WhoopBleClient.activeOvernightWindowId(utcClock(22, 0), start, end)
+        assertEquals(20261016, nextId)
+        assertTrue(WhoopBleClient.continuousHrvStreamWanted(
+            true, true, 22 * 60, start, end, wakeId, nextId))
+    }
+
+    @Test
+    fun wakeSuppressionNeverDisablesAlwaysModeOrOtherDates() {
+        assertTrue(WhoopBleClient.continuousHrvStreamWanted(
+            true, false, 5 * 60 + 48, start, end, 20261015, 20261015))
+        assertFalse(WhoopBleClient.continuousHrvStreamWanted(
+            false, true, 5 * 60 + 48, start, end, 20261015, 20261015))
+        assertTrue(WhoopBleClient.continuousHrvStreamWanted(
+            true, true, 6 * 60 + 59, start, end, 20261014, 20261015))
+    }
+
 }

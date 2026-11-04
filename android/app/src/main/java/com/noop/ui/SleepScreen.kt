@@ -763,6 +763,7 @@ fun SleepScreen(
                     val mark = SleepMark.now(type)
                     // The shareable strap log is the human-readable surface in a debug export.
                     vm.ble.externalLog(mark.logLine())
+                    if (type == SleepMarkType.WAKE) vm.ble.stopOvernightCaptureOnManualWake()
                     scope.launch {
                         runCatching {
                             vm.repo.upsertMetricSeries(listOf(mark.metricPoint("my-whoop")))
