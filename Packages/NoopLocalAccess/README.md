@@ -11,6 +11,7 @@ noop-local-access query metric_series --key hrv --days 90
 noop-local-access query data_freshness
 noop-local-access query sleep_summary --days 30
 noop-local-access query workout_summary --days 90
+noop-local-access query workout_summary --days 90 --include-zones
 ```
 
 Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. Query results are written to
@@ -24,7 +25,7 @@ Arguments reuse the MCP defaults and bounds:
   clamped to 1...4000), `--from-day`, `--to-day`, and `--limit` (default 500, clamped to 1...2000).
 - `data_freshness`: no tool arguments.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000).
-- `workout_summary`: optional `--days` (default 90, clamped to 1...4000).
+- `workout_summary`: optional `--days` (default 90, clamped to 1...4000) and `--include-zones` (default off). Default rows still return `hasZones` only. When set, each row gets a bounded `zones` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
