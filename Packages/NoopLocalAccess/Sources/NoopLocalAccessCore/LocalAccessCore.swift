@@ -294,6 +294,43 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    /// Last usable R-R observation, with quality filters matching WhoopStore's RR reads.
+    /// Older databases may lack source/quality columns, so filter only columns that exist.
+    public func latestRRIntervalTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("rrInterval") else { return nil }
+        return try dbQueue.read { db in
+            let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('rrInterval')"))
+            var whereSQL = "WHERE deviceId = ?"
+            if columns.contains("srcChannel") {
+                whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
+            }
+            if columns.contains("tsSuspect") {
+                whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
+            }
+
+            let sql = "SELECT MAX(ts) FROM rrInterval \(whereSQL)"
+            if columns.contains("srcChannel") {
+                // WhoopStore RRSourceChannel.spo2Ibi.rawValue is 2 (not the BLE wire tag).
+                return try Int.fetchOne(db, sql: sql, arguments: [deviceId, 2])
+            }
+            return try Int.fetchOne(db, sql: sql, arguments: [deviceId])
+        }
+    }
+
+    public func latestEventTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("event") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM event WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
+    public func latestSleepSessionTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("sleepSession") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(endTs) FROM sleepSession WHERE deviceId = ?", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -462,6 +499,9 @@ public final class NoopDataAccess {
 
     public func freshness() throws -> JSONValue {
         let latestHR = try store.latestHRSampleTs(deviceId: deviceId)
+        let latestRR = try store.latestRRIntervalTs(deviceId: deviceId)
+        let latestEvent = try store.latestEventTs(deviceId: deviceId)
+        let latestSleep = try store.latestSleepSessionTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -477,6 +517,9 @@ public final class NoopDataAccess {
             "deviceId": .string(deviceId),
             "computedDeviceId": .string(computedDeviceId),
             "latestHeartRateSample": timestampJSON(latestHR, now: now),
+            "latestRrInterval": timestampJSON(latestRR, now: now),
+            "latestEvent": timestampJSON(latestEvent, now: now),
+            "latestSleepSession": timestampJSON(latestSleep, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),
