@@ -1,0 +1,100 @@
+# Fork-only (kvnloo/noop): build every dogfood channel the moment it is recomposed.
+#
+# channels/base    = ryanbr/noop main + this file and docs/fork/RFC-0-factory.md
+# channels/nightly = base + every in-progress feature  -> demo flavour, installs BESIDE the real app
+# channels/preview = base + promoted features          -> full flavour com.noop.whoop.debug (the S25 app)
+#
+# RFC: https://github.com/kvnloo/noop/issues/103. Composed by `noop-channel` (Hermes ops dir), never edited by hand.
+# No secrets: debug builds sign with the tracked android/fork-debug.keystore, the same key as every
+# fork APK already installed, so `adb install -r` keeps the app's data (strap/ring keys).
+name: Channels (fork)
+
+on:
+  push:
+    branches: ['channels/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: channels-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    if: github.repository_owner == 'kvnloo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/wrapper-validation@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Pick channel flavour
+        id: ch
+        run: |
+          set -euo pipefail
+          name="${GITHUB_REF_NAME#channels/}"
+          case "$name" in
+            nightly) task=assembleDemoDebug;  dir=demo/debug;  pkg=com.noop.whoop.demo.debug ;;
+            *)       task=assembleFullDebug;  dir=full/debug;  pkg=com.noop.whoop.debug ;;
+          esac
+          { echo "name=$name"; echo "task=$task"; echo "dir=$dir"; echo "pkg=$pkg"; } >> "$GITHUB_OUTPUT"
+      - name: Kotlin unit tests (full flavour, clean)
+        run: ./gradlew testFullDebugUnitTest --no-build-cache --rerun-tasks
+      - name: Build ${{ steps.ch.outputs.name }} APK
+        run: ./gradlew ${{ steps.ch.outputs.task }} --no-build-cache
+      - name: Verify package, signer and hash
+        env:
+          DIR: ${{ steps.ch.outputs.dir }}
+          PKG: ${{ steps.ch.outputs.pkg }}
+          NAME: ${{ steps.ch.outputs.name }}
+        run: |
+          set -euo pipefail
+          apk="$(find "app/build/outputs/apk/$DIR" -maxdepth 1 -name '*.apk' -type f | head -1)"
+          test -n "$apk"
+          mkdir -p dist
+          cp "$apk" "dist/NOOP-$NAME.apk"
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$tools/apksigner" verify --print-certs "dist/NOOP-$NAME.apk" | tee dist/certificate.txt
+          "$tools/aapt" dump badging "dist/NOOP-$NAME.apk" | grep -E '^(package:|sdkVersion:|targetSdkVersion:)' | tee dist/package.txt
+          grep -q "package: name='$PKG'" dist/package.txt
+          (cd dist && sha256sum "NOOP-$NAME.apk" > SHA256SUMS)
+          {
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "channel=$NAME"
+            echo "commit=$GITHUB_SHA"
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "package=$PKG"
+            echo "features:"
+            git log --merges --format='  %s' "origin/channels/base..HEAD" 2>/dev/null || true
+          } > dist/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NOOP-${{ steps.ch.outputs.name }}-${{ github.sha }}
+          path: android/dist/*
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish rolling channel pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.ch.outputs.name }}
+        run: |
+          set -euo pipefail
+          tag="channel-$NAME"
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "NOOP $NAME ${GITHUB_SHA:0:12}" --prerelease --latest=false \
+            --notes "Fork dogfood channel $NAME at $GITHUB_SHA. JVM tests passed in this run; device behaviour is not claimed. See build-info.txt and RFC kvnloo/noop#103."
