@@ -349,6 +349,8 @@ struct TodayView: View {
     // "Rest" tile shows THIS, formatted like Charge/Effort, with hours-in-bed kept as the caption, the
     // tile previously showed hours where the score belonged (#248). nil until loaded / no night yet.
     @State private var restScore: Double?
+    /// Source night for a Rest carry; nil for a result scored on the selected day (#1464).
+    @State private var restCarriedDay: String?
 
     // The raw per-day merge winners remain available for watch-specific confidence behavior.
     @State private var provenanceByMetric: [String: String] = [:]
@@ -775,6 +777,16 @@ struct TodayView: View {
         guard isTodaySelected, let lastDay, let lastValue,
               !isCarryStale(priorDayKey: lastDay, todayKey: todayKey) else { return nil }
         return lastValue
+    }
+
+    /// Names the actual source day of a Rest carry, not a missing/future/stale or owned value.
+    /// Kotlin twin: carriedRestDay. No scoring/persistence changes (#1464).
+    static func carriedRestDay(todayValue: Double?, lastDay: String?, lastValue: Double?,
+                               isTodaySelected: Bool, todayKey: String) -> String? {
+        guard todayValue == nil, isTodaySelected, let lastDay, lastDay < todayKey,
+              freshRestScore(todayValue: todayValue, lastDay: lastDay, lastValue: lastValue,
+                             isTodaySelected: isTodaySelected, todayKey: todayKey) != nil else { return nil }
+        return lastDay
     }
 
     /// #1164/#2012 — should today's Rest be MARKED provisional? When the strap has banked records not yet
@@ -3216,7 +3228,9 @@ struct TodayView: View {
             // asks which SOURCE won this day, not which catalog entry to open. See `HeroRingMetric`.
             heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance",
                            detailRoute: .metric(HeroRingMetric.rest),
-                           caption: restIsPendingSync ? "Pending sync" : nil,
+                           caption: restCarriedDay.map {
+                               Self.carriedCaption(priorDayKey: $0, todayKey: selectedDayKey)
+                           } ?? (restIsPendingSync ? "Pending sync" : nil),
                            captionWidth: ring) { restRing(diameter: ring) }
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -3439,7 +3453,9 @@ struct TodayView: View {
     /// read by both surfaces that say so — the hero column's caption and the Rest tile's — so the two can
     /// never disagree about the same moment.
     private var restIsPendingSync: Bool {
-        Self.restPendingSync(restScore: restScore, backfilling: liveBackfillingFlag,
+        // A carried score cannot be provisional for today's still-offloading night.
+        guard restCarriedDay == nil else { return false }
+        return Self.restPendingSync(restScore: restScore, backfilling: liveBackfillingFlag,
                              historyPendingSync: liveHistoryPendingSyncFlag,
                              isTodaySelected: selectedDayOffset == 0)
     }
@@ -3453,6 +3469,7 @@ struct TodayView: View {
         if let s = restScore {
             GlowRing(fraction: s / 100, value: s, format: { "\(Int($0.rounded()))" },
                      color: StrandPalette.restColor, diameter: diameter, lineWidth: diameter * 0.10)
+                .opacity(restCarriedDay == nil ? 1 : 0.8)
         } else if displayDay?.recovery != nil {
             // #898: an aggregate-import user (a daily HRV/RHR import, no in-bed session) gets a Charge from
             // WatchRecovery but NO sleep_performance, so Rest read a bare "No data" next to a lit Charge ,
@@ -3982,10 +3999,12 @@ struct TodayView: View {
                 // Component 2: a scored day shows its duration/efficiency caption; an unscored TODAY shows
                 // the "building" hint; a past day with no Rest falls to the honest "Needs the strap" rather
                 // than a bare blank, so the tile always carries a state.
-                caption: restIsPendingSync
+                caption: restCarriedDay.map {
+                    Self.carriedCaption(priorDayKey: $0, todayKey: selectedDayKey)
+                } ?? (restIsPendingSync
                     ? String(localized: "Pending sync · strap history still offloading")
                     : (restScore != nil ? restCaption(d)
-                        : (buildingHint(.rest) ?? restCaption(d) ?? Self.needsStrapCaption)),
+                        : (buildingHint(.rest) ?? restCaption(d) ?? Self.needsStrapCaption))),
                 accent: restScore.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
                 // The Rest composite (0–100) trend, not raw sleep minutes, tracks the score above (#614).
                 sparkline: sparks["sleep_performance"],
@@ -4853,6 +4872,7 @@ struct TodayView: View {
     private func restoreDayScoped(_ c: TodayDayScopedCache) {
         sparks["sleep_performance"] = c.restSpark
         restScore = c.restScore
+        restCarriedDay = c.restCarriedDay
         provenanceByMetric = c.provenanceByMetric
         providerByMetric = c.providerByMetric
         hrPoints = c.hrPoints
@@ -4954,6 +4974,11 @@ struct TodayView: View {
             lastValue: restSeries.last?.value, isTodaySelected: selectedDayOffset == 0,
             todayKey: selectedDayKey)
         restScore = restScoreLocal
+        let carriedRestDayLocal = Self.carriedRestDay(
+            todayValue: restByDay[selectedDayKey], lastDay: restSeries.last?.day,
+            lastValue: restSeries.last?.value, isTodaySelected: selectedDayOffset == 0,
+            todayKey: selectedDayKey)
+        restCarriedDay = carriedRestDayLocal
 
         // Resolve the displayed score row, then map computed rows through durable input provenance so the
         // badge names the sensor/import provider rather than the device that ran NOOP's math.
@@ -5109,6 +5134,7 @@ struct TodayView: View {
         repo.todayDayScopedCache = TodayDayScopedCache(
             restSpark: restSparkLocal,
             restScore: restScoreLocal,
+            restCarriedDay: carriedRestDayLocal,
             provenanceByMetric: provenance,
             providerByMetric: providers,
             hrPoints: hrPointsLocal,
@@ -5474,6 +5500,7 @@ struct TodayHistoryWideCache {
 struct TodayDayScopedCache {
     let restSpark: [Double]
     let restScore: Double?
+    let restCarriedDay: String?
     let provenanceByMetric: [String: String]
     let providerByMetric: [String: ScoreInputProvider]
     let hrPoints: [TrendPoint]
