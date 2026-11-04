@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import Strand
 
-/// Oracle fixtures mirror the 17 Kotlin JUnit cases in HeartMeditationModelTest.kt
+/// Regression oracles reuse Kotlin JUnit fixture values from HeartMeditationModelTest.kt
 /// at kvnloo/noop#125 (Android head bedcf45f1e71a4dcda576bb2eae742eec7868891).
 final class HeartMeditationModelTests: XCTestCase {
     private func rsaBeats(seconds: Double, meanBpm: Double, ampBpm: Double, hz: Double) -> [Int] {
@@ -129,7 +129,7 @@ final class HeartMeditationModelTests: XCTestCase {
         }
         XCTAssertGreaterThan(cov / sqrt(varLevel * varHR), 0.7)
         guard let swing = session.rhythm.swingBpm else { return XCTFail("No turning points") }
-        XCTAssertTrue((6...11).contains(swing), "Expected approximately 10 bpm swing, got \(swing)")
+        XCTAssertTrue((6.0...11.0).contains(swing), "Expected approximately 10 bpm swing, got \(swing)")
     }
 
     func testSwingTracksThreeInjectedAmplitudes() {
