@@ -335,4 +335,6 @@ data class DayResult(
      * defaulted so every existing construction site is unchanged. Mirrors Swift `DayResult.mainNightBlocks`.
      */
     val mainNightBlocks: List<SleepStageTotals.NightBlock> = emptyList(),
+    /** Activity-only kcal, excluding resting metabolism; null without day HR. */
+    val activeEnergyKcal: Double? = null,
 )

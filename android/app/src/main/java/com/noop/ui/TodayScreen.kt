@@ -683,13 +683,13 @@ fun TodayScreen(
 
     // #616: ONE calorie definition across the card, the Key-Metrics tile and the detail — resolve per day,
     // IMPORTED-FIRST (the phone's Apple/Health-Connect activeKcal, the figure these surfaces already showed),
-    // falling back to NOOP's on-device HR estimate (activeKcalEst) only for days the phone didn't cover.
+    // falling back to the distinct on-device activity-only series (NOT the DailyMetric total).
     // Keyed by day; `caloriesByDay` feeds the SELECTED-day value the dashboard card + Key-Metrics tile both
     // read — day-scoped like every other card, and like steps.
     var caloriesByDay by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
     LaunchedEffect(days) {
         caloriesByDay = runCatching {
-            val onDevice = viewModel.repo.resolvedSeries("active_kcal", "my-whoop", "0000-00-00", "9999-99-99",
+            val onDevice = viewModel.repo.resolvedSeries("active_kcal_est", "my-whoop", "0000-00-00", "9999-99-99",
                 strapDeviceId = viewModel.activeStrapId).points.associate { it.day to it.value }
             val imported = LinkedHashMap<String, Double>()
             for (r in viewModel.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +

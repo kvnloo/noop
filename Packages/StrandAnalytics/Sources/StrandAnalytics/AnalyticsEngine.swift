@@ -69,6 +69,8 @@ public enum AnalyticsEngine {
     public struct DayResult {
         /// DailyMetric in the WhoopStore cache shape (recovery/strain/sleep rolled up).
         public let daily: DailyMetric
+        /// Approximate activity-only kcal, excluding resting metabolism; nil without day HR.
+        public let activeEnergyKcal: Double?
         /// Detected sleep sessions (rich, with stage segments).
         public let sleepSessions: [SleepSession]
         /// CachedSleepSession cache rows (one per detected session).
@@ -136,8 +138,10 @@ public enum AnalyticsEngine {
                     chargeDrivers: [ChargeDriver] = [],
                     skinTempRelative: SkinTempRelative? = nil,
                     detectionFunnel: WorkoutDetector.DetectionFunnel? = nil,
-                    mainNightBlocks: [SleepStageTotals.NightBlock] = []) {
-            self.daily = daily; self.sleepSessions = sleepSessions
+                    mainNightBlocks: [SleepStageTotals.NightBlock] = [],
+                    activeEnergyKcal: Double? = nil) {
+            self.daily = daily; self.activeEnergyKcal = activeEnergyKcal
+            self.sleepSessions = sleepSessions
             self.mainNightBlocks = mainNightBlocks
             self.cachedSleep = cachedSleep; self.workouts = workouts
             self.detectionFunnel = detectionFunnel
@@ -1058,9 +1062,11 @@ public enum AnalyticsEngine {
         // night-window hr for pure-function callers that don't supply dayHr. Strain keeps the full
         // window (bounded log).
         let dayHrFiltered = (dayHr ?? hr).filter { tsInDay($0.ts) }
-        let activeKcalEst: Double? = dayHrFiltered.isEmpty ? nil : Calories.estimateDayCalories(
+        // DailyMetric.activeKcalEst is TOTAL energy; do not relabel it as Active Energy.
+        let dayEnergy = dayHrFiltered.isEmpty ? nil : Calories.estimateDayEnergy(
             dayHrFiltered, profile: profile, hrmax: effMaxHR,
             restingHR: restingHRDaily.map(Double.init))
+        let activeKcalEst = dayEnergy?.totalKcal
 
         // ── Assemble DailyMetric ──────────────────────────────────────────────
         let daily = DailyMetric(
@@ -1166,7 +1172,8 @@ public enum AnalyticsEngine {
                          chargeDrivers: chargeDrivers,
                          skinTempRelative: skinTempRelative,
                          detectionFunnel: detectionFunnel,
-                         mainNightBlocks: mainGroup.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) })
+                         mainNightBlocks: mainGroup.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) },
+                         activeEnergyKcal: dayEnergy?.activeKcal)
     }
 
     /// The R-R rows the always-on `hrv diag` line describes (#2425). Pure. Byte-parity twin of Kotlin

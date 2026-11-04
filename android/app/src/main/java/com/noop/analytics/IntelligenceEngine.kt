@@ -1706,6 +1706,10 @@ object IntelligenceEngine {
             RestScorer.restFromDaily(daily)?.let { rest ->
                 restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_performance", value = rest))
             }
+            // #2608: activity-only energy; DailyMetric.activeKcalEst stays resting + active.
+            res.activeEnergyKcal?.let { active ->
+                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "active_kcal_est", value = active))
+            }
             // #103: persist the SpO₂ candidate @82 nightly mean to metricSeries as "spo2_candidate" so the
             // Blood Oxygen tile can surface it as a "strap estimate (unverified)" fallback when the toggle
             // is ON. Written under the "-noop" computed device ID, never to `spo2Pct`.

@@ -280,4 +280,25 @@ final class DayCaloriesTests: XCTestCase {
         XCTAssertEqual(forward.activeKcal, 0.0, accuracy: 1e-12,
                        "the tie resolves to the lower reading, so no active energy is credited")
     }
+    /// #2608: the active-labelled card must never consume resting-plus-active total.
+    func testAnalyzedDayKeepsTotalButExposesActivityOnly() {
+        let day = "2026-09-29"
+        let start = AnalyticsEngine.dayStartUtcSeconds(day)
+        let hr = (0..<600).map { HRSample(ts: start + $0, bpm: 130) }
+        let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
+        let result = AnalyticsEngine.analyzeDay(day: day, dayHr: hr, profile: profile,
+                                                maxHROverride: 185.0)
+        let active = result.activeEnergyKcal!
+        let total = result.daily.activeKcalEst!
+        XCTAssertGreaterThan(active, 0)
+        XCTAssertGreaterThan(total, active, "total includes resting metabolism")
+        let split = Calories.estimateDayEnergy(hr, profile: profile, hrmax: 185.0, restingHR: nil)
+        XCTAssertEqual(active, split.activeKcal, accuracy: 1e-9)
+        XCTAssertEqual(total, split.totalKcal, accuracy: 1e-9)
+
+        let missing = AnalyticsEngine.analyzeDay(day: day, profile: profile)
+        XCTAssertNil(missing.activeEnergyKcal, "no HR must not invent active energy")
+        XCTAssertNil(missing.daily.activeKcalEst)
+    }
+
 }

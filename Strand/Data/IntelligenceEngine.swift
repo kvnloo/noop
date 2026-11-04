@@ -934,6 +934,7 @@ final class IntelligenceEngine: ObservableObject {
         // composite. The hr/rr/resp/gravity arrays go out of scope each iteration (memory stays bounded).
         var scoredNights: [(daily: DailyMetric, strain: Double?, cachedSleep: [CachedSleepSession],
                             workouts: [ExerciseSession], nightlySkin: Double?,
+                            activeEnergyKcal: Double?,
                             sessionMotion: [Int: [Double]],
                             sessionSleepState: [Int: [Int]],
                             hrvDiag: String?,
@@ -1973,6 +1974,7 @@ final class IntelligenceEngine: ObservableObject {
             for line in scan.stepsTrace { diagnosticSink?(line, .steps) }
             scoredNights.append((daily: res.daily, strain: res.strain, cachedSleep: res.cachedSleep,
                                  workouts: res.workouts, nightlySkin: res.nightlySkinTempC,
+                                 activeEnergyKcal: res.activeEnergyKcal,
                                  sessionMotion: res.sessionMotionByStart,
                                  sessionSleepState: res.sessionSleepStateByStart,
                                  hrvDiag: scan.hrvDiag,
@@ -2312,6 +2314,10 @@ final class IntelligenceEngine: ObservableObject {
             // same `night.nightlySkin` the line above takes the deviation from — so the two can never
             // describe different nights, and no second derivation exists to drift.
             dailies.append(daily)
+            // #2608: do not label the resting-plus-active DailyMetric total as Active Energy.
+            if let active = night.activeEnergyKcal {
+                restPoints.append(MetricPoint(day: daily.day, key: "active_kcal_est", value: active))
+            }
             if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
             }
@@ -2573,10 +2579,10 @@ final class IntelligenceEngine: ObservableObject {
                     provenance: preserveUnscoredHistory
                         ? provenanceByDay[from, default: []] : Array(provenanceByCell.values),
                     deviceId: computedId, from: from, to: to,
-                    replaceMetricKeys: markerKeys,
+                    replaceMetricKeys: ["active_kcal_est"] + markerKeys,
                     additionalMetricPoints: preserveUnscoredHistory
                         ? markerPointsByDay[from, default: []] : markerPoints,
-                    replaceMetricSourceIds: markerSources)
+                    replaceMetricSourceIds: Array(Set([computedId] + markerSources)))
             }
         } catch {
             diagnosticSink?("re-score: daily persistence failed; history repair remains pending", nil)

@@ -56,4 +56,16 @@ final class MetricCatalogStepsTests: XCTestCase {
     func testBareKeyStepsResolutionStaysAppleHealth() {
         XCTAssertEqual(MetricCatalog.all.first(where: { $0.key == "steps" })?.source, "apple-health")
     }
+    /// #2608: the imported and on-device details must both represent active-only energy.
+    func testTodayCaloriesNeverRoutesTotalAsActiveEnergy() {
+        let imported = MetricCatalog.todayCaloriesMetric(hasImportedKcal: true, hasOnDeviceKcal: true)
+        XCTAssertEqual(imported?.key, "active_kcal")
+        XCTAssertEqual(imported?.source, "apple-health")
+        let computed = MetricCatalog.todayCaloriesMetric(hasImportedKcal: false, hasOnDeviceKcal: true)
+        XCTAssertEqual(computed?.key, "active_kcal_est")
+        XCTAssertEqual(computed?.source, "my-whoop")
+        XCTAssertEqual(MetricCatalog.todayCaloriesMetric(hasImportedKcal: false)?.key, "active_kcal_est")
+        XCTAssertNotNil(MetricCatalog.metric(key: "energy_kcal", source: "my-whoop"))
+    }
+
 }

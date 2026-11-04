@@ -67,7 +67,8 @@ struct LiquidTodayView: View {
     @State private var spo2CandidateByDay: [String: Double] = [:]
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
     @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
-    @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
+    @State private var importedActiveKcalDay: Double?  // Imported active energy for selected day
+    @State private var onDeviceActiveKcalDay: Double?  // Computed active-only share, never DailyMetric total
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
@@ -1434,7 +1435,7 @@ struct LiquidTodayView: View {
             // #616: imported-first value (imported ?: activeKcalEst) + route the tap to the matching
             // detail source, so the number, its sparkline and the chart it opens all agree.
             ktile(String(localized: "Calories"), icon: keyMetricIcon(metric), intText(caloriesCount), "kcal", StrandPalette.metricAmber,
-                  fracOver(caloriesCount, 800), key: "energy_kcal", detailMetric: caloriesDetailMetric)
+                  fracOver(caloriesCount, 800), key: "active_kcal_est", detailMetric: caloriesDetailMetric)
         case .skinTemp:
             // Added 2026-08-24 (queue 11c follow-up): first Key Metrics appearance for Skin Temp — was
             // already a "Your Cards" tile (`DashboardCard.skinTemp`), never a Key Metrics one. Same
@@ -1723,6 +1724,7 @@ struct LiquidTodayView: View {
         async let vo2A = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
         async let vitA = repo.exploreSeries(key: "vitality", source: "my-whoop")
         async let stepsA = repo.exploreSeries(key: "steps_est", source: "my-whoop")
+        async let activeEnergyA = repo.exploreSeries(key: "active_kcal_est", source: "my-whoop")
         // Queue 11a: SpO₂ candidate fallback (see `spo2CandidateByDay`'s declaration).
         async let spo2CandA = repo.exploreSeries(key: "spo2_candidate", source: "my-whoop")
         async let weightA = repo.series(key: "weight", source: "apple-health", days: 91)
@@ -1766,8 +1768,8 @@ struct LiquidTodayView: View {
         // Window all read the same signal. Rest reuses the already-loaded sleep_performance series.
         let sparkCutoff = Repository.localDayKey(cal.date(byAdding: .day, value: -29, to: dayStart) ?? dayStart)
         let sparkRows = daysSnapshot.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
-        // #616: imported-first calorie spark (the day's imported Apple active energy ?: NOOP's on-device
-        // estimate) over the window, so a Health-Connect / Apple-only calorie user gets a trend too —
+        // #2608: imported-first ACTIVE calorie spark (phone active energy ?: computed active
+        // share) over the window, so a Health-Connect / Apple-only calorie user gets a trend too —
         // matching the imported-first VALUE. Union of imported days + strap-row days. Mirrors Android's
         // caloriesSpark (windowed caloriesByDay).
         let appleRowsForSpark = await appleA
@@ -1779,8 +1781,14 @@ struct LiquidTodayView: View {
         for r in appleRowsForSpark where r.day >= sparkCutoff && r.day <= selectedDayKey {
             if let k = r.activeKcal { winImportedKcal[r.day] = max(winImportedKcal[r.day] ?? 0, k) }
         }
+        // activeKcalEst is resting + active. The active-labelled surface reads ONLY
+        // the separate computed activity-share metricSeries, or the imported active figure.
+        let activeEnergySeries = await activeEnergyA
+        onDeviceActiveKcalDay = activeEnergySeries.last(where: { $0.day == selectedDayKey })?.value
         var winOnDeviceKcal: [String: Double] = [:]
-        for r in sparkRows { if let k = r.activeKcalEst { winOnDeviceKcal[r.day] = k } }
+        for r in activeEnergySeries where r.day >= sparkCutoff && r.day <= selectedDayKey {
+            winOnDeviceKcal[r.day] = r.value
+        }
         let energyKcalSpark: [(String, Double)] = Set(winImportedKcal.keys).union(winOnDeviceKcal.keys).sorted()
             .compactMap { day in (winImportedKcal[day] ?? winOnDeviceKcal[day]).map { (day, $0) } }
         kSparks = [
@@ -1798,7 +1806,7 @@ struct LiquidTodayView: View {
             // #616: the Calories tile drew no trend line — this dict had no matching entry, so windowedSpark
             // returned []. Bank the imported-first calorie series (built above) so the sparkline matches the
             // tile's imported-first number and a Health-Connect / Apple-only user gets a trend.
-            "energy_kcal": energyKcalSpark,
+            "active_kcal_est": energyKcalSpark,
             "steps_est": stepsSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
                 .map { ($0.day, $0.value) },
             "sleep_performance": restSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
@@ -2000,18 +2008,18 @@ struct LiquidTodayView: View {
     private var stepsDetailSource: String { stepsDetailMetric?.source ?? "my-whoop" }
 
     // #616: calories resolved IMPORTED-FIRST (the day's imported Apple active energy — the figure these
-    // surfaces already showed — else NOOP's on-device HR estimate `activeKcalEst`) — one number across the
+    // surfaces already showed — else NOOP's activity-only HR estimate) — one number across the
     // tile, card and the detail it taps to. Mirrors the steps precedence above.
     private var caloriesCount: Double? {
-        importedActiveKcalDay ?? displayDay?.activeKcalEst
+        importedActiveKcalDay ?? onDeviceActiveKcalDay
     }
 
     private var caloriesDetailMetric: MetricDescriptor? {
         MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedActiveKcalDay != nil,
-                                          hasOnDeviceKcal: displayDay?.activeKcalEst != nil)
+                                          hasOnDeviceKcal: onDeviceActiveKcalDay != nil)
     }
 
-    private var caloriesDetailKey: String { caloriesDetailMetric?.key ?? "energy_kcal" }
+    private var caloriesDetailKey: String { caloriesDetailMetric?.key ?? "active_kcal_est" }
     private var caloriesDetailSource: String { caloriesDetailMetric?.source ?? "my-whoop" }
 
     private var liveHour: Double {

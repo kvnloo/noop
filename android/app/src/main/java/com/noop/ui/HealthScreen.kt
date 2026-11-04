@@ -2637,13 +2637,13 @@ internal suspend fun buildSeriesVitalDetail(vm: AppViewModel, key: String): Vita
     }
     "active_kcal" -> {
         // #616: calories, like steps (#377), come from TWO disjoint stores — the on-device HR estimate
-        // (DailyMetric.activeKcalEst, exposed by resolvedSeries("active_kcal")) and imported Apple/Health-
+        // (computed series active_kcal_est, never DailyMetric's TOTAL) and imported Apple/Health-
         // Connect active energy (AppleDaily.activeKcal, where Health Connect writes it — NOT an active_kcal
         // metricSeries row). Reading imports ALONE opened an empty / HealthConnect-only detail for a WHOOP
         // 5.0 user whose calories are on-device, and disagreed with the Key-Metrics tile. Resolve per day
         // IMPORTED-FIRST (the phone's activeKcal, else NOOP's on-device estimate) — matching the tile + card
         // so the chart + Readings agree, while keeping every imported day in the union.
-        val real = vm.repo.resolvedSeries("active_kcal", "my-whoop", "0000-00-00", "9999-99-99",
+        val real = vm.repo.resolvedSeries("active_kcal_est", "my-whoop", "0000-00-00", "9999-99-99",
             strapDeviceId = vm.activeStrapId)
             .points.associateBy({ it.day }, { VitalReading(it.day, it.value, it.source) })
         val imported = LinkedHashMap<String, VitalReading>()
