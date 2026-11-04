@@ -34,27 +34,24 @@ final class Whoop4OpticalConfigReadTests: XCTestCase {
         var constructed = 0
         for raw in 0...255 {
             let opcode = UInt8(raw)
-            let frame = Whoop4OpticalConfigRead.requestFrame(opcode: opcode, sequence: 0xFE, family: .whoop4)
+            let payload = Whoop4OpticalConfigRead.requestPayload(opcode: opcode, family: .whoop4)
             if allowed.contains(opcode) {
                 constructed += 1
-                guard let frame else { XCTFail("missing GET opcode \(opcode)"); continue }
-                XCTAssertEqual(frame.count, 12, "4 header + 3 command + 1 payload + 4 CRC")
-                XCTAssertTrue(verifyFrame(frame, family: .whoop4).ok)
-                XCTAssertEqual(Array(frame[4...7]), [35, 0xFE, opcode, 0x00])
+                XCTAssertEqual(payload, [0x00], "one byte, no guessed operands")
             } else {
-                XCTAssertNil(frame, "only the three GETs may be framed; opcode=\(opcode)")
+                XCTAssertNil(payload, "only the three GETs have request bodies; opcode=\(opcode)")
             }
         }
         XCTAssertEqual(constructed, 3)
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 39, sequence: 1, family: .whoop4))
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 41, sequence: 1, family: .whoop4))
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 43, sequence: 1, family: .whoop4))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestPayload(opcode: 39, family: .whoop4))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestPayload(opcode: 41, family: .whoop4))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestPayload(opcode: 43, family: .whoop4))
     }
 
     func testWhoopFiveCannotConstructOrAcceptTheSameOpticalRead() {
         for opcode in [UInt8(40), 42, 44] {
-            XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(
-                opcode: opcode, sequence: 7, family: .whoop5))
+            XCTAssertNil(Whoop4OpticalConfigRead.requestPayload(
+                opcode: opcode, family: .whoop5))
         }
         XCTAssertEqual(classify(reply(), family: .whoop5), .unrelated)
     }
