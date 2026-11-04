@@ -20,11 +20,13 @@ final class Whoop4OpticalConfigReadTests: XCTestCase {
         expecting operation: Whoop4OpticalConfigRead.Operation = .ledDrive,
         requestSequence: UInt8 = 7,
         expectedLink: UInt64 = 12,
-        receivedLink: UInt64 = 12
+        receivedLink: UInt64 = 12,
+        family: DeviceFamily = .whoop4
     ) -> Whoop4OpticalConfigRead.Classification {
         Whoop4OpticalConfigRead.classify(
             frame: frame, expecting: operation, requestSequence: requestSequence,
-            expectedLinkGeneration: expectedLink, receivedLinkGeneration: receivedLink)
+            expectedLinkGeneration: expectedLink, receivedLinkGeneration: receivedLink,
+            family: family)
     }
 
     func testExactlyThreeReadOnlyRequestsAndNoSetOpcode() {
@@ -32,7 +34,7 @@ final class Whoop4OpticalConfigReadTests: XCTestCase {
         var constructed = 0
         for raw in 0...255 {
             let opcode = UInt8(raw)
-            let frame = Whoop4OpticalConfigRead.requestFrame(opcode: opcode, sequence: 0xFE)
+            let frame = Whoop4OpticalConfigRead.requestFrame(opcode: opcode, sequence: 0xFE, family: .whoop4)
             if allowed.contains(opcode) {
                 constructed += 1
                 guard let frame else { XCTFail("missing GET opcode \(opcode)"); continue }
@@ -44,9 +46,17 @@ final class Whoop4OpticalConfigReadTests: XCTestCase {
             }
         }
         XCTAssertEqual(constructed, 3)
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 39, sequence: 1))
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 41, sequence: 1))
-        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 43, sequence: 1))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 39, sequence: 1, family: .whoop4))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 41, sequence: 1, family: .whoop4))
+        XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(opcode: 43, sequence: 1, family: .whoop4))
+    }
+
+    func testWhoopFiveCannotConstructOrAcceptTheSameOpticalRead() {
+        for opcode in [UInt8(40), 42, 44] {
+            XCTAssertNil(Whoop4OpticalConfigRead.requestFrame(
+                opcode: opcode, sequence: 7, family: .whoop5))
+        }
+        XCTAssertEqual(classify(reply(), family: .whoop5), .unrelated)
     }
 
     func testCorrelatedSuccessRetainsOnlyAnIntegrityVerifiedBoundedRawFrame() {
