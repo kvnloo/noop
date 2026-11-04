@@ -96,6 +96,9 @@ class HealthExportPlanTest {
         assertEquals(listOf(HealthExportPlan.Window(102, 106)), windows)
 
         val samples = (100L..110L).map { hr(it, 70) }
+        val withoutSleep = HealthExportPlan.heartRate(samples, emptyList(), frontierSec = 99, decimateSec = 30)
+        assertEquals(listOf(100L), withoutSleep.chunks.flatMap { it.points }.map { it.tsSec })
+
         val plan = HealthExportPlan.heartRate(samples, windows, frontierSec = 99, decimateSec = 30)
         assertEquals(listOf(100L, 102L, 103L, 104L, 105L, 106L),
             plan.chunks.flatMap { it.points }.map { it.tsSec })
