@@ -105,7 +105,7 @@ struct HeartMeditationView: View {
                             .accessibilityHidden(true)
 
                             VStack(spacing: NoopMetrics.space1) {
-                                Text(verbatim: bpm.map(String.init) ?? "—")
+                                Text(verbatim: bpm.map { String($0) } ?? "—")
                                     .font(StrandFont.display(64))
                                     .monospacedDigit()
                                     .foregroundStyle(StrandPalette.textPrimary)
@@ -116,7 +116,7 @@ struct HeartMeditationView: View {
                         }
                         .frame(maxWidth: NoopMetrics.chartHeight)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(verbatim: "\(status), \(bpm.map(String.init) ?? "—") \(label("bpm"))"))
+                        .accessibilityLabel(Text(verbatim: "\(status), \(bpm.map { String($0) } ?? "—") \(label("bpm"))"))
 
                         Text(verbatim: phase)
                             .font(StrandFont.headline)
