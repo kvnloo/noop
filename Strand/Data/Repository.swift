@@ -2100,6 +2100,14 @@ final class Repository: ObservableObject {
         }
     }
 
+    /// The WHOOP 4.0 anchor's 21-day scoring window, independent of Deep Timeline's zoom or day.
+    /// Mirrors IntelligenceEngine.analyzeRecent(maxDays: 21) and Android timelineSkinAnchorWindow.
+    nonisolated static func skinTempTimelineAnchorWindow(now: Int, offsetSec: Int) -> (from: Int, to: Int) {
+        let midnight = IntelligenceEngine.midnightLocal(now, offsetSec: offsetSec)
+        return (midnight - 20 * 86_400 - StreamReadCap.lookbackSeconds,
+                midnight + 18 * 3_600)
+    }
+
     /// Raw points for a non-HR timeline metric, mapped to display units (skin temp → °C DEVICE-FAMILY-AWARE
     /// via `skinTempCelsius`: 5/MG centidegrees (#156), WHOOP 4.0 v24 raw ADC (#938); HRV → per-RR
     /// instantaneous from RR ms; respiration/SpO₂/motion as the stored signal). Empty when the strap
@@ -2139,9 +2147,24 @@ final class Repository: ObservableObject {
             }.value
         case .skinTemp:
             let s = (try? await store.skinTempSamples(deviceId: source, from: from, to: to, limit: 200_000)) ?? []
+            // #2884: use the SAME per-owner 21-day raw window that IntelligenceEngine uses for the
+            // nightly WHOOP 4.0 anchor. The visible chart window changes on zoom/pan and must never
+            // supply the anchor; a two-point zoom otherwise falls back to the first strap's 826.
+            let anchorRaw: Double?
+            if family == .whoop4 {
+                let bounds = Self.skinTempTimelineAnchorWindow(
+                    now: Int(Date().timeIntervalSince1970),
+                    offsetSec: TimeZone.current.secondsFromGMT())
+                let history = (try? await store.skinTempSamples(deviceId: source,
+                    from: bounds.from, to: bounds.to, limit: StreamReadCap.skin)) ?? []
+                anchorRaw = Whoop4SkinTemp.deviceAnchorRaw(history.map(\.raw))
+            } else {
+                anchorRaw = nil  // WHOOP 5/MG centidegrees never depend on an anchor.
+            }
             return await Task.detached(priority: .utility) {
                 // #938: family-aware raw→°C — 5/MG centidegrees (raw/100, #156), 4.0 v24 raw ADC map.
-                s.map { Self.timelinePoint($0.ts, skinTempCelsius(raw: $0.raw, family: family)) }
+                s.map { Self.timelinePoint($0.ts, skinTempCelsius(raw: $0.raw, family: family,
+                    anchorRaw: anchorRaw ?? Whoop4SkinTemp.anchorRaw)) }
             }.value
         case .respiration:
             // Two quantities share this table: a WHOOP's raw respiration ADC waveform (plotted verbatim,

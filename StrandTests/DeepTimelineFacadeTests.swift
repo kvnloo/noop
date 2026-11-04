@@ -171,6 +171,68 @@ final class DeepTimelineFacadeTests: XCTestCase {
         XCTAssertEqual(day.points.first?.value ?? 0, 55, accuracy: 0.001)
     }
 
+    // MARK: - WHOOP 4.0 device-specific skin-temp anchor (#2884)
+
+    func testSkinTempChartAnchorWindowMatchesThe21DayScoringWindow() {
+        // UTC noon at local UTC-6: local midnight was at 06:00 UTC.
+        let bounds = Repository.skinTempTimelineAnchorWindow(now: 8_683_200, offsetSec: -21_600)
+        XCTAssertEqual(bounds.from, 6_825_600) // 20 days plus the scoring 30h lookback
+        XCTAssertEqual(bounds.to, 8_726_400)    // scoring's local midnight plus 18h
+    }
+
+    @MainActor
+    func testSkinTempZoomUsesDeviceHistoryInsteadOfTheVisibleTwoPoints() async throws {
+        let store = try await WhoopStore.inMemory()
+        let dev = "my-whoop"
+        try await store.upsertDevice(id: dev, mac: nil, name: "WHOOP")
+        try DeviceRegistryStore(dbQueue: store.registryWriter).setModel(dev, model: "WHOOP 4.0")
+        let now = Int(Date().timeIntervalSince1970)
+        let base = ((now - 3_600) / 300) * 300 + 20
+        // 100 worn raws two days ago teach anchor 995; only TWO raws are visible today.
+        // Learning from those two would return nil and incorrectly use global anchor 826.
+        let historical = (0..<100).map { SkinTempSample(ts: base - 172_800 + $0, raw: 995) }
+        let visible = [SkinTempSample(ts: base, raw: 1005),
+                       SkinTempSample(ts: base + 1, raw: 1143)]
+        try await store.insert(Streams(skinTemp: historical + visible), deviceId: dev)
+        let repo = Repository(deviceId: dev)
+        repo.setStoreForTesting(store)
+
+        let zoom = await repo.timelineSeries(metric: .skinTemp, from: base - 10, to: base + 10,
+                                             targetPoints: 600, source: dev)
+        XCTAssertTrue(zoom.isRaw)
+        XCTAssertEqual(zoom.points.count, 2)
+        XCTAssertEqual(zoom.points.first?.value ?? -.infinity, 33.5, accuracy: 1e-9)
+        XCTAssertEqual(zoom.points.last?.value ?? -.infinity, 40.4, accuracy: 1e-9)
+
+        // Both points live in one 300-second day bucket; its mean must use the SAME anchor.
+        let day = await repo.timelineSeries(metric: .skinTemp, from: base - 40_000,
+                                            to: base + 46_400, targetPoints: 600, source: dev)
+        XCTAssertFalse(day.isRaw)
+        XCTAssertEqual(day.points.count, 1)
+        XCTAssertEqual(day.points.first?.value ?? -.infinity, 36.95, accuracy: 1e-9)
+    }
+
+    @MainActor
+    func testSkinTempChartKeepsSparse4FallbackAndWhoop5Centidegrees() async throws {
+        let store = try await WhoopStore.inMemory()
+        let dev = "my-whoop"
+        try await store.upsertDevice(id: dev, mac: nil, name: "WHOOP")
+        let base = Int(Date().timeIntervalSince1970) - 3_600
+        try DeviceRegistryStore(dbQueue: store.registryWriter).setModel(dev, model: "4.0")
+        try await store.insert(Streams(skinTemp: [SkinTempSample(ts: base, raw: 1005)]), deviceId: dev)
+        let repo = Repository(deviceId: dev)
+        repo.setStoreForTesting(store)
+
+        let sparse = await repo.timelineSeries(metric: .skinTemp, from: base - 2, to: base + 2,
+                                                source: dev)
+        // One in-band sample cannot pass the >=100 anchor-sample gate: legacy 826 fallback.
+        XCTAssertEqual(sparse.points.first?.value ?? -.infinity, 41.95, accuracy: 1e-9)
+        try DeviceRegistryStore(dbQueue: store.registryWriter).setModel(dev, model: "WHOOP 5.0")
+        let centidegrees = await repo.timelineSeries(metric: .skinTemp, from: base - 2,
+                                                     to: base + 2, source: dev)
+        XCTAssertEqual(centidegrees.points.first?.value ?? -.infinity, 10.05, accuracy: 1e-9)
+    }
+
     // MARK: - SpO2: two-channel ratio vs single-channel reading
 
     /// A WHOOP 4.0 v24 sample carries BOTH optical channels, so the plotted value stays the unitless
