@@ -54,7 +54,7 @@ class SelfHostedPeriodicPushWorker(
         val caughtUp = try {
             val endpoint = snapshot.endpoint
             val cached = endpoint?.let(settings::cachedCapabilities)
-            if (cached != null && snapshot.lastSuccessAt != null &&
+            if (endpoint != null && cached != null && snapshot.lastSuccessAt != null &&
                 snapshot.runState == SelfHostedPushSettings.RunState.COMPLETE
             ) {
                 val zone = ZoneId.systemDefault()

@@ -2570,6 +2570,10 @@
     <string name="push_enabled_detail">Exporta datos nuevos y modificados tras una sincronización completa de la pulsera y recupera pendientes al iniciar la app.</string>
     <string name="push_wifi_only">Solo Wi-Fi</string>
     <string name="push_wifi_only_detail">Usa Wi-Fi sin medición para las pruebas de conexión y las exportaciones. Desactívalo para permitir redes móviles y otras redes conectadas.</string>
+    <string name="push_periodic_toggle">Exportación programada</string>
+    <string name="push_periodic_detail">Comprueba si hay datos locales nuevos aproximadamente cada 6, 12 o 24 horas. Requiere exportación automática. Si no hay cambios, no envía nada.</string>
+    <string name="push_periodic_interval">Intervalo de comprobación</string>
+    <string name="push_periodic_hours">%1$d h</string>
     <string name="push_export_now">Exportar ahora</string>
     <string name="push_export_now_detail">Inicia ahora una puesta al día. La exportación automática debe estar activada.</string>
     <string name="push_config_required">Guarda un endpoint válido y un token antes de activar.</string>

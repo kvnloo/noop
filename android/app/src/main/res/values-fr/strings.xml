@@ -2569,6 +2569,10 @@
     <string name="push_enabled_detail">Exporte les données nouvelles et modifiées après une synchronisation complète du bracelet et rattrape le retard au lancement.</string>
     <string name="push_wifi_only">Wi-Fi uniquement</string>
     <string name="push_wifi_only_detail">Utilise un Wi-Fi non facturé pour les tests de connexion et les exports. Désactivez pour autoriser les réseaux mobiles et autres réseaux connectés.</string>
+    <string name="push_periodic_toggle">Export planifié</string>
+    <string name="push_periodic_detail">Recherche de nouvelles données locales environ toutes les 6, 12 ou 24 heures. Nécessite l’export automatique. Aucun envoi si les données sont à jour.</string>
+    <string name="push_periodic_interval">Intervalle de vérification</string>
+    <string name="push_periodic_hours">%1$d h</string>
     <string name="push_export_now">Exporter maintenant</string>
     <string name="push_export_now_detail">Lance un rattrapage maintenant. L’export automatique doit être activé.</string>
     <string name="push_config_required">Enregistrez un point valide et un jeton avant l’activation.</string>

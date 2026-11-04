@@ -110,6 +110,10 @@
     <string name="push_enabled_detail">Exports new and changed data after a complete strap sync and catches up at app launch.</string>
     <string name="push_wifi_only">Wi-Fi only</string>
     <string name="push_wifi_only_detail">Use unmetered Wi-Fi for connection tests and exports. Turn off to allow mobile and other connected networks.</string>
+    <string name="push_periodic_toggle">Scheduled export</string>
+    <string name="push_periodic_detail">Also check for new local data about every 6, 12, or 24 hours. Requires automatic export. Nothing is sent when already caught up.</string>
+    <string name="push_periodic_interval">Check interval</string>
+    <string name="push_periodic_hours">%1$d h</string>
     <string name="push_export_now">Export now</string>
     <string name="push_export_now_detail">Starts a catch-up now. Automatic export must be enabled.</string>
     <string name="push_config_required">Save a valid endpoint and token before enabling.</string>

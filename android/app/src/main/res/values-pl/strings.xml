@@ -2580,6 +2580,10 @@
     <string name="push_enabled_detail">Eksportuje nowe i zmienione dane po pełnej synchronizacji opaski oraz uzupełnia zaległości przy uruchomieniu aplikacji.</string>
     <string name="push_wifi_only">Tylko Wi-Fi</string>
     <string name="push_wifi_only_detail">Używa nielimitowanego Wi-Fi do testów połączenia i eksportu. Wyłącz, aby zezwolić na sieci komórkowe i inne połączone sieci.</string>
+    <string name="push_periodic_toggle">Zaplanowany eksport</string>
+    <string name="push_periodic_detail">Sprawdza nowe dane lokalne mniej więcej co 6, 12 lub 24 godziny. Wymaga automatycznego eksportu. Bez zmian nic nie wysyła.</string>
+    <string name="push_periodic_interval">Odstęp sprawdzania</string>
+    <string name="push_periodic_hours">%1$d godz.</string>
     <string name="push_export_now">Eksportuj teraz</string>
     <string name="push_export_now_detail">Rozpoczyna uzupełnianie teraz. Automatyczny eksport musi być włączony.</string>
     <string name="push_config_required">Przed włączeniem zapisz prawidłowy endpoint i token.</string>

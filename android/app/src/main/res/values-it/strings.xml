@@ -105,6 +105,10 @@
     <string name="push_enabled_detail">Esporta i dati nuovi e modificati dopo una sincronizzazione completa della fascia e recupera quelli arretrati all\'avvio dell\'app.</string>
     <string name="push_wifi_only">Solo Wi-Fi</string>
     <string name="push_wifi_only_detail">Usa il Wi-Fi a consumo illimitato per test di connessione ed esportazioni. Disattiva per consentire la rete mobile e altre reti connesse.</string>
+    <string name="push_periodic_toggle">Esportazione programmata</string>
+    <string name="push_periodic_detail">Controlla nuovi dati locali circa ogni 6, 12 o 24 ore. Richiede esportazione automatica. Se i dati sono aggiornati non invia nulla.</string>
+    <string name="push_periodic_interval">Intervallo di controllo</string>
+    <string name="push_periodic_hours">%1$d h</string>
     <string name="push_export_now">Esporta ora</string>
     <string name="push_export_now_detail">Avvia subito un recupero degli arretrati. L\'esportazione automatica deve essere attiva.</string>
     <string name="push_config_required">Salva un endpoint e un token validi prima di attivare.</string>

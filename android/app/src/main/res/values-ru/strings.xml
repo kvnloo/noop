@@ -103,6 +103,10 @@
     <string name="push_enabled_detail">Экспортирует новые и изменённые данные после полной синхронизации с браслетом и догоняет при запуске приложения.</string>
     <string name="push_wifi_only">Только Wi-Fi</string>
     <string name="push_wifi_only_detail">Использовать безлимитный Wi-Fi для проверок соединения и экспорта. Выключите, чтобы разрешить мобильные и другие подключённые сети.</string>
+    <string name="push_periodic_toggle">Экспорт по расписанию</string>
+    <string name="push_periodic_detail">Проверяет новые локальные данные примерно каждые 6, 12 или 24 часа. Требует автоматического экспорта. Без изменений ничего не отправляет.</string>
+    <string name="push_periodic_interval">Интервал проверки</string>
+    <string name="push_periodic_hours">%1$d ч</string>
     <string name="push_export_now">Экспортировать сейчас</string>
     <string name="push_export_now_detail">Запускает догоняющую отправку сейчас. Автоматический экспорт должен быть включён.</string>
     <string name="push_config_required">Сохраните корректный адрес и токен перед включением.</string>

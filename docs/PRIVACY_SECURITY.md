@@ -56,7 +56,7 @@ these are features, not a count of individual requests or destinations.
 | AI Coach / macOS, iOS, Android (§1.1a) | Unconfigured initially; requests after provider setup for chat, model refresh or enabled briefs | Provider authentication when required; conversation text; health summaries only with data consent; optional chart attachment on Apple/Gemini | Chosen provider or Custom server |
 | Oura history import / opt-in macOS, iOS build (§1.1b) | Compiled out by default; user starts authorization/import | OAuth credentials, authorization/refresh tokens and history query parameters; no existing NOOP health data | `cloud.ouraring.com`, `api.ouraring.com` |
 | Update check / macOS, iOS, Android (§1.1c) | Automatic check **on by default**, at most daily after onboarding/Terms; manual check on tap | Public release `GET`; no health data or app-added user/account identifier | `api.github.com` |
-| Self-hosted push / Android (§1.1d) | Experimental, **off by default**; configured export after offload/launch or on tap; explicit connection test | Bearer authentication; capability `GET`; versioned health batches with local installation/device IDs on export | User-owned HTTP(S) endpoint |
+| Self-hosted push / Android (§1.1d) | Experimental, **off by default**; configured export after offload/launch, optionally on a 6/12/24-hour schedule, or on tap; explicit connection test | Bearer authentication; capability `GET`; versioned health batches with local installation/device IDs on export | User-owned HTTP(S) endpoint |
 
 **Platform services are a separate boundary.** Apple's workout route view uses `MKMapView`
 (`Strand/Screens/WorkoutDetailView.swift`), which can load map data for the displayed region.
@@ -189,6 +189,14 @@ not a NOOP cloud, account, restore path, or two-way sync:
 - **After offload, at launch, or explicitly now — always outside BLE sync.** Automatic work is queued
   after a complete strap offload and at app launch to catch up; the user may also press **Export now**.
   An unavailable or slow endpoint cannot delay BLE collection, local persistence, analytics, or UI.
+- **Optional periodic checks.** A separate, default-off 6/12/24-hour Android WorkManager trigger
+  (24 hours by default) runs only with automatic export and a configured destination. It respects
+  the same Wi-Fi-only network policy as ordinary exports. Using cached receiver capabilities,
+  the read-only preflight checks append cursors and mutable day hashes; already acknowledged
+  local state causes neither a capability GET nor a batch POST. Missing progress or local
+  read errors fall back to the normal worker, preserving retry, progress and acknowledgement.
+  WorkManager timing under Doze is approximate. An unexpected receiver reset with no local
+  changes cannot be discovered until a later offload/launch/manual/change-triggered request.
 - **What is sent.** The finite, versioned stream registry in
   [`PUSH_PROTOCOL.md`](PUSH_PROTOCOL.md) includes biometric rows and rolling snapshots of selected
   recomputed/editable tables, scoped by a locally generated installation ID and local device ID.
