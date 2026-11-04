@@ -114,7 +114,7 @@ enum NoopLocalAccessMain {
       metric_series --key KEY [--source SOURCE] [--days N] [--from-day YYYY-MM-DD] [--to-day YYYY-MM-DD] [--limit N]
       data_freshness
       sleep_summary [--days N]
-      workout_summary [--days N]
+      workout_summary [--days N] [--include-zones]
 
     Query options:
       --db-path PATH    Explicit NOOP SQLite path. Otherwise NOOP_DB_PATH or the official app container is used.

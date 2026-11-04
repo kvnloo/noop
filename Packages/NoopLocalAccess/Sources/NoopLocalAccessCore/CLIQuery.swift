@@ -73,6 +73,9 @@ public enum NoopCLIQuery {
             case "--limit":
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--include-zones":
+                guard toolName == "workout_summary" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["include_zones"] = .bool(true)
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }
