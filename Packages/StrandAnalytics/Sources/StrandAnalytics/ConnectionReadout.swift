@@ -233,6 +233,9 @@ public enum ConnectionReadout {
         // reads 1970/71" there claimed a reading we never took, in the one readout a reporter quotes when
         // asking why nothing syncs. Report the evidence we actually have.
         if let n = strapNewestUnix {
+            // #2809: WHOOP 5/MG seeds strapRange.newestUnix with zero before any real range
+            // reply. An unset placeholder cannot prove an epoch-era clock fault.
+            guard n > 0 else { return "n/a (no banked record timestamp)" }
             return n < ConnectionTrace.rtcEpochCeilingUnix ? "no (records dated 1970/71)" : "yes"
         }
         return "no (waiting for the strap clock)"
