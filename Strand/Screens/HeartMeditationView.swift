@@ -98,7 +98,7 @@ struct HeartMeditationView: View {
                                     .accessibilityHidden(true)
                             }
                             LiquidVessel(
-                                value: showingBeats && !still ? level : HeartMeditationTuning.restLevel,
+                                value: showingBeats ? level : HeartMeditationTuning.restLevel,
                                 tint: StrandPalette.effortColor,
                                 animated: showingBeats && !still
                             )
