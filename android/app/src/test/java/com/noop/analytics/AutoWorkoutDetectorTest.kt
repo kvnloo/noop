@@ -180,4 +180,17 @@ class AutoWorkoutDetectorTest {
         assertTrue(AutoWorkoutDetector.detect(elevenMinutesFiftyNine, restingHR = 60).isEmpty())
         assertEquals(1, AutoWorkoutDetector.detect(exactlyTwelveMinutes, restingHR = 60).size)
     }
+    @Test fun optInSuggestionLimitsFilterAfterDetectionWithoutChangingDefault() {
+        val weak = AutoWorkoutDetector.DetectedWorkout(0L, 600L, 78, 98, 10)
+        val medium = AutoWorkoutDetector.DetectedWorkout(1_000L, 2_800L, 100, 130, 30)
+        val long = AutoWorkoutDetector.DetectedWorkout(3_000L, 17_400L, 140, 165, 240)
+        val tooLong = AutoWorkoutDetector.DetectedWorkout(18_000L, 32_460L, 150, 170, 241)
+        val all = listOf(weak, medium, long, tooLong)
+
+        assertEquals(all, AutoWorkoutDetector.filterSuggestions(all))
+        assertEquals(listOf(medium, long), AutoWorkoutDetector.filterSuggestions(all, 100, 240))
+        assertEquals(listOf(medium), AutoWorkoutDetector.filterSuggestions(all, 100, 30))
+        assertEquals(emptyList<AutoWorkoutDetector.DetectedWorkout>(), AutoWorkoutDetector.filterSuggestions(all, 110, 30))
+        assertEquals(all, AutoWorkoutDetector.filterSuggestions(all, 79, 31))
+    }
 }

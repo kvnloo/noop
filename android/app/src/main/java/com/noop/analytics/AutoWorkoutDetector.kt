@@ -214,6 +214,24 @@ object AutoWorkoutDetector {
         return results
     }
 
+    /**
+     * Opt-in suggestion-only presentation limits. Zero means no extra limit; unsupported stored
+     * values fail open. Never changes the fixed detector, shadow diagnostics, scores or stored rows.
+     * Byte-parity with the Swift twin, including inclusive boundaries.
+     */
+    fun filterSuggestions(
+        candidates: List<DetectedWorkout>,
+        minimumAverageBPM: Int = 0,
+        maximumDurationMin: Int = 0,
+    ): List<DetectedWorkout> {
+        val floor = if (minimumAverageBPM in 80..160 && minimumAverageBPM % 10 == 0) minimumAverageBPM else 0
+        val ceiling = if (maximumDurationMin in listOf(30, 60, 120, 240)) maximumDurationMin else 0
+        return candidates.filter { candidate ->
+            (floor == 0 || candidate.avgBpm >= floor) &&
+                (ceiling == 0 || candidate.durationMin <= ceiling)
+        }
+    }
+
     /** Two closed [aStart, aEnd] / [bStart, bEnd] intervals overlap (touching endpoints count). */
     internal fun overlaps(aStart: Long, aEnd: Long, bStart: Long, bEnd: Long): Boolean =
         aStart <= bEnd && bStart <= aEnd
