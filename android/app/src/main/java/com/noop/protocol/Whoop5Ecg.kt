@@ -585,7 +585,7 @@ object Whoop5Ecg {
      * Decode a [LabradorR16] from a complete INNER record — the bytes from the packet-type byte onwards,
      * which on a 5/MG frame means `frame[8..]`.
      *
-     * Accepts only a type-47 record of data revision 16 whose inner length is exactly [R16_INNER_LENGTH].
+     * Accepts type 43 (live) or type 47 (stored) of revision 16, with exact [R16_INNER_LENGTH].
      * The length is REQUIRED rather than derived, unlike R17: every region after the waveform sits at a
      * FIXED offset, so a short buffer cannot be decoded by shrinking the sample block — it would read the
      * lead-off arrays from inside the waveform. A declared `sampleCount` above [R16_MAX_SAMPLES] is an
@@ -597,7 +597,7 @@ object Whoop5Ecg {
     fun parseR16(inner: List<Int>): LabradorR16? {
         if (inner.size != R16_INNER_LENGTH) return null
         for (i in inner.indices) if (inner[i] !in 0..255) return null
-        if (inner[0] != STORED_RECORD_TYPE || inner[1] != R16_REVISION) return null
+        if ((inner[0] != RAW_RECORD_TYPE && inner[0] != STORED_RECORD_TYPE) || inner[1] != R16_REVISION) return null
         val count = u16le(inner, 24)
         if (count > R16_MAX_SAMPLES) return null
 
@@ -694,7 +694,8 @@ object Whoop5Ecg {
     /** True for an R16-shaped frame. Shape only. Swift twin: `Whoop5Ecg.isR16Record`. */
     fun isR16Record(frame: ByteArray): Boolean =
         frame.size == R16_RECORD_LENGTH &&
-            (frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == STORED_RECORD_TYPE &&
+            ((frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == RAW_RECORD_TYPE ||
+                (frame[RAW_TYPE_OFFSET].toInt() and 0xFF) == STORED_RECORD_TYPE) &&
             (frame[RAW_TYPE_OFFSET + 1].toInt() and 0xFF) == R16_REVISION
 
     /** Swift twin: `Whoop5Ecg.u16le`. */
