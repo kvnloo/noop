@@ -43,6 +43,7 @@ import com.noop.R
 import com.noop.ble.WhoopModel
 import com.noop.data.DemoSeeder
 import com.noop.data.WhoopRepository
+import com.noop.notif.HydrationReminderScheduler
 import com.noop.push.SelfHostedPushScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -117,6 +118,8 @@ class MainActivity : ComponentActivity() {
         // (WorkManager is KEEP, so this is a no-op when already scheduled, and cancels itself when the
         // feature is off). Wrapped because a WorkManager hiccup must never block launch.
         runCatching { DebugExportScheduler.reschedule(applicationContext) }
+        // #870: unique, opt-in WorkManager hydration alerts survive restart without a strap.
+        runCatching { HydrationReminderScheduler.reschedule(applicationContext) }
 
         // K5: self-heal the scheduled Coach morning-brief job (no-op when off / already scheduled).
         runCatching { CoachBriefScheduler.reschedule(applicationContext) }

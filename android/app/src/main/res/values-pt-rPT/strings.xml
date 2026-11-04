@@ -2852,4 +2852,12 @@
     <string name="raw_diag_ecg_probe_running">Pode ainda estar a decorrer uma captura nesta pulseira. O veredicto vai para o strap log.</string>
     <string name="today_customize_live_session_availability">Aparece hoje quando as sessões em direto estão ativadas nas Definições ou existe uma sessão ativa.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Hoje à sua maneira, frequência cardíaca para qualquer aplicação e italiano</string>
+
+    <!-- #870: opt-in, on-device hydration reminder. -->
+    <string name="hydration_reminder_setting_title">Lembretes de hidratação</string>
+    <string name="hydration_reminder_setting_detail">Notificações opcionais no telemóvel a cada poucas horas, das 8h às 22h. O Android pode atrasá-las.</string>
+    <string name="hydration_reminder_interval">Lembrar a cada</string>
+    <string name="hydration_reminder_every_hours">A cada %1$d horas</string>
+    <string name="hydration_reminder_title">Hora de beber água</string>
+    <string name="hydration_reminder_body">Abre o NOOP para registar um gole, um copo ou uma garrafa.</string>
 </resources>

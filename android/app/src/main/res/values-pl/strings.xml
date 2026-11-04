@@ -2876,4 +2876,12 @@
     <string name="raw_diag_ecg_probe_running">Na tym pasku może nadal trwać zapis. Werdykt trafia do strap log.</string>
     <string name="today_customize_live_session_availability">Pojawia się dzisiaj, gdy sesje na żywo są włączone w Ustawieniach lub trwa sesja.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Dziś po swojemu, tętno dostępne dla każdej aplikacji i język włoski</string>
+
+    <!-- #870: opt-in, on-device hydration reminder. -->
+    <string name="hydration_reminder_setting_title">Przypomnienia o nawodnieniu</string>
+    <string name="hydration_reminder_setting_detail">Opcjonalne powiadomienia na telefon co kilka godzin od 8:00 do 22:00. Android może je opóźnić.</string>
+    <string name="hydration_reminder_interval">Przypominaj co</string>
+    <string name="hydration_reminder_every_hours">Co %1$d godz.</string>
+    <string name="hydration_reminder_title">Czas się nawodnić</string>
+    <string name="hydration_reminder_body">Otwórz NOOP, aby dodać łyk, kubek lub butelkę.</string>
 </resources>

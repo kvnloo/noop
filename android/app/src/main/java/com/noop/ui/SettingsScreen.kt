@@ -1,5 +1,8 @@
 package com.noop.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.core.content.ContextCompat
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -131,6 +134,9 @@ import com.noop.analytics.UserProfile
 import com.noop.analytics.Zones
 import com.noop.R
 import com.noop.ble.PuffinExperiment
+import com.noop.notif.HydrationReminderPolicy
+import com.noop.notif.HydrationReminderSettings
+import com.noop.notif.HydrationReminderScheduler
 import com.noop.ble.WhoopBleClient
 // #174: the R22 card reads the flag COUNT off Whoop5Config.enableR22Sequence rather than restating it —
 // the hardcoded "15" outlived the sequence growing to 16 and declared success a flag early.
@@ -719,6 +725,19 @@ fun SettingsScreen(
     var cycleTracking by remember { mutableStateOf(NoopPrefs.cycleTracking(context)) }
     var cycleHidden by remember { mutableStateOf(NoopPrefs.cycleAwarenessHidden(context)) }
     var hydrationTracking by remember { mutableStateOf(NoopPrefs.hydrationTracking(context)) }
+    val hydrationReminderSettings = remember { HydrationReminderSettings.from(context) }
+    var hydrationReminders by remember { mutableStateOf(hydrationReminderSettings.enabled) }
+    var hydrationReminderHours by remember { mutableStateOf(hydrationReminderSettings.intervalHours) }
+    var hydrationIntervalMenu by remember { mutableStateOf(false) }
+    val hydrationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted && NoopPrefs.hydrationTracking(context)) {
+            hydrationReminders = true
+            hydrationReminderSettings.enabled = true
+            HydrationReminderScheduler.reschedule(context)
+        }
+    }
     var stressCheckIn by remember { mutableStateOf(BiofeedbackPrefs.checkInEnabled(context)) }
     var stressAutoNudge by remember { mutableStateOf(BiofeedbackPrefs.autoNudge(context)) }
     var rhythmEnabled by remember { mutableStateOf(RhythmConsent.isEnabled(context)) }
@@ -3368,8 +3387,66 @@ fun SettingsScreen(
                     onCheckedChange = {
                         hydrationTracking = it
                         NoopPrefs.setHydrationTracking(context, it)
+                        HydrationReminderScheduler.reschedule(context)
                     },
                 )
+                if (hydrationTracking) {
+                    SettingsRowDivider()
+                    SettingsToggleRow(
+                        title = uiString(R.string.hydration_reminder_setting_title),
+                        detail = uiString(R.string.hydration_reminder_setting_detail),
+                        checked = hydrationReminders,
+                        onCheckedChange = { enable ->
+                            if (enable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS,
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                hydrationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                hydrationReminders = enable
+                                hydrationReminderSettings.enabled = enable
+                                HydrationReminderScheduler.reschedule(context)
+                            }
+                        },
+                    )
+                    if (hydrationReminders) {
+                        SettingsRowDivider()
+                        SettingsFormRow(label = uiString(R.string.hydration_reminder_interval)) {
+                            Box {
+                                TextButton(onClick = { hydrationIntervalMenu = true }) {
+                                    Text(
+                                        uiString(R.string.hydration_reminder_every_hours, hydrationReminderHours),
+                                        style = NoopType.body,
+                                        color = Palette.accent,
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = hydrationIntervalMenu,
+                                    onDismissRequest = { hydrationIntervalMenu = false },
+                                ) {
+                                    HydrationReminderPolicy.INTERVAL_HOURS.forEach { hours ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    uiString(R.string.hydration_reminder_every_hours, hours),
+                                                    style = NoopType.body,
+                                                    color = Palette.textPrimary,
+                                                )
+                                            },
+                                            onClick = {
+                                                hydrationIntervalMenu = false
+                                                hydrationReminderHours = hours
+                                                hydrationReminderSettings.intervalHours = hours
+                                                HydrationReminderScheduler.applyIntervalChange(context)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 SettingsRowDivider()
                 SettingsToggleRow(
                     title = uiString(R.string.l10n_settings_screen_auto_detect_workouts_bed4cf2a),
