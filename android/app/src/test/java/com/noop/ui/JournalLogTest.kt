@@ -95,6 +95,26 @@ class JournalLogTest {
     }
 
     @Test
+    fun unicodeJournalIdentityMatchesSwiftWhitespaceContract() {
+        // Mirrors JournalLogicTests.swift's exact UTF-8 identity vectors.
+        val cases = listOf(
+            "  Brush\u001C teeth.  " to "brush teeth.",
+            "\u001Dbrush\u001Fteeth" to "brush teeth",
+            " brush\u0085teeth " to "brush\u0085teeth",
+            " brush\u200Bteeth " to "brush\u200Bteeth",
+            " brush\u2007teeth " to "brush teeth",
+            " brush\u00A0teeth " to "brush teeth",
+            " \uFEFFbrush " to "\uFEFFbrush",
+            "BRUSH\u202F Teeth" to "brush teeth",
+        )
+        for ((input, expected) in cases) {
+            assertEquals(expected, normJournalKey(input))
+        }
+        assertEquals("", normJournalKey("\u001F"))
+        assertFalse(normJournalKey("brush\u200Bteeth") == normJournalKey("brush teeth"))
+    }
+
+    @Test
     fun dayKeyTodayAndYesterday() {
         val today = LocalDate.of(2026, 6, 10)
         assertEquals("2026-06-10", journalDayKey(0, today))
