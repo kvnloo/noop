@@ -156,6 +156,13 @@ class MainActivity : ComponentActivity() {
                 NoopRoot()
             }
         }
+        // Experimental Hermes agent access: only NOOP's own notification (nonce-checked) can deep-link.
+        com.noop.agent.AgentAccess.consumeNavIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        com.noop.agent.AgentAccess.consumeNavIntent(intent)
     }
 
     /** Request the BLE permissions appropriate to the running OS version. */

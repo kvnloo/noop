@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Hermes-side launcher for the NOOP agent client. Runs in its own venv (Presidio + spaCy + mcp) and
+# drops any PYTHONPATH inherited from the Hermes process so the venv's packages win.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+py="${NOOP_AGENT_PYTHON:-/mnt/zer0models/venvs/noop-agent-pii/bin/python}"
+exec env -u PYTHONPATH -u PYTHONHOME "$py" "$here/noop_agent_mcp.py" "$@"
