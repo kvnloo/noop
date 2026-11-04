@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Meditação do coração</string>
+    <string name="l10n_heart_meditation_subtitle">Cada ondulação é um dos seus batimentos. O nível sobe e desce com a onda que a respiração imprime no seu ritmo cardíaco.</string>
+    <string name="l10n_heart_meditation_close">Fechar meditação do coração</string>
+    <string name="l10n_heart_meditation_waiting">À espera de batimentos estáveis</string>
+    <string name="l10n_heart_meditation_waiting_detail">Fique quieto com o anel bem ajustado. A vista começa quando alguns batimentos limpos concordam.</string>
+    <string name="l10n_heart_meditation_noisy">Alguns batimentos parecem ruidosos</string>
+    <string name="l10n_heart_meditation_steady">Batimentos estáveis</string>
+    <string name="l10n_heart_meditation_breathe_in">Inspire</string>
+    <string name="l10n_heart_meditation_breathe_out">Expire</string>
+    <string name="l10n_heart_meditation_follow_wave">Respire devagar e veja o nível acompanhar</string>
+    <string name="l10n_heart_meditation_swing_label">Amplitude da onda</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d bpm</string>
+    <string name="l10n_heart_meditation_focus_label">Foco do ritmo</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">A preparar · precisa de ~1 min de batimentos estáveis</string>
+    <string name="l10n_heart_meditation_guide_on">Guia de respiração · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Guia de respiração desligado</string>
+    <string name="l10n_heart_meditation_guide_state_on">Ligado</string>
+    <string name="l10n_heart_meditation_guide_state_off">Desligado</string>
+    <string name="l10n_heart_meditation_estimate_note">Estimativas a partir do ritmo ótico dos batimentos, ignorando os ruidosos. Só fazem sentido quando está quieto e não são uma medição médica.</string>
+    <string name="l10n_heart_meditation_open_hint">Toque no coração para uma meditação sincronizada com os batimentos</string>
+    <string name="l10n_heart_meditation_open_action">Abrir meditação do coração</string>
+</resources>
