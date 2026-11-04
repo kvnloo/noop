@@ -14,8 +14,8 @@ import ZIPFoundation
 /// NOOP keeps everything in one SQLite file (`<AppSupport>/OpenWhoop/whoop.sqlite`, plus the
 /// `-wal`/`-shm` WAL sidecars while the store is open). Export checkpoints the WAL (so the
 /// single file is whole), then wraps the SQLite in a ZIP written as `.noopbak`, alongside a
-/// small `settings.json` entry (#1000) carrying the whitelisted profile/display settings (see
-/// `BackupSettings`) so a restore also brings back weight/height/units, not just the rows.
+/// small `settings.json` entry (#1000) carrying whitelisted profile/display settings and an
+/// optional `sleep-deletions.json` entry preserving Apple deleted-night suppression defaults.
 /// ZIP deflate typically cuts a 100 MB+ SQLite backup to 10–20 MB. The format is a standard
 /// ZIP — users can rename `.noopbak` → `.zip` and extract the SQLite manually on any OS.
 ///
@@ -34,6 +34,63 @@ enum DataBackup {
     /// `.deflate`d and the count is of bytes landing on disk. (#1807)
     static let maxBackupSQLiteBytes: Int64 = 2_147_483_648
     private static let maxBackupSettingsBytes: Int64 = 1_048_576
+    private static let maxDeletedSleepBytes: Int64 = 131_072
+
+    /// Apple stores deleted-night suppression outside SQLite. The optional, versioned ZIP entry
+    /// carries that global (device-id-free) state without changing the cross-platform settings
+    /// whitelist. Android already stores its device-scoped dismissals in the backed-up Room DB.
+    private struct DeletedSleepBackup: Codable {
+        static let entryName = "sleep-deletions.json"
+        private static let dismissedKey = "sleep.dismissedSessions" // Repository.dismissedSleepDefaultsKey
+        private static let hiddenKey = "sleep.dismissedSessions.hiddenFromList"
+
+        let version: Int
+        let scope: String
+        let spans: [String]
+        let hiddenFromList: [String]
+
+        private static func validTokens(_ tokens: [String]) -> Bool {
+            guard tokens.count <= DismissedSleepSpans.hardCap,
+                  Set(tokens).count == tokens.count else { return false }
+            return tokens.allSatisfy { token in
+                let windows = DismissedSleepSpans.windows(from: [token])
+                guard windows.count == 1, let window = windows.first else { return false }
+                return window.start >= 0 &&
+                    DismissedSleepSpans.token(startTs: window.start, endTs: window.end) == token
+            }
+        }
+
+        static func snapshot(from defaults: UserDefaults) throws -> Data {
+            let spans = defaults.stringArray(forKey: Self.dismissedKey) ?? []
+            let hidden = defaults.stringArray(forKey: hiddenKey) ?? []
+            guard validTokens(spans), validTokens(hidden) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            // A hidden entry whose suppression was evicted cannot hide a future re-deletion.
+            let active = Set(spans)
+            let metadata = DeletedSleepBackup(version: 1, scope: "global", spans: spans,
+                                              hiddenFromList: hidden.filter { active.contains($0) })
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return try encoder.encode(metadata)
+        }
+
+        static func decode(_ data: Data) throws -> DeletedSleepBackup {
+            let metadata = try JSONDecoder().decode(DeletedSleepBackup.self, from: data)
+            guard metadata.version == 1, metadata.scope == "global",
+                  validTokens(metadata.spans), validTokens(metadata.hiddenFromList),
+                  Set(metadata.hiddenFromList).isSubset(of: Set(metadata.spans)) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return metadata
+        }
+
+        func apply(to defaults: UserDefaults) {
+            // A present but empty snapshot clears old markers; an absent entry does nothing.
+            defaults.set(spans, forKey: Self.dismissedKey)
+            defaults.set(hiddenFromList, forKey: Self.hiddenKey)
+        }
+    }
 
     // MARK: - Result
 
@@ -226,7 +283,9 @@ enum DataBackup {
         if let complaint = DatabaseIntegrity.quickCheckFailure(atPath: dbURL.path) {
             throw ExportIntegrityFailure(complaint: complaint)
         }
-        try writeBackupZip(dbURL: dbURL, to: dest, settingsJSON: settingsJSON, manifestJSON: currentManifestJSON())
+        try writeBackupZip(dbURL: dbURL, to: dest, settingsJSON: settingsJSON,
+                           sleepDeletionJSON: DeletedSleepBackup.snapshot(from: .standard),
+                           manifestJSON: currentManifestJSON())
         switch verifyWrittenBackup(at: dest) {
         case .intact:
             break
@@ -259,7 +318,8 @@ enum DataBackup {
         return Data(json.utf8)
     }
 
-    private static func writeBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?, manifestJSON: Data) throws {
+    private static func writeBackupZip(dbURL: URL, to dest: URL, settingsJSON: Data?,
+                                       sleepDeletionJSON: Data?, manifestJSON: Data) throws {
         let archive = try Archive(url: dest, accessMode: .create)
         try archive.addEntry(with: backupEntryName, fileURL: dbURL, compressionMethod: .deflate)
         let fm = FileManager.default
@@ -271,7 +331,14 @@ enum DataBackup {
             defer { try? fm.removeItem(at: tmpJSON) }
             try archive.addEntry(with: BackupSettings.entryName, fileURL: tmpJSON, compressionMethod: .deflate)
         }
-        // #1410: manifest LAST (after the DB + optional settings) and ALWAYS written — even a legacy
+        if let sleepDeletionJSON {
+            let tmpDeletions = NoopScratch.file("sleep-deletions-\(UUID().uuidString).json")
+            try sleepDeletionJSON.write(to: tmpDeletions)
+            defer { try? fm.removeItem(at: tmpDeletions) }
+            try archive.addEntry(with: DeletedSleepBackup.entryName, fileURL: tmpDeletions,
+                                 compressionMethod: .deflate)
+        }
+        // #1410: manifest LAST (after the DB, settings, and optional sleep metadata) and ALWAYS written — even a legacy
         // nil-settings backup states which build produced it.
         let tmpManifest = NoopScratch.file("manifest-\(UUID().uuidString).json")
         try manifestJSON.write(to: tmpManifest)
@@ -333,12 +400,14 @@ enum DataBackup {
     /// legacy single-entry ZIP — tests cover both shapes. Not used by app code; production goes
     /// through `writeBackup(checkpoint:to:)`.
     static func writeBackupForTesting(databaseAt dbURL: URL, to dest: URL,
-                                      settings: [String: Any]? = nil) throws {
+                                      settings: [String: Any]? = nil,
+                                      deletedSleepDefaults: UserDefaults? = nil) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+        let deletionJSON = try deletedSleepDefaults.map { try DeletedSleepBackup.snapshot(from: $0) }
         try writeBackupZip(dbURL: dbURL, to: dest,
                            settingsJSON: settings.flatMap { BackupSettings.encode($0) },
-                           manifestJSON: currentManifestJSON())
+                           sleepDeletionJSON: deletionJSON, manifestJSON: currentManifestJSON())
     }
 
     // MARK: - Import
@@ -425,7 +494,10 @@ enum DataBackup {
                 // is the only layer that can ask the user whether to go ahead. (#1807)
                 switch err {
                 case .entryTooLarge(let name):
-                    return .restoreTooLarge(name: name, limit: maxBackupSQLiteBytes)
+                    if name == backupEntryName {
+                        return .restoreTooLarge(name: name, limit: maxBackupSQLiteBytes)
+                    }
+                    return .failure(String(localized: "Couldn't open the backup archive: \(CocoaError(.fileReadCorruptFile).localizedDescription)"))
                 }
             } catch {
                 try? fm.removeItem(at: tmpExtract)
@@ -444,6 +516,25 @@ enum DataBackup {
             extractedDir = nil
         }
         defer { if let d = extractedDir { try? fm.removeItem(at: d) } }
+
+        // Check optional deletion metadata BEFORE the destructive DB swap. Missing means an older
+        // archive: leave the current defaults alone. Malformed/version-mismatched cannot degrade to
+        // zero suppression, even when the SQLite half is valid.
+        let restoredDeletions: DeletedSleepBackup?
+        if let extractedDir {
+            let deletionsURL = extractedDir.appendingPathComponent(DeletedSleepBackup.entryName)
+            if fm.fileExists(atPath: deletionsURL.path) {
+                guard let data = try? Data(contentsOf: deletionsURL),
+                      let metadata = try? DeletedSleepBackup.decode(data) else {
+                    return .failure(String(localized: "Couldn't open the backup archive: \(CocoaError(.fileReadCorruptFile).localizedDescription)"))
+                }
+                restoredDeletions = metadata
+            } else {
+                restoredDeletions = nil
+            }
+        } else {
+            restoredDeletions = nil
+        }
 
         // Validate: must be a real SQLite database (magic header "SQLite format 3\0").
         guard isSQLiteFile(at: source) else {
@@ -567,6 +658,9 @@ enum DataBackup {
                     }
                 }
             }
+            // Apply the suppression snapshot only after the database landed and passed integrity
+            // checks, alongside settings. This also restores an explicitly empty snapshot.
+            restoredDeletions?.apply(to: settingsDefaults)
             // #57 debug: record when a restore swapped the DB, so the export can correlate a restore with a
             // later write stall (a restore not followed by a relaunch is the #57 failure).
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "backup.lastRestoreAt")
@@ -677,14 +771,21 @@ enum DataBackup {
     private static func extractBackupZip(at zipURL: URL, into destDir: URL,
                                          allowOversize: Bool = false) throws {
         let archive = try Archive(url: zipURL, accessMode: .read)
+        var foundDeletions = false
         for entry in archive where entry.type == .file {
             let name = (entry.path as NSString).lastPathComponent
+            if name == DeletedSleepBackup.entryName {
+                guard !foundDeletions else { throw CocoaError(.fileReadCorruptFile) }
+                foundDeletions = true
+            }
             let limit: Int64
             switch name {
             case backupEntryName:
                 limit = allowOversize ? Int64.max : maxBackupSQLiteBytes
             case BackupSettings.entryName:
                 limit = maxBackupSettingsBytes
+            case DeletedSleepBackup.entryName:
+                limit = maxDeletedSleepBytes
             default:
                 continue
             }
