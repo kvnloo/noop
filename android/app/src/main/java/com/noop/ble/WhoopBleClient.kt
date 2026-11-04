@@ -217,6 +217,8 @@ data class LiveState(
      *  "Worn: Off" forever when no WRIST_ON event arrived — issue #18.) */
     val worn: Boolean = true,
     val lastEvent: String? = null,
+    /** Count accepted physical double-taps independently from their identical lastEvent text. */
+    val doubleTapSeq: Long = 0L,
     /** The strap's current BLE advertising name (the WHOOP 4.0 device name from the OS), captured on
      *  connect. Drives the "Rename strap" card in Settings → Strap. Null until connected. */
     val advertisingName: String? = null,
@@ -2144,6 +2146,9 @@ class WhoopBleClient(
     // timestamp is not.
     private val _state = MutableStateFlow(LiveState())
     val state: StateFlow<LiveState> = _state.asStateFlow()
+    private val doubleTapEventGate = DoubleTapEventGate(
+        windowSeconds = LIVE_GESTURE_WINDOW_SECONDS, capacity = 32,
+    )
 
     private val _groundTruthImuStatus = MutableStateFlow(GroundTruthImuStatus())
     val groundTruthImuStatus: StateFlow<GroundTruthImuStatus> = _groundTruthImuStatus.asStateFlow()
@@ -9175,12 +9180,22 @@ class WhoopBleClient(
                         val fresh = !backfilling || (ts != null && ts > 0 &&
                             kotlin.math.abs(nowSec - ts) <= LIVE_GESTURE_WINDOW_SECONDS)
                         if (fresh) {
-                            _state.update { it.copy(lastEvent = ev) }
+                            // Other gestures retain the existing human-readable lastEvent behaviour.
+                            if (!ev.startsWith("DOUBLE_TAP")) {
+                                _state.update { it.copy(lastEvent = ev) }
+                            }
                             when {
                                 ev.startsWith("DOUBLE_TAP") -> {
-                                    // Surfaced via lastEvent only — the decode is unchanged. AppViewModel's
-                                    // LiveState collector (dispatchDoubleTap) debounces on the event identity
-                                    // and runs the user's chosen DoubleTapAction (parity since 4.2.8).
+                                    // Each physical tap has the same event name. Advance a separate sequence
+                                    // for every distinct strap timestamp, including two taps in a row.
+                                    // A live event replayed by history offload must not fire a second time.
+                                    if (doubleTapEventGate.accepts(ts)) {
+                                        _state.update {
+                                            it.copy(lastEvent = ev, doubleTapSeq = it.doubleTapSeq + 1L)
+                                        }
+                                    } else {
+                                        log("Double-tap (strap time $ts) not dispatched: event already handled")
+                                    }
                                 }
                                 ev.startsWith("WRIST_ON") -> {
                                     if (!_state.value.worn) _state.update { it.copy(worn = true) }
@@ -12188,6 +12203,7 @@ class WhoopBleClient(
 
     /** Clear per-connection state. Port of the flag resets in didConnect / didDisconnectPeripheral. */
     private fun reset() {
+        doubleTapEventGate.reset() // a new strap link gets a fresh event-timestamp namespace
         didBond = false
         explicitBondRequestedThisLink = false   // #1635: one createBond attempt per link
         sawBondTransitionThisLink = false
