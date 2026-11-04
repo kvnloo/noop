@@ -12,7 +12,7 @@ import WhoopProtocol
 /// Protocol evidence: docs/PROTOCOL_COMMANDS.md (40/42/44 on 41.17.6.0);
 /// docs/PROTOCOL_TRANSPORT.md (type 36, cmd @6, origin @7, result @8).
 enum Whoop4OpticalConfigRead {
-    enum Operation: UInt8, CaseIterable {
+    enum Operation: UInt8, CaseIterable, Equatable {
         case ledDrive = 40
         case tiaGain = 42
         case biasOffset = 44
@@ -20,8 +20,8 @@ enum Whoop4OpticalConfigRead {
 
     /// Only three GETs, with the one-byte body observed in the 41.16.6.0 probe.
     /// Crucially, the adjacent SET opcodes 39/41/43 have no request path here.
-    static func requestFrame(opcode: UInt8, sequence: UInt8) -> [UInt8]? {
-        guard Operation(rawValue: opcode) != nil else { return nil }
+    static func requestFrame(opcode: UInt8, sequence: UInt8, family: DeviceFamily) -> [UInt8]? {
+        guard family == .whoop4, Operation(rawValue: opcode) != nil else { return nil }
         return frameFromPayload([0x00], type: 35, seq: sequence, cmd: opcode)
     }
 
@@ -84,8 +84,10 @@ enum Whoop4OpticalConfigRead {
         expecting operation: Operation,
         requestSequence: UInt8,
         expectedLinkGeneration: UInt64,
-        receivedLinkGeneration: UInt64
+        receivedLinkGeneration: UInt64,
+        family: DeviceFamily
     ) -> Classification {
+        guard family == .whoop4 else { return .unrelated }
         guard frame.count <= maxResponseBytes else { return .overLimit }
         let check = verifyFrame(frame, family: .whoop4)
         guard check.ok else {
