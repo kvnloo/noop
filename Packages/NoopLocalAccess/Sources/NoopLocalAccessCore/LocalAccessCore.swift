@@ -175,9 +175,19 @@ public struct StorageStats: Equatable, Sendable {
     public let rawBytes: Int
 }
 
+public struct RRIntervalRow: Equatable, Sendable {
+    public let ts: Int
+    public let rrMs: Int
+    public let seq: Int?
+    public let ord: Int?
+}
+
 public final class ReadonlyNoopStore {
     private let dbQueue: DatabaseQueue
     private let tableNames: Set<String>
+    private let rrIntervalColumns: Set<String>
+    /// `RRSourceChannel.spo2Ibi.rawValue` in the existing persisted enum.
+    private static let spo2IbiChannel = 2
 
     public init(path: String) throws {
         var config = Configuration()
@@ -186,6 +196,13 @@ public final class ReadonlyNoopStore {
         dbQueue = try DatabaseQueue(path: path, configuration: config)
         tableNames = try dbQueue.read { db in
             try Set(String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type = 'table'"))
+        }
+        if tableNames.contains("rrInterval") {
+            rrIntervalColumns = try dbQueue.read { db in
+                try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('rrInterval')"))
+            }
+        } else {
+            rrIntervalColumns = []
         }
         try validateSchema()
     }
@@ -316,6 +333,55 @@ public final class ReadonlyNoopStore {
             case (false, false):
                 return nil
             }
+        }
+    }
+
+    /// Bounded WhoopStore.rawRrIntervals-style diagnostic read: exclude spo2Ibi and tsSuspect==1, keep NULLs.
+    /// Suffix-capped (newest first in SQL, then reversed) so this is never an unbounded 1Hz dump.
+    public func rrIntervals(deviceId: String, from: Int, to: Int, limit: Int) throws -> [RRIntervalRow] {
+        guard tableNames.contains("rrInterval") else { return [] }
+        let cap = min(max(1, limit), 2_001)
+        let hasSrc = rrIntervalColumns.contains("srcChannel")
+        let hasSuspect = rrIntervalColumns.contains("tsSuspect")
+        let hasOrd = rrIntervalColumns.contains("ord")
+        let hasSeq = rrIntervalColumns.contains("seq")
+
+        var select = ["ts", "rrMs"]
+        if hasOrd { select.append("ord") }
+        if hasSeq { select.append("seq") }
+
+        var whereSQL = "WHERE deviceId = ? AND ts >= ? AND ts <= ? AND typeof(ts) = 'integer' AND typeof(rrMs) = 'integer'"
+        if hasSrc {
+            whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
+        }
+        if hasSuspect {
+            whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
+        }
+
+        var order = ["ts DESC"]
+        if hasOrd { order.append("ord DESC") }
+        order.append("rrMs DESC")
+        if hasSeq { order.append("seq DESC") }
+
+        let sql = """
+            SELECT \(select.joined(separator: ", ")) FROM rrInterval
+            \(whereSQL)
+            ORDER BY \(order.joined(separator: ", ")) LIMIT ?
+            """
+        let arguments: StatementArguments = hasSrc
+            ? [deviceId, from, to, Self.spo2IbiChannel, cap]
+            : [deviceId, from, to, cap]
+
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: sql, arguments: arguments).map { row in
+                RRIntervalRow(
+                    ts: row["ts"],
+                    rrMs: row["rrMs"],
+                    seq: hasSeq ? (row["seq"] as Int?) : nil,
+                    ord: hasOrd ? (row["ord"] as Int?) : nil
+                )
+            }
+            return Array(rows.reversed())
         }
     }
 
@@ -531,6 +597,60 @@ public final class NoopDataAccess {
             "totalEnergyKcal": .double(calories),
             "totalStrain": .double(strain),
             "workouts": .array(rows.suffix(300).map(workoutJSON)),
+        ])
+    }
+
+    public func rrSeries(
+        hours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        limit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
+        }
+
+        let boundedHours = min(max(1, hours), 24)
+        let boundedPointLimit = min(max(1, limit), 2_000)
+        let now = Int(Date().timeIntervalSince1970)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            fromTs = now - boundedHours * 3_600
+            toTs = now
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let rows = try store.rrIntervals(
+            deviceId: resolvedDeviceId,
+            from: fromTs,
+            to: toTs,
+            limit: boundedPointLimit + 1
+        )
+        let truncated = rows.count > boundedPointLimit
+        let points = Array(rows.suffix(boundedPointLimit))
+        return .object([
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(boundedHours),
+            ]),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                var object: [String: JSONValue] = [
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "rrMs": .int(row.rrMs),
+                ]
+                if let seq = row.seq { object["seq"] = .int(seq) }
+                if let ord = row.ord { object["ord"] = .int(ord) }
+                return .object(object)
+            }),
         ])
     }
 

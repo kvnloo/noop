@@ -19,6 +19,31 @@ final class ReadonlyNoopStoreTests: XCTestCase {
         XCTAssertEqual(stats.decodedRows, 4)
         XCTAssertEqual(stats.rawBatches, 1)
         XCTAssertEqual(stats.rawBytes, 12)
+        let legacyRR = try store.rrIntervals(deviceId: "my-whoop", from: 0, to: 1000, limit: 10)
+        XCTAssertEqual(legacyRR.map(\.ts), [101])
+        XCTAssertEqual(legacyRR.map(\.rrMs), [850])
+        XCTAssertNil(legacyRR[0].seq)
+        XCTAssertNil(legacyRR[0].ord)
+    }
+
+    func testRRReadIsReadOnlyAndExcludesSuspectAndSpo2Rows() throws {
+        let url = try TemporaryDatabase.withRRIntervals()
+        let store = try ReadonlyNoopStore(path: url.path)
+        XCTAssertTrue(try store.isReadOnlyForTest())
+
+        let rows = try store.rrIntervals(deviceId: "my-whoop", from: 100, to: 103, limit: 10)
+        XCTAssertEqual(rows.map(\.ts), [100, 101, 101, 103])
+        XCTAssertEqual(rows.map(\.rrMs), [800, 790, 810, 840])
+        XCTAssertEqual(rows.map(\.seq), [Optional(0), Optional(0), Optional(1), Optional(0)])
+        XCTAssertEqual(rows.map(\.ord), [Optional(0), Optional(0), Optional(1), Optional(0)])
+
+        let suffix = try store.rrIntervals(deviceId: "my-whoop", from: 100, to: 103, limit: 2)
+        XCTAssertEqual(suffix.map(\.ts), [101, 103])
+        XCTAssertEqual(suffix.map(\.rrMs), [810, 840])
+        XCTAssertEqual(try store.rrIntervals(deviceId: "other-device", from: 100, to: 103, limit: 10).count, 1)
+
+        let missing = try ReadonlyNoopStore(path: TemporaryDatabase.withoutRRInterval().path)
+        XCTAssertEqual(try missing.rrIntervals(deviceId: "my-whoop", from: 0, to: 1000, limit: 10), [])
     }
 
     func testForeignNoopLikeDatabaseIsRejectedWithoutQuarantine() throws {
