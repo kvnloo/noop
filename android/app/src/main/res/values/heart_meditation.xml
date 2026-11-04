@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Heart meditation</string>
+    <string name="l10n_heart_meditation_subtitle">Each ripple is one of your heartbeats. The level rises and falls with the wave your breathing puts into your heart rate.</string>
+    <string name="l10n_heart_meditation_close">Close heart meditation</string>
+    <string name="l10n_heart_meditation_waiting">Waiting for steady beats</string>
+    <string name="l10n_heart_meditation_waiting_detail">Sit still with the ring snug. The view starts once a few clean beats agree.</string>
+    <string name="l10n_heart_meditation_noisy">Some beats look noisy</string>
+    <string name="l10n_heart_meditation_steady">Steady beats</string>
+    <string name="l10n_heart_meditation_breathe_in">Breathe in</string>
+    <string name="l10n_heart_meditation_breathe_out">Breathe out</string>
+    <string name="l10n_heart_meditation_follow_wave">Breathe slowly and watch the level follow</string>
+    <string name="l10n_heart_meditation_swing_label">Wave swing</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d bpm</string>
+    <string name="l10n_heart_meditation_focus_label">Rhythm focus</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">Building · needs ~1 min of steady beats</string>
+    <string name="l10n_heart_meditation_guide_on">Breathing guide · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Breathing guide off</string>
+    <string name="l10n_heart_meditation_guide_state_on">On</string>
+    <string name="l10n_heart_meditation_guide_state_off">Off</string>
+    <string name="l10n_heart_meditation_estimate_note">Estimates from optical beat timing, with noisy beats skipped. They only mean something while you are still, and they are not a medical reading.</string>
+    <string name="l10n_heart_meditation_open_hint">Tap the heart for a beat-synced meditation</string>
+    <string name="l10n_heart_meditation_open_action">Open heart meditation</string>
+</resources>
