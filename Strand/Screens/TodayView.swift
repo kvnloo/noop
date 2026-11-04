@@ -4193,7 +4193,8 @@ struct TodayView: View {
                                 label: "\(WorkoutSource.displaySport(w.sport))",
                                 value: workoutDuration(w),
                                 caption: workoutCaption(w),
-                                accent: StrandPalette.effortTint(fraction: (w.strain ?? 0) / StrainScorer.maxStrain),
+                                // Duration tiles are neutral; optional Effort belongs in workout details, not an unexplained color (#880).
+                                accent: StrandPalette.textPrimary,
                                 delta: w.energyKcal.map { "\(Int($0.rounded())) kcal" },
                                 deltaColor: StrandPalette.metricAmber
                             )
