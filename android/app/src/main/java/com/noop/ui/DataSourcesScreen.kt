@@ -300,6 +300,26 @@ fun DataSourcesScreen(vm: AppViewModel) {
         }
     }
 
+    // Fork: background-read permission for the opt-in background auto-sync. Asked only after the read
+    // permissions are in place (one Health Connect dialog at a time); a decline keeps the on-open sync.
+    val hcBackgroundLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract(),
+    ) { _ -> runCatching { com.noop.ingest.HealthConnectBackgroundSync.reschedule(context) } }
+
+    fun askHcBackgroundIfReadGranted() {
+        scope.launch {
+            val granted = runCatching {
+                HealthConnectImporter.client(context).permissionController.getGrantedPermissions()
+            }.getOrDefault(emptySet())
+            val selected = HealthConnectImporter.permissionsFor(HealthConnectImporter.selectedCategories(context))
+            if (granted.any { it in selected } &&
+                com.noop.ingest.HealthConnectBackgroundSync.BACKGROUND_PERMISSION !in granted
+            ) {
+                hcBackgroundLauncher.launch(setOf(com.noop.ingest.HealthConnectBackgroundSync.BACKGROUND_PERMISSION))
+            }
+        }
+    }
+
     // Health Connect permission request → import once granted.
     val hcPermissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
@@ -307,6 +327,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         val selectedPermissions = HealthConnectImporter.permissionsFor(hcReadCategories)
         if (granted.any { it in selectedPermissions }) {
             runImport { HealthConnectImporter.import(context, vm.repo, ProfileStore.from(context).heightCm) }
+            if (NoopPrefs.hcAutoSync(context)) askHcBackgroundIfReadGranted()
         } else {
             Toast.makeText(context, "Health Connect access not granted.", Toast.LENGTH_LONG).show()
         }
@@ -544,7 +565,10 @@ fun DataSourcesScreen(vm: AppViewModel) {
                         onCheckedChange = { on ->
                             vm.setHcAutoSync(on)
                             // Ensure permissions (and an immediate first sync) when turning it on.
-                            if (on) startHealthConnect()
+                            if (on) {
+                                startHealthConnect()
+                                askHcBackgroundIfReadGranted()
+                            }
                         },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Palette.surfaceBase,
