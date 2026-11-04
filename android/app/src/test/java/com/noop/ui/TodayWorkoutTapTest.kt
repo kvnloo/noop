@@ -86,6 +86,38 @@ class TodayWorkoutTapTest {
      * glyphs both read it and are all-time by design. Windowing the array at its source would compile,
      * look correct, and silently shrink two unrelated numbers on the same screen.
      */
+    /**
+     * #880: two workouts of the same origin once showed different accent colors solely because
+     * one carried an optional strain value. The tiles summarize duration; Effort lives in detail.
+     * Pin the production Compose and SwiftUI call sites together, like the tap contract above.
+     */
+    @Test
+    fun latestWorkoutTilesDoNotColorCodeOptionalStrain() {
+        val android = workoutsSectionBody(todayScreenKt())
+        assertTrue(
+            "Android's latest workout duration tiles must have a neutral accent",
+            android.contains("accent = Palette.textPrimary,"),
+        )
+        assertFalse(
+            "Android must not tint the duration tile by optional strain",
+            android.contains("effortTint("),
+        )
+
+        val swift = File(repoRoot(), "Strand/Screens/TodayView.swift").readText()
+        val start = swift.indexOf("private var workoutsSection: some View")
+        val end = swift.indexOf("// MARK: (d) DATA SOURCES", start)
+        assertTrue("iOS Latest Workouts section is missing", start >= 0 && end > start)
+        val ios = swift.substring(start, end)
+        assertTrue(
+            "iOS and Android must both use neutral latest-workout accents",
+            ios.contains("accent: StrandPalette.textPrimary,"),
+        )
+        assertFalse(
+            "iOS must not use a synthetic zero Effort tint when strain is absent",
+            ios.contains("StrandPalette.effortTint("),
+        )
+    }
+
     @Test
     fun bothPlatformsWindowTheFeedToTheSameFourteenDays() {
         val kotlin = File(repoRoot(), "android/app/src/main/java/com/noop/ui/TodayMetricsLogic.kt").readText()
