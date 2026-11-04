@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">心跳冥想</string>
+    <string name="l10n_heart_meditation_subtitle">每一道涟漪都是你的一次心跳。液面随呼吸带给心率的波动而起伏。</string>
+    <string name="l10n_heart_meditation_close">关闭心跳冥想</string>
+    <string name="l10n_heart_meditation_waiting">正在等待稳定的心跳</string>
+    <string name="l10n_heart_meditation_waiting_detail">请保持静止并戴紧戒指。几次干净的心跳一致后即开始。</string>
+    <string name="l10n_heart_meditation_noisy">部分心跳有噪声</string>
+    <string name="l10n_heart_meditation_steady">心跳稳定</string>
+    <string name="l10n_heart_meditation_breathe_in">吸气</string>
+    <string name="l10n_heart_meditation_breathe_out">呼气</string>
+    <string name="l10n_heart_meditation_follow_wave">慢慢呼吸，看液面跟随你</string>
+    <string name="l10n_heart_meditation_swing_label">波动幅度</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d 次/分</string>
+    <string name="l10n_heart_meditation_focus_label">节律专注度</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · 约 %2$s 次/分</string>
+    <string name="l10n_heart_meditation_focus_building">积累中 · 需要约 1 分钟稳定心跳</string>
+    <string name="l10n_heart_meditation_guide_on">呼吸引导 · %1$s 次/分</string>
+    <string name="l10n_heart_meditation_guide_off">呼吸引导已关闭</string>
+    <string name="l10n_heart_meditation_guide_state_on">开</string>
+    <string name="l10n_heart_meditation_guide_state_off">关</string>
+    <string name="l10n_heart_meditation_estimate_note">基于光学心跳间期的估算，已跳过有噪声的心跳。仅在静止时有意义，且不是医疗测量。</string>
+    <string name="l10n_heart_meditation_open_hint">轻点心形，开始与心跳同步的冥想</string>
+    <string name="l10n_heart_meditation_open_action">打开心跳冥想</string>
+</resources>

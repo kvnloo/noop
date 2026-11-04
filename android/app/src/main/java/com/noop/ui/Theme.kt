@@ -419,6 +419,9 @@ object Metrics {
     // Spacer rows that broke that rhythm). One token = uniform, consistent gaps across the screens.
     val screenRowSpacing = 20.dp
     val screenPadding = 24.dp
+    // Heart meditation sizes live here rather than on the Compose screen.
+    val heartMeditationWaveHeight = 64.dp
+    val heartMeditationHaloStroke = 3.dp
     val tileHeight = 108.dp   // every metric tile is this tall
     val chartHeight = 220.dp
     val dialogScrollableMaxHeight = 560.dp
