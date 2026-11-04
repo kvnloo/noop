@@ -950,7 +950,11 @@ fun TodayScreen(
     // as the caption; the tile previously showed hours where the score belonged (#248). resolvedSeries
     // merges imported + computed sleep_performance (imported-wins), so an importer sees the export's
     // figure and a Bluetooth-only user sees the on-device composite. Null until loaded / no night yet.
-    var restScoreForDay by remember { mutableStateOf<Double?>(null) }
+    // Pair the displayed Rest number with its source date in one atomic Compose snapshot.
+    var restSelection by remember { mutableStateOf<Pair<Double?, String?>>(null to null) }
+    val restScoreForDay = restSelection.first
+    val restCarriedDay = restSelection.second
+    val restCarriedCaption = restCarriedDay?.let { carriedCaption(it, selectedDayKey).localized() }
     LaunchedEffect(days, selectedDayKey, selectedDayOffset) {
         val byDay = runCatching {
             viewModel.repo.resolvedSeries("sleep_performance", "my-whoop", "0000-00-00", "9999-99-99",
@@ -962,7 +966,9 @@ fun TodayScreen(
         // stale, fall through to null so the Rest ring shows its needs-a-tracked-night state instead of a
         // frozen number. `selectedDayKey` is today's key at offset 0, so it anchors the freshness check.
         val latest = byDay.entries.maxByOrNull { it.key }
-        restScoreForDay = freshRestScore(
+        restSelection = freshRestScore(
+            todayValue = byDay[selectedDayKey], lastDay = latest?.key, lastValue = latest?.value,
+            isTodaySelected = selectedDayOffset == 0, today = selectedDayKey) to carriedRestDay(
             todayValue = byDay[selectedDayKey], lastDay = latest?.key, lastValue = latest?.value,
             isTodaySelected = selectedDayOffset == 0, today = selectedDayKey)
     }
@@ -1710,6 +1716,7 @@ fun TodayScreen(
                                 ScoreHeroRow(
                                     day = displayMetric,
                                     restScore = restScoreForDay,
+                                    restCarriedCaption = restCarriedCaption,
                                     recoveryCalibration = recoveryCalibration,
                                     lastScoredCharge = lastScoredCharge,
                                     effortScale = effortScale,
@@ -1720,7 +1727,7 @@ fun TodayScreen(
                                     // #1164: today's Rest is provisional while the strap has banked records
                                     // not yet offloaded — show "Pending sync" instead of a number that moves.
                                     restPendingSync = restPendingSync(
-                                        restScore = restScoreForDay,
+                                        restScore = restScoreForDay.takeIf { restCarriedDay == null },
                                         backfilling = live.backfilling,
                                         historyPendingSync = live.historyPendingSync,
                                         isTodaySelected = selectedDayOffset == 0,
@@ -1831,13 +1838,14 @@ fun TodayScreen(
                                     // This preference read is cheap and only feeds the otherwise-empty tile.
                                     stepsCalibrationPrompt = stepsCalibrationPrompt(context, profileStore),
                                     restScore = restScoreForDay,
+                                    restCarriedCaption = restCarriedCaption,
                                     restSpark = restCompositeSpark,
                                     enabledMetrics = enabledKeyMetrics,
                                     isToday = selectedDayOffset == 0,
                                     // #1164: today's Rest is provisional while the strap has banked records
                                     // not yet offloaded — the Rest tile shows "Pending sync" instead of a number.
                                     restPendingSync = restPendingSync(
-                                        restScore = restScoreForDay,
+                                        restScore = restScoreForDay.takeIf { restCarriedDay == null },
                                         backfilling = live.backfilling,
                                         historyPendingSync = live.historyPendingSync,
                                         isTodaySelected = selectedDayOffset == 0,
@@ -3008,6 +3016,7 @@ private fun ScoreHeroRow(
     // #1164: pending-sync state for today's Rest (strap has banked records not yet offloaded). When true
     // the Rest ring shows "Pending sync" instead of a provisional number that will change.
     restPendingSync: Boolean = false,
+    restCarriedCaption: String? = null,
     // #1995: tapping the Effort or Rest ring opens that score's own vital detail, the same trend the
     // metric cards below already push, so the ring and its card can never lead to different screens.
     // Charge keeps `onChargeTap` (its breakdown sheet), which is richer than a trend and has no twin on
@@ -3156,7 +3165,7 @@ private fun ScoreHeroRow(
                         ),
                         // #1164/#2012: the provisional state is now said BESIDE the number instead of
                         // replacing it. See [HeroRingColumn]'s caption for why.
-                        caption = if (restPendingSync) {
+                        caption = restCarriedCaption ?: if (restPendingSync) {
                             uiString(R.string.l10n_today_screen_pending_sync_cbe01f9e)
                         } else {
                             null
@@ -3164,6 +3173,7 @@ private fun ScoreHeroRow(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             HeroScoreVessel(
+                                modifier = Modifier.alpha(if (restCarriedCaption == null) 1f else 0.8f),
                                 fraction = (restScore ?: 0.0) / 100.0,
                                 value = restScore ?: 0.0,
                                 tint = Palette.recoveryColor(restScore ?: 0.0),
@@ -5967,6 +5977,7 @@ private fun MetricGrid(
     // #1164: today's Rest is provisional while the strap has banked records not yet offloaded — the Rest
     // tile shows "Pending sync" instead of a number that will change. Past days are final.
     restPendingSync: Boolean = false,
+    restCarriedCaption: String? = null,
     onScoreInfo: (ScoreSection) -> Unit = {},
     // S5: cap the grid to the first METRICS_COLLAPSED_CAP tiles behind a "Show all metrics" expander,
     // collapsing OVERFLOW only (never dropping or reordering a user-selected tile, #251). Defaults keep the
@@ -6038,7 +6049,7 @@ private fun MetricGrid(
             // Composed from the two shipped strings rather than a third one needing four translations.
             // Matches the single iOS caption "Pending sync · strap history still offloading": the second
             // half alone read as a fragment, and more so now that a real number sits above it (#2012).
-            caption = if (restPendingSync) {
+            caption = restCarriedCaption ?: if (restPendingSync) {
                 uiString(R.string.l10n_today_screen_pending_sync_complete_5940c589, uiString(R.string.l10n_today_screen_strap_history_still_offloading_80140264))
             } else {
                 null

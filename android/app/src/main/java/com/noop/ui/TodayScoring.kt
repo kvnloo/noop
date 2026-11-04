@@ -174,6 +174,21 @@ internal fun freshRestScore(
     return if (isCarryStale(lastDay, today)) null else lastValue
 }
 
+/**
+ * The source date of a carried Rest score (#1464). A legitimate prior-night number must not
+ * look like today's own result. Never identify a missing, stale, future, or past-navigation value
+ * as a carry. Apple twin: TodayView.carriedRestDay. Scoring and persistence are unchanged.
+ */
+internal fun carriedRestDay(
+    todayValue: Double?, lastDay: String?, lastValue: Double?,
+    isTodaySelected: Boolean, today: String = LocalDate.now().toString(),
+): String? {
+    if (todayValue != null || !isTodaySelected || lastDay == null || lastDay >= today) return null
+    return lastDay.takeIf {
+        freshRestScore(todayValue, lastDay, lastValue, isTodaySelected, today) != null
+    }
+}
+
 /** The carried recovery caption stamp, keyed on that scored day's own date and its recency. Within the
  *  freshness cap it reads "Last night · <date>"; once the carried day is older than the cap (#779) it reads
  *  "Latest sleep · <date>" so a weeks-old import is never surfaced as "Last night". Shared by every carried

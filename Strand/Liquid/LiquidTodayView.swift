@@ -53,6 +53,7 @@ struct LiquidTodayView: View {
 
     // async-loaded via the confirmed Repository accessors
     @State private var restScore: Double?          // sleep_performance, day-keyed
+    @State private var restCarriedDay: String?     // source night if carried (#1464)
     /// Input providers for the three scores, keyed by recovery / strain / sleep_performance.
     @State private var heroProviderByMetric: [String: ScoreInputProvider] = [:]
     @State private var stress: Double?             // StressModel(...).score, 0–3
@@ -718,7 +719,11 @@ struct LiquidTodayView: View {
                           detailRoute: .metric(HeroRingMetric.effort))
             HeroScoreCell(label: String(localized: "Rest"), score: restScore, tint: StrandPalette.restColor,
                           animated: dataLoaded, onGuide: { guideSection = .rest },
-                          detailRoute: .metric(HeroRingMetric.rest))
+                          detailRoute: .metric(HeroRingMetric.rest),
+                          isCarried: restCarriedDay != nil,
+                          caption: restCarriedDay.map {
+                              TodayView.carriedCaption(priorDayKey: $0, todayKey: selectedDayKey)
+                          })
                 .overlay(alignment: .top) {
                     if let sourceLabel = heroSourceLabel {
                         SourceBadge("\(sourceLabel)", tint: StrandPalette.textSecondary)
@@ -1401,7 +1406,8 @@ struct LiquidTodayView: View {
             // rows use, so all three now agree by construction.
             ktile(String(localized: "Strain"), icon: keyMetricIcon(metric), effortText(effortStrain(displayDay)), "", StrandPalette.effortColor, frac(effortStrain(displayDay)), key: HeroRingMetric.effort)
         case .rest:
-            ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest)
+            ktile(String(localized: "Rest"), icon: keyMetricIcon(metric), intText(restScore), "%", StrandPalette.restColor, frac(restScore), key: HeroRingMetric.rest,
+                  caption: restCarriedDay.map { TodayView.carriedCaption(priorDayKey: $0, todayKey: selectedDayKey) })
         case .hrv:
             ktile("HRV", icon: keyMetricIcon(metric), intText(hrv), "ms", StrandPalette.metricCyan, fracOver(hrv, 120), key: "hrv")
         case .restingHr:
@@ -1750,6 +1756,10 @@ struct LiquidTodayView: View {
         // forever while Charge advanced; freshness-gate the tail-fallback so a stale tail falls through to
         // the Rest hero's No-Data/calibrating state (same empty treatment Effort uses) instead of freezing.
         restScore = TodayView.freshRestScore(
+            todayValue: restByDay[selectedDayKey], lastDay: restSeries.last?.day,
+            lastValue: restSeries.last?.value, isTodaySelected: selectedDayOffset == 0,
+            todayKey: selectedDayKey)
+        restCarriedDay = TodayView.carriedRestDay(
             todayValue: restByDay[selectedDayKey], lastDay: restSeries.last?.day,
             lastValue: restSeries.last?.value, isTodaySelected: selectedDayOffset == 0,
             todayKey: selectedDayKey)
@@ -2246,6 +2256,9 @@ private struct HeroScoreCell: View {
     /// the same score land on the identical dossier rather than diverging. The LABEL keeps its own job:
     /// it opens the scoring guide, which is this screen's only route to that explainer.
     var detailRoute: TabRoute? = nil
+    /// A carried number shows its true provenance and the subdued visual treatment.
+    var isCarried: Bool = false
+    var caption: String? = nil
 
     /// The gauge, linked when there is somewhere to go.
     ///
@@ -2262,6 +2275,7 @@ private struct HeroScoreCell: View {
             decimals: decimals,
             tapPassesThrough: detailRoute != nil
         )
+        .opacity(isCarried ? 0.8 : 1)
         if let detailRoute {
             NavigationLink(value: detailRoute) { gauge }
                 .buttonStyle(LiquidPressStyle())
@@ -2300,6 +2314,13 @@ private struct HeroScoreCell: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("\(label), \(spokenScore). See how it is scored."))
+            if let caption {
+                Text(caption)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+            }
         }
         .frame(maxWidth: .infinity)
     }

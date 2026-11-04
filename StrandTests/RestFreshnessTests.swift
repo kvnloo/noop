@@ -58,6 +58,35 @@ final class RestFreshnessTests: XCTestCase {
                                      isTodaySelected: true, todayKey: todayKey))
     }
 
+    // MARK: - #1464 Rest carry provenance, with fixed clock and public synthetic values
+
+    func testCarriedRestDayNamesThePreviousNight() {
+        XCTAssertEqual(TodayView.freshRestScore(todayValue: nil, lastDay: "2026-08-18", lastValue: 89,
+                                                isTodaySelected: true, todayKey: "2026-08-19"), 89)
+        XCTAssertEqual(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-18", lastValue: 89,
+                                                isTodaySelected: true, todayKey: "2026-08-19"), "2026-08-18")
+    }
+
+    func testCarriedRestDayRejectsOwnMissingFutureStaleAndPastNavigation() {
+        let today = "2026-08-19"
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: 72, lastDay: "2026-08-18", lastValue: 89,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-18", lastValue: nil,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: nil, lastValue: 89,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-18", lastValue: 89,
+                                               isTodaySelected: false, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-19", lastValue: 89,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-20", lastValue: 89,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertNil(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-16", lastValue: 89,
+                                               isTodaySelected: true, todayKey: today))
+        XCTAssertEqual(TodayView.carriedRestDay(todayValue: nil, lastDay: "2026-08-17", lastValue: 65,
+                                                 isTodaySelected: true, todayKey: today), "2026-08-17")
+    }
+
     // MARK: - #1164 Rest pending-sync (provisional before full offload)
 
     /// An active offload (`backfilling`) with today's Rest present → the score is captioned as pending.
