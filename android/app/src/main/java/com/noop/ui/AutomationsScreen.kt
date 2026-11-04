@@ -1,6 +1,9 @@
 package com.noop.ui
 
 import com.noop.R
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -79,6 +83,19 @@ fun AutomationsScreen(viewModel: AppViewModel) {
     val batteryAlerts by viewModel.batteryAlertsEnabled.collectAsStateWithLifecycle()
     val predictiveBatteryAlerts by viewModel.predictiveBatteryAlertsEnabled.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
+    // #2682: selecting a SAF folder is the explicit route-export privacy decision.
+    var routeExportEnabled by remember { mutableStateOf(AutoRouteExport.enabled(ctx)) }
+    var routeExportFailed by remember { mutableStateOf(AutoRouteExport.lastFailed(ctx)) }
+    val pickRouteFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            if (AutoRouteExport.chooseFolder(ctx, uri)) {
+                routeExportEnabled = true
+                routeExportFailed = false
+            } else {
+                Toast.makeText(ctx, ctx.getString(R.string.route_auto_export_denied), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     // HR-zone coaching is real + persisted (zone-based, mirrors macOS): the ViewModel owns the toggle +
     // recovery option and buzzes the strap on entering the top zone (and Zone 1 if recovery is on).
@@ -194,6 +211,50 @@ fun AutomationsScreen(viewModel: AppViewModel) {
                     if (live.bonded) "Strap bonded" else "Not connected",
                     tone = if (live.bonded) StrandTone.Positive else StrandTone.Warning,
                 )
+            }
+        }
+        }
+
+        // #2682: a user-picked folder, never an exported Activity/receiver that other apps can query.
+        item {
+        SettingsSection(
+            icon = Icons.Filled.FolderOpen,
+            title = uiString(R.string.route_auto_export_title),
+            blurb = uiString(R.string.route_auto_export_disclosure),
+            active = routeExportEnabled,
+        ) {
+            Text(
+                uiString(R.string.route_auto_export_default_off),
+                style = NoopType.footnote, color = Palette.textTertiary,
+            )
+            if (routeExportFailed) {
+                Text(
+                    uiString(R.string.route_auto_export_failed),
+                    style = NoopType.footnote, color = Palette.statusWarning,
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { pickRouteFolder.launch(null) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.accent),
+                ) {
+                    Text(
+                        uiString(if (routeExportEnabled) R.string.route_auto_export_change else R.string.route_auto_export_choose),
+                        style = NoopType.body,
+                    )
+                }
+                if (routeExportEnabled) {
+                    OutlinedButton(
+                        onClick = {
+                            AutoRouteExport.disable(ctx)
+                            routeExportEnabled = false
+                            routeExportFailed = false
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Palette.accent),
+                    ) {
+                        Text(uiString(R.string.route_auto_export_disable), style = NoopType.body)
+                    }
+                }
             }
         }
         }
