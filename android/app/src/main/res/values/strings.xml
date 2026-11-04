@@ -2889,4 +2889,12 @@
     <string name="raw_diag_ecg_probe_running">A capture may still be running on this strap. The verdict goes to the strap log.</string>
     <string name="today_customize_live_session_availability">Appears today when Live Sessions is enabled in Settings or a session is active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today your way, heart rate any app can read, and Italian</string>
+
+    <!-- #870: opt-in, on-device hydration reminder. -->
+    <string name="hydration_reminder_setting_title">Hydration reminders</string>
+    <string name="hydration_reminder_setting_detail">Optional phone alerts every few hours from 8 AM to 10 PM. Android may delay delivery.</string>
+    <string name="hydration_reminder_interval">Remind every</string>
+    <string name="hydration_reminder_every_hours">Every %1$d hours</string>
+    <string name="hydration_reminder_title">Time to hydrate</string>
+    <string name="hydration_reminder_body">Open NOOP to log a sip, cup or bottle.</string>
 </resources>
