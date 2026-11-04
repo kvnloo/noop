@@ -123,8 +123,6 @@ class Whoop5EcgR16Test {
     }
 
     @Test
-
-    @Test
     fun liveAndStoredR16ShareAllRecordBytesExceptTypeAndCRC() {
         // Synthetic 500-slot record, not a hardware claim. Values 0..499 in 18-bit coding.
         val slots = (0 until Whoop5Ecg.R16_MAX_SAMPLES).map { i ->
@@ -157,6 +155,7 @@ class Whoop5EcgR16Test {
         assertNull(Whoop5Ecg.r16FromFrame(badCRC))
     }
 
+    @Test
     fun aShortInnerRecordIsRefusedRatherThanDecodedWithAShrunkSampleBlock() {
         // R17 derives its extent from the declared count; R16 cannot. Every region after the waveform is
         // at a FIXED offset, so decoding a short buffer would read the lead-off arrays from inside the
