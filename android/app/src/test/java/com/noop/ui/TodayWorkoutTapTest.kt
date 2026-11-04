@@ -80,13 +80,6 @@ class TodayWorkoutTapTest {
     }
 
     /**
-     * #1702: both platforms must window the feed to the same 14 days, and iOS must do it AT THE SECTION.
-     *
-     * `workouts` on TodayView is shared: the Data Sources Apple-workout count and the HR chart's sport
-     * glyphs both read it and are all-time by design. Windowing the array at its source would compile,
-     * look correct, and silently shrink two unrelated numbers on the same screen.
-     */
-    /**
      * #880: two workouts of the same origin once showed different accent colors solely because
      * one carried an optional strain value. The tiles summarize duration; Effort lives in detail.
      * Pin the production Compose and SwiftUI call sites together, like the tap contract above.
@@ -118,6 +111,13 @@ class TodayWorkoutTapTest {
         )
     }
 
+    /**
+     * #1702: both platforms must window the feed to the same 14 days, and iOS must do it AT THE SECTION.
+     *
+     * `workouts` on TodayView is shared: the Data Sources Apple-workout count and the HR chart's sport
+     * glyphs both read it and are all-time by design. Windowing the array at its source would compile,
+     * look correct, and silently shrink two unrelated numbers on the same screen.
+     */
     @Test
     fun bothPlatformsWindowTheFeedToTheSameFourteenDays() {
         val kotlin = File(repoRoot(), "android/app/src/main/java/com/noop/ui/TodayMetricsLogic.kt").readText()
