@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Experimental Android focus UI: isolated strings, with no change to legacy screens. -->
+    <string name="contextual_status_connected">Ligado</string>
+    <string name="contextual_status_searching">A procurar</string>
+    <string name="contextual_status_offline">Desligado</string>
+    <string name="contextual_charge_day">Carga · %1$s</string>
+    <string name="contextual_no_charge_day">Carga indisponível · %1$s</string>
+    <string name="contextual_no_score">Ainda sem pontuação registada</string>
+    <string name="contextual_heart_rate">Frequência cardíaca</string>
+    <string name="contextual_effort">Esforço</string>
+    <string name="contextual_in_context">EM CONTEXTO</string>
+    <string name="contextual_dismiss">Dispensar sugestão</string>
+    <string name="contextual_breathe_wake_day_hint">Se fizer parte da rotina da noite, selecione Amanhã no Diário para associar os dados da manhã seguinte.</string>
+    <string name="contextual_journal">Diário</string>
+    <string name="contextual_full_dashboard">Painel completo</string>
+    <string name="contextual_return_focus">Voltar à vista simples</string>
+    <string name="contextual_active_title">Sessão em curso</string>
+    <string name="contextual_active_detail">Pode retomar a sessão ativa.</string>
+    <string name="contextual_resume">Retomar</string>
+    <string name="contextual_scanning_title">A procurar a pulseira</string>
+    <string name="contextual_scanning_detail">A estabelecer ligação.</string>
+    <string name="contextual_offline_title">Pulseira desligada</string>
+    <string name="contextual_offline_detail">Abra Dispositivos para verificar a ligação.</string>
+    <string name="contextual_waiting_title">À espera de pontuação</string>
+    <string name="contextual_waiting_detail">Os dados de sono e recuperação surgirão após processamento.</string>
+    <string name="contextual_review_title">As suas leituras estão prontas</string>
+    <string name="contextual_review_detail">Compare os últimos dias.</string>
+</resources>

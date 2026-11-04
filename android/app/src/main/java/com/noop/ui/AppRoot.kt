@@ -514,6 +514,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     val currentRoute = backStack?.destination?.route
     val current = Destination.forRoute(currentRoute)
     var showQuickActions by remember { mutableStateOf(false) }
+    // Experimental branch: focus is the launch UI, the full existing dashboard is a reversible reveal.
+    // This state is intentionally session-only; no schema, backup or settings changes.
+    var classicDashboard by remember { mutableStateOf(false) }
     // The Updates inbox sheet (opened by the Today header bell). The store is a process singleton so
     // the Today cards and the import path post to the same inbox this sheet renders.
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -582,7 +585,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                 // DEFAULT path: the shipped reserved slot, unchanged. Empty only when the overlay is
                 // on, where the bar is drawn below as a sibling and the slot must reserve nothing.
                 if (!BottomBarStyleStore.overlay) {
-                    GlassBottomBar(
+                    ContextualBottomBar(
                         current = current,
                         onTabSelected = { dest ->
                             if (dest.route != currentRoute) nav.navigateTopLevel(dest.route)
@@ -627,6 +630,22 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
             ) {
                 // --- Live, working screens (existing waves) ---
                 composable(Destination.Today.route) {
+                    if (!classicDashboard) {
+                        ContextualTodayScreen(
+                            viewModel = viewModel,
+                            onOpenDevices = { nav.navigateTopLevel(Destination.Devices.route) },
+                            onOpenSleep = { nav.navigateTopLevel(Destination.Sleep.route) },
+                            onOpenTrends = { nav.navigateTopLevel(Destination.Trends.route) },
+                            onOpenLive = { nav.navigate(Destination.Live.route) },
+                            onOpenJournal = { nav.navigateTopLevel(Destination.Insights.route) },
+                            onOpenBreathe = { nav.navigateTopLevel(Destination.Breathe.route) },
+                            onOpenFullDashboard = { classicDashboard = true },
+                            onResumeWorkout = {
+                                viewModel.openActiveWorkout()
+                                nav.navigate(Destination.Live.route)
+                            },
+                        )
+                    } else {
                     TodayScreen(
                         viewModel = viewModel,
                         // The quick-action "+" lives in the Today header's top-right now (off the
@@ -671,6 +690,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         // destination the Sleep screen's morning sheet uses.
                         onOpenJournal = { nav.navigateTopLevel(Destination.Insights.route) },
                     )
+                    }
                 }
                 composable(Destination.Live.route) {
                     LiveScreen(
@@ -693,7 +713,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     )
                 }
                 composable(Destination.Intervals.route) { IntervalsScreen(viewModel) }
-                composable(Destination.Breathe.route) { BreatheScreen(viewModel) }
+                composable(Destination.Breathe.route) {
+                    BreatheScreen(viewModel, onOpenJournal = { nav.navigateTopLevel(Destination.Insights.route) })
+                }
                 composable(Destination.Coach.route) {
                     // A normal push, so Back returns to the conversation (#2243).
                     CoachScreen(onOpenSettings = { nav.navigate(Destination.CoachSettings.route) })
@@ -825,6 +847,21 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 6.dp),
                         color = Palette.textTertiary,
                     )
+                    // Reversible exit from the legacy dashboard; the contextual UI never
+                    // persists a second layout or alters the original user's card preferences.
+                    if (classicDashboard) {
+                        NavigationDrawerItem(
+                            selected = false,
+                            onClick = {
+                                showQuickActions = false
+                                classicDashboard = false
+                                nav.navigateTopLevel(Destination.Today.route)
+                            },
+                            icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                            label = { Text(stringResource(R.string.contextual_return_focus), style = NoopType.body) },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                        )
+                    }
                     // Updates inbox — relocated here off the Today header (the liquid Today header mirrors iOS,
                     // which has no notifications bell). The feature is fully intact and one tap away: this row
                     // opens the same inbox sheet, showing the unread count as a trailing badge.
@@ -938,7 +975,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
         // TalkBack could focus a bar nobody can see and a tap could land on a control that is not there.
         // Dropping it at the end of the animation removes both. Safe precisely because it is an overlay —
         // it reserves no space, so composing or not composing it never reflows content.
-        if (BottomBarStyleStore.overlay && barPresent) GlassBottomBar(
+        if (BottomBarStyleStore.overlay && barPresent) ContextualBottomBar(
             current = current,
             onTabSelected = { dest ->
                 if (dest.route != currentRoute) nav.navigateTopLevel(dest.route)
@@ -1134,6 +1171,59 @@ internal val barTrailingTabs = listOf(
  */
 internal fun barTrailingTabsFor(coachEnabled: Boolean): List<BarTab> =
     if (coachEnabled) barTrailingTabs else barTrailingTabs.filterNot { it.dest == Destination.Coach }
+
+
+/**
+ * Branch-only two-destination dock. Every other feature remains reachable through More,
+ * and an active contextual card can take the wearer straight to its relevant screen.
+ * Respects the existing bottom-bar opacity, scale and overlay/hide preferences.
+ */
+@Composable
+private fun ContextualBottomBar(
+    current: Destination,
+    onTabSelected: (Destination) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(Metrics.cornerPill)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = Metrics.screenPadding, end = Metrics.screenPadding, top = Metrics.space4, bottom = Metrics.space12),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = shape,
+            color = Palette.surfaceRaised.copy(alpha = BottomBarStyleStore.barAlpha),
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            modifier = Modifier
+                .widthIn(max = 260.dp)
+                .fillMaxWidth()
+                .border(0.5.dp, Palette.hairline.copy(alpha = 0.45f), shape),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Metrics.space8, vertical = Metrics.space6 * BottomBarStyleStore.scale),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BarSlot(
+                    icon = Icons.Filled.Home,
+                    label = stringResource(R.string.nav_today),
+                    active = current == Destination.Today,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onTabSelected(Destination.Today) },
+                )
+                BarSlot(
+                    icon = Icons.Filled.MoreHoriz,
+                    label = stringResource(R.string.nav_more),
+                    active = current != Destination.Today,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onTabSelected(Destination.More) },
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun GlassBottomBar(

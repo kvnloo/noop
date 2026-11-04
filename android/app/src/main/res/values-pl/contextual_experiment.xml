@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fork-only Android contextual home: translated for the existing shipped locale. -->
+    <string name="contextual_status_connected">Połączono</string>
+    <string name="contextual_status_searching">Wyszukiwanie</string>
+    <string name="contextual_status_offline">Offline</string>
+    <string name="contextual_charge_day">Energia · %1$s</string>
+    <string name="contextual_no_charge_day">Energia niedostępna · %1$s</string>
+    <string name="contextual_no_score">Brak zapisanego wyniku</string>
+    <string name="contextual_heart_rate">Tętno</string>
+    <string name="contextual_effort">Wysiłek</string>
+    <string name="contextual_in_context">W KONTEKŚCIE</string>
+    <string name="contextual_dismiss">Odrzuć sugestię</string>
+    <string name="contextual_breathe_wake_day_hint">Jeśli to część wieczornej rutyny, wybierz Jutro w Dzienniku, aby przypisać wpis do następnego poranka.</string>
+    <string name="contextual_journal">Dziennik</string>
+    <string name="contextual_full_dashboard">Pełny pulpit</string>
+    <string name="contextual_return_focus">Wróć do widoku skupienia</string>
+    <string name="contextual_active_title">Sesja w toku</string>
+    <string name="contextual_active_detail">Możesz wznowić aktywną sesję.</string>
+    <string name="contextual_resume">Wznów</string>
+    <string name="contextual_scanning_title">Wyszukiwanie opaski</string>
+    <string name="contextual_scanning_detail">Trwa łączenie.</string>
+    <string name="contextual_offline_title">Opaska niepołączona</string>
+    <string name="contextual_offline_detail">Otwórz Urządzenia, aby sprawdzić połączenie.</string>
+    <string name="contextual_waiting_title">Oczekiwanie na wynik</string>
+    <string name="contextual_waiting_detail">Dane snu i regeneracji pojawią się po przetworzeniu.</string>
+    <string name="contextual_review_title">Odczyty są gotowe</string>
+    <string name="contextual_review_detail">Porównaj ostatnie dni.</string>
+</resources>
