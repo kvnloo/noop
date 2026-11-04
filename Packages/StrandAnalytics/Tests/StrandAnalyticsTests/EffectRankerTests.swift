@@ -153,4 +153,34 @@ final class EffectRankerTests: XCTestCase {
                              effect: e, confidence: .building)
         XCTAssertTrue(r.sentence().hasSuffix("(next morning)."))
     }
+
+    /// Journal dates are wake-day keys; a next-morning result crosses New Year
+    /// without shifting the question into an unlogged day or losing a paired row.
+    func testWakeDayNextMorningJoinAcrossYearBoundary() {
+        let journalDays = [
+            "2026-12-26", "2026-12-27", "2026-12-28", "2026-12-29",
+            "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02",
+            "2027-01-03", "2027-01-04"
+        ]
+        let nextMornings = [
+            "2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30",
+            "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03",
+            "2027-01-04", "2027-01-05"
+        ]
+        let outcomes = Dictionary(uniqueKeysWithValues: zip(
+            nextMornings, [82.0, 80.0, 84.0, 78.0, 81.0, 87.0, 89.0, 85.0, 86.0, 88.0]
+        ))
+        let factor = "Did you have caffeine late in the day?"
+        let ranked = EffectRanker.rank(
+            behaviors: [factor: Set(journalDays.prefix(5))],
+            controls: [factor: Set(journalDays.suffix(5))],
+            outcomeByDay: outcomes, outcome: "sleep_efficiency"
+        )
+        XCTAssertEqual(ranked.count, 1)
+        XCTAssertEqual(ranked.first?.lag, 1)
+        XCTAssertEqual(ranked.first?.effect.nWith, 5)
+        XCTAssertEqual(ranked.first?.effect.nWithout, 5)
+        XCTAssertEqual(ranked.first?.effect.delta ?? .nan, -6, accuracy: 1e-9)
+    }
+
 }
