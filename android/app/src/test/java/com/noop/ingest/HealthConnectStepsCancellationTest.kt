@@ -98,7 +98,7 @@ class HealthConnectStepsCancellationTest {
     @Test
     fun cancelledPermissionLookupIsNotMisclassifiedAsNoGrant() {
         assertCatchRethrowsBeforeFallback(
-            "val granted = try {\n            client.permissionController.getGrantedPermissions()",
+            "suspend fun refreshTodaySteps(context: Context, repo: WhoopRepository): Int? {",
             "if (HealthPermission.getReadPermission(StepsRecord::class) !in granted) return null",
             "return null",
         )
