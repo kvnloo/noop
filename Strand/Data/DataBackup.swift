@@ -35,6 +35,12 @@ enum DataBackup {
     static let maxBackupSQLiteBytes: Int64 = 2_147_483_648
     private static let maxBackupSettingsBytes: Int64 = 1_048_576
 
+    /// The decompressed SQLite ceiling, lifted only after an explicit user override.
+    /// Settings entries keep their separate, strict limit.
+    static func sqliteRestoreLimit(allowOversize: Bool) -> Int64 {
+        allowOversize ? Int64.max : maxBackupSQLiteBytes
+    }
+
     // MARK: - Result
 
     enum BackupResult {
@@ -171,11 +177,17 @@ enum DataBackup {
     /// enforces. Measured on the DATABASE, not the finished archive: the archive is `.deflate`d and the
     /// cap the restore checks counts the DECOMPRESSED stream, so the zip's own size says nothing about
     /// whether it can be read back. (#1807)
-    private static func exportOutcome(_ dest: URL, dbURL: URL) -> BackupResult {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: dbURL.path)
-        guard let bytes = (attrs?[.size] as? NSNumber)?.int64Value,
+    /// Pure export-size decision. An injected byte count exercises the 2 GiB boundary
+    /// without creating a multi-gigabyte SQLite fixture. Unknown size keeps the old result.
+    static func exportOutcome(_ dest: URL, databaseBytes: Int64?) -> BackupResult {
+        guard let bytes = databaseBytes,
               bytes > maxBackupSQLiteBytes else { return .exported(dest) }
         return .exportedOversize(dest, bytes: bytes, limit: maxBackupSQLiteBytes)
+    }
+
+    private static func exportOutcome(_ dest: URL, dbURL: URL) -> BackupResult {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: dbURL.path)
+        return exportOutcome(dest, databaseBytes: (attrs?[.size] as? NSNumber)?.int64Value)
     }
 
     /// The smallest a real database entry can be: SQLite's own file header is exactly this long, so
@@ -682,7 +694,7 @@ enum DataBackup {
             let limit: Int64
             switch name {
             case backupEntryName:
-                limit = allowOversize ? Int64.max : maxBackupSQLiteBytes
+                limit = sqliteRestoreLimit(allowOversize: allowOversize)
             case BackupSettings.entryName:
                 limit = maxBackupSettingsBytes
             default:
