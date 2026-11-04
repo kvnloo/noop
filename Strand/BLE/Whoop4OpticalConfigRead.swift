@@ -4,7 +4,7 @@ import WhoopProtocol
 /// Pure Apple-side guard for the WHOOP 4.0 optical front-end READ commands (#2793).
 ///
 /// This does not send BLE writes, change a strap setting, or identify red/IR channels.
-/// It gives a future, explicitly initiated iOS diagnostic a bounded request builder and
+/// It gives a future, explicitly initiated iOS diagnostic a strict read-payload allowlist and
 /// an integrity- and link-correlated response classifier. WHOOP 5/MG shares opcode
 /// numbers with unrelated commands, so only a caller that has positively established
 /// WHOOP 4.0 may use these frames. No generic command-sender entry is added.
@@ -20,9 +20,11 @@ enum Whoop4OpticalConfigRead {
 
     /// Only three GETs, with the one-byte body observed in the 41.16.6.0 probe.
     /// Crucially, the adjacent SET opcodes 39/41/43 have no request path here.
-    static func requestFrame(opcode: UInt8, sequence: UInt8, family: DeviceFamily) -> [UInt8]? {
+    static func requestPayload(opcode: UInt8, family: DeviceFamily) -> [UInt8]? {
         guard family == .whoop4, Operation(rawValue: opcode) != nil else { return nil }
-        return frameFromPayload([0x00], type: 35, seq: sequence, cmd: opcode)
+        // Return a payload, not an independent BLE framing path: a later
+        // gated sender must use the curated WhoopCommand + BLEManager.send API.
+        return [0x00]
     }
 
     /// Hard bound for a single retained raw response (header and CRC included).
