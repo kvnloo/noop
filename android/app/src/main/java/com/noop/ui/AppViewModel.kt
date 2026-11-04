@@ -2616,12 +2616,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _hcAutoSync.value = enabled
         NoopPrefs.setHcAutoSync(appContext, enabled)
         if (enabled) syncHealthConnectIfStale(force = true)
+        runCatching { com.noop.ingest.HealthConnectBackgroundSync.reschedule(appContext) }
     }
 
     /** Change the sync interval (hours). Takes effect on the next on-open catch-up sync. */
     fun setHcSyncHours(hours: Int) {
         _hcSyncHours.value = hours
         NoopPrefs.setHcSyncHours(appContext, hours)
+        runCatching { com.noop.ingest.HealthConnectBackgroundSync.applyIntervalChange(appContext) }
     }
 
     /** Flip Health Connect writeback (computed metrics → HC). Persists; the UI requests the write

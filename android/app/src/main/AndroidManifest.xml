@@ -144,6 +144,9 @@
          bottle don't have to be entered twice. Read-only; NOOP never writes water back. MUST be
          declared or Health Connect silently drops the runtime request (same trap as #412 above). -->
     <uses-permission android:name="android.permission.health.READ_HYDRATION" />
+    <!-- Fork: lets the opt-in Health Connect auto-sync also run in the background (WorkManager),
+         not only when NOOP is opened. Requested only when the user turns auto-sync on. -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
     <!-- Resolve the Health Connect provider on Android 14+ (platform) and earlier (app). -->
     <queries>
