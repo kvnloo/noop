@@ -29,7 +29,8 @@ final class DataBackupSizeBoundaryTests: XCTestCase {
     }
 
     func testMissingOrSmallerSizeKeepsPreviousExportOutcome() {
-        for bytes: Int64? in [nil, 0, 2_147_483_647] {
+        let sizes: [Int64?] = [nil, 0, 2_147_483_647]
+        for bytes in sizes {
             switch DataBackup.exportOutcome(destination, databaseBytes: bytes) {
             case .exported(let url):
                 XCTAssertEqual(url, destination)
