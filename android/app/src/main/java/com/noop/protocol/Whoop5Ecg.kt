@@ -231,11 +231,11 @@ data class RawLabradorPacket(
 }
 
 /**
- * The flash-banked raw ECG record: type 47 HISTORICAL_DATA, data revision 16, exactly 1584 bytes.
+ * The raw ECG record: type 43 live or type 47 stored, data revision 16, exactly 1584 bytes.
  *
- * `TOGGLE_LABRADOR_RAW_SAVE(125)=1` banks the generation to flash as these, which arrive in the ordinary
- * history offload rather than on a live channel. That delivery path is why every 30-second realtime listen
- * in #891 reported silence while the strap was in fact recording.
+ * Command 125 banks R16 to flash (type 47); command 126 can mirror it live (type 43), as observed
+ * on one MG running 50.40.1.0 (#2882). The decoder sends no commands and assumes no waveform units,
+ * toggle persistence, or battery cost.
  *
  * Carries wire structure only: 500 three-byte slots holding signed 18-bit samples plus two flag bits, and
  * a fixed lead-off diagnostic trailer. It establishes no volts per count and nothing clinical.
