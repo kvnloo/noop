@@ -248,6 +248,27 @@ class TodayExplainabilityTest {
         assertTrue(restPendingSync(restScore = 72.0, backfilling = true, historyPendingSync = true, isTodaySelected = true))
     }
 
+    // #1464: a morning carry must name the source night, never look like today's score.
+    @Test
+    fun carriedRestDay_yesterdayIsStampedWithoutChangingItsValue() {
+        val today = "2026-08-19"
+        assertEquals(89.0, freshRestScore(null, "2026-08-18", 89.0, true, today)!!, 0.0)
+        assertEquals("2026-08-18", carriedRestDay(null, "2026-08-18", 89.0, true, today))
+    }
+
+    @Test
+    fun carriedRestDay_rejectsOwnMissingFutureStaleAndPastNavigation() {
+        val today = "2026-08-19"
+        assertNull(carriedRestDay(72.0, "2026-08-18", 89.0, true, today))
+        assertNull(carriedRestDay(null, "2026-08-18", null, true, today))
+        assertNull(carriedRestDay(null, null, 89.0, true, today))
+        assertNull(carriedRestDay(null, "2026-08-18", 89.0, false, today))
+        assertNull(carriedRestDay(null, "2026-08-19", 89.0, true, today))
+        assertNull(carriedRestDay(null, "2026-08-20", 89.0, true, today))
+        assertNull(carriedRestDay(null, "2026-08-16", 89.0, true, today))
+        assertEquals("2026-08-17", carriedRestDay(null, "2026-08-17", 65.0, true, today))
+    }
+
     // ── COMPONENT 3 — recording state ────────────────────────────────────────────────────────────────
 
     @Test
