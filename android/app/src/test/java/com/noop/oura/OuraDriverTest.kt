@@ -136,6 +136,7 @@ class OuraDriverTest {
     fun testFactoryResetStatusDrivesNeedsKeyInstall() {
         val d = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
         d.nextStep(OuraTransition.Ready)
+        d.nextStep(OuraTransition.NonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
         val cmds = d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.IN_FACTORY_RESET))
         assertTrue(cmds.isEmpty())
         assertEquals(OuraDriverPhase.NeedsKeyInstall, d.phase)
@@ -145,8 +146,74 @@ class OuraDriverTest {
     fun testAuthErrorIsSurfacedNotRetriedBlindly() {
         val d = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
         d.nextStep(OuraTransition.Ready)
+        d.nextStep(OuraTransition.NonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
         d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.AUTH_ERROR))
         assertEquals(OuraDriverPhase.AuthFailed(OuraAuthStatus.AUTH_ERROR), d.phase)
+    }
+
+    /** Twin of Swift's testForeignNonceIgnoredAndRefusalIsRetryable (#2508). */
+    @Test
+    fun testForeignNonceIgnoredAndRefusalIsRetryable() {
+        val d = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
+        val own = bytes("0102030405060708090a0b0c0d0e0f")
+        val foreign = bytes("f0e0d0c0b0a0908070605040302010")
+
+        assertTrue(d.nextStep(OuraTransition.NonceReceived(foreign)).isEmpty())
+        assertEquals(OuraDriverPhase.Idle, d.phase)
+        assertFalse(d.expectsAuthNonce)
+
+        assertEquals(listOf("notify_all", "get_nonce"), d.nextStep(OuraTransition.Ready).map { it.label })
+        assertTrue(d.expectsAuthNonce)
+        val proof = d.nextStep(OuraTransition.NonceReceived(own))
+        assertEquals(listOf("submit_proof"), proof.map { it.label })
+        assertArrayEquals(intArrayOf(0x2F, 0x11, 0x2D), proof[0].bytes.copyOfRange(0, 3))
+        assertFalse(d.expectsAuthNonce)
+        assertNull(d.authNonceRetryCommand())
+        assertTrue(d.nextStep(OuraTransition.NonceReceived(foreign)).isEmpty())
+        assertEquals(OuraDriverPhase.Authenticating, d.phase)
+
+        assertTrue(d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.AUTH_ERROR)).isEmpty())
+        assertEquals(OuraDriverPhase.RetryableAuthFailure, d.phase)
+        assertTrue(d.nextStep(OuraTransition.NonceReceived(own)).isEmpty())
+        assertEquals(OuraDriverPhase.RetryableAuthFailure, d.phase)
+        d.stop()
+        assertFalse(d.expectsAuthNonce)
+        assertEquals(OuraDriverPhase.Stopped, d.phase)
+    }
+
+    /** Twin of Swift's testLateAuthStatusesCannotDemoteAnAuthenticatedSession (#2508). */
+    @Test
+    fun testLateAuthStatusesCannotDemoteAnAuthenticatedSession() {
+        val d = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
+        d.nextStep(OuraTransition.Ready)
+        d.nextStep(OuraTransition.NonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
+        assertEquals(listOf("dhr_read"), d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.SUCCESS)).map { it.label })
+        assertEquals(OuraDriverPhase.EnablingLiveHR, d.phase)
+        assertTrue(d.nextStep(OuraTransition.NonceReceived(bytes("f0e0d0c0b0a0908070605040302010"))).isEmpty())
+        assertTrue(d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.NOT_ORIGINAL_DEVICE)).isEmpty())
+        assertTrue(d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.SUCCESS)).isEmpty())
+        assertEquals(OuraDriverPhase.EnablingLiveHR, d.phase)
+        assertEquals(listOf("dhr_enable"), d.nextStep(OuraTransition.EnableAckReceived).map { it.label })
+        assertEquals(listOf("dhr_subscribe"), d.nextStep(OuraTransition.EnableAckReceived).map { it.label })
+        assertTrue(d.nextStep(OuraTransition.EnableAckReceived).isEmpty())
+        assertEquals(OuraDriverPhase.Streaming, d.phase)
+        assertTrue(d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.AUTH_ERROR)).isEmpty())
+        assertEquals(OuraDriverPhase.Streaming, d.phase)
+    }
+
+    /** Twin of Swift's testAuthStatusBeforeOurProofIsIgnored (#2508). */
+    @Test
+    fun testAuthStatusBeforeOurProofIsIgnored() {
+        val d = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
+        d.nextStep(OuraTransition.Ready)
+        assertTrue(d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.SUCCESS)).isEmpty())
+        assertEquals(OuraDriverPhase.Authenticating, d.phase)
+        assertTrue(d.expectsAuthNonce)
+        assertEquals("get_nonce", d.authNonceRetryCommand()?.label)
+        assertEquals(listOf("submit_proof"), d.nextStep(
+            OuraTransition.NonceReceived(bytes("0102030405060708090a0b0c0d0e0f")),
+        ).map { it.label })
+        assertEquals(listOf("dhr_read"), d.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.SUCCESS)).map { it.label })
     }
 
     // MARK: - Post-factory-reset key install sequencing (s3.2), gated on allowKeyInstall
