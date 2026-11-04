@@ -97,6 +97,9 @@ struct LiquidTodayView: View {
     @State private var showCoachLauncher = false
     @State private var showSettings = false
     @State private var synthesisExpanded = false
+    // #2711: the liquid iOS dashboard starts with the same six Key Metrics as Android
+    // and classic Today. Expansion is session-only and never rewrites the saved selection.
+    @State private var metricsExpanded = false
     @State private var showLiveSession = false
 
     /// Live Sessions (silent guardian) beta gate — the SAME key the Settings toggle writes. Default ON
@@ -120,6 +123,19 @@ struct LiquidTodayView: View {
     @AppStorage("today.keyMetricsWindowDays") private var keyMetricsWindowDays = 14
     @State private var kSparks: [String: [(String, Double)]] = [:]
     private var enabledKeyMetrics: [KeyMetric] { KeyMetricPrefs.decodeEnabled(keyMetricsRaw) }
+
+    /// The Android and classic Today default: three compact rows, six selected tiles.
+    static let metricsCollapsedCap = 6
+
+    /// Display-only. An expanded grid returns the entire saved selection in its original order.
+    static func visibleMetrics(_ enabled: [KeyMetric], expanded: Bool) -> [KeyMetric] {
+        if expanded || enabled.count <= metricsCollapsedCap { return enabled }
+        return Array(enabled.prefix(metricsCollapsedCap))
+    }
+
+    private var visibleKeyMetrics: [KeyMetric] {
+        Self.visibleMetrics(enabledKeyMetrics, expanded: metricsExpanded)
+    }
 
     /// #1001: TODAY's in-progress Effort, scored live in `load()` over the same window this view already
     /// resolves for its other reads. nil for a navigated past day, and nil when the scorer has too few
@@ -1362,6 +1378,8 @@ struct LiquidTodayView: View {
             // #430 parity: the grid honours the Key-Metrics editor (selection + order, all ten metrics)
             // instead of a hard-coded six — the bespoke Sleep-hours ktile gives way to the shared REST
             // score tile, aligning the liquid grid with the classic macOS grid and Android.
+            // Show the first six saved metrics by default, without altering the user's
+            // enabled selection or order. Full detail is one tap away.
             LazyVGrid(
                 columns: Array(
                     repeating: GridItem(.flexible(), spacing: NoopMetrics.gap),
@@ -1369,14 +1387,40 @@ struct LiquidTodayView: View {
                 ),
                 spacing: NoopMetrics.gap
             ) {
-                ForEach(enabledKeyMetrics) { metric in
+                ForEach(visibleKeyMetrics) { metric in
                     ktileFor(metric, hrv: hrv, rhr: rhr)
                 }
             }
-            NavigationLink(value: TabRoute.metricExplorer) {
-                LiquidFullWidthNavigationAction("Show all metrics")
+            if enabledKeyMetrics.count > Self.metricsCollapsedCap {
+                Button {
+                    withAnimation(StrandMotion.interactive) { metricsExpanded.toggle() }
+                } label: {
+                    HStack(spacing: NoopMetrics.space2) {
+                        Text(metricsExpanded
+                             ? String(localized: "Show fewer")
+                             : String(localized: "Show all metrics"))
+                            .font(StrandFont.subhead)
+                        Image(systemName: metricsExpanded ? "chevron.up" : "chevron.down")
+                            .font(StrandFont.footnote)
+                    }
+                    .foregroundStyle(StrandPalette.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, NoopMetrics.space2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(metricsExpanded
+                                    ? String(localized: "Show fewer")
+                                    : String(localized: "Show all metrics"))
             }
-            .buttonStyle(LiquidPressStyle())
+            // Keep the full metric explorer available after expanding, or immediately
+            // if the user's selection already fits without a collapse control.
+            if metricsExpanded || enabledKeyMetrics.count <= Self.metricsCollapsedCap {
+                NavigationLink(value: TabRoute.metricExplorer) {
+                    LiquidFullWidthNavigationAction("Explore")
+                }
+                .buttonStyle(LiquidPressStyle())
+            }
         }
     }
 
