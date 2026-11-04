@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.noop.R
 import com.noop.ui.NoopButton
 import com.noop.ui.NoopButtonKind
+import com.noop.ui.Metrics
 import com.noop.ui.NoopType
 import com.noop.ui.Palette
 import com.noop.ui.ScreenScaffold
@@ -304,7 +305,7 @@ fun SelfHostedPushScreen() {
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(Metrics.space8),
                     ) {
                         for (hours in listOf(6, 12, 24)) {
                             NoopButton(

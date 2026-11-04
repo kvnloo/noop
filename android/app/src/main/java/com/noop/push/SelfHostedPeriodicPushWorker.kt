@@ -26,8 +26,22 @@ internal suspend fun hasLocalUnsentPush(
     val localOnly = object : PushTransport {
         override suspend fun post(batch: PushBatch): PushTransportResponse = throw PendingLocalPush()
     }
+    // The coordinator normally remembers discovered devices. A preflight must never mutate
+    // cursors, windows, or the remembered-device set before the receiver acknowledges data.
+    val readOnlyProgress = object : PushProgressStore {
+        override suspend fun knownDeviceIds(): Set<String> = progress.knownDeviceIds()
+        override suspend fun rememberDeviceId(deviceId: String) = Unit
+        override suspend fun cursor(table: PushAppendTable, deviceId: String): PushCursor? =
+            progress.cursor(table, deviceId)
+        override suspend fun saveCursor(table: PushAppendTable, deviceId: String, cursor: PushCursor) =
+            error("Periodic probe cannot acknowledge append data")
+        override suspend fun window(table: PushMutableTable, deviceId: String): PushWindowProgress? =
+            progress.window(table, deviceId)
+        override suspend fun saveWindow(table: PushMutableTable, deviceId: String, value: PushWindowProgress) =
+            error("Periodic probe cannot acknowledge mutable data")
+    }
     return try {
-        val check = PushCoordinator(source, localOnly, progress, sourceId, today, zoneId)
+        val check = PushCoordinator(source, localOnly, readOnlyProgress, sourceId, today, zoneId)
             .pushKnownDevices(maxDevices = Int.MAX_VALUE, capabilities = capabilities)
         check.rejectedBatches > 0 || check.acceptedBatches > 0 ||
             check.hasMoreAppendRows || check.hasMoreDevices

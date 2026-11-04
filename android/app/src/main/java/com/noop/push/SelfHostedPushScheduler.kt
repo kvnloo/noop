@@ -49,6 +49,10 @@ internal fun continuationEnqueueCompletion(
 internal fun requiredPushNetworkType(wifiOnly: Boolean): NetworkType =
     if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
 
+/** The configured periodic clock exists only with both export and explicit schedule consent. */
+internal fun periodicPushIntervalHours(snapshot: SelfHostedPushSettings.Snapshot): Long? =
+    snapshot.periodicIntervalHours.toLong().takeIf { snapshot.periodicEnabled && snapshot.ready }
+
 /** The only entry point that queues pushes. Unique work serialises every trigger to one worker. */
 object SelfHostedPushScheduler {
     internal const val UNIQUE_WORK = "self-hosted-health-push"
@@ -71,13 +75,18 @@ object SelfHostedPushScheduler {
     /** A separate clock never replaces the one-time push chain or its reservation. */
     fun syncPeriodic(context: Context) {
         val app = context.applicationContext
-        val snapshot = SelfHostedPushSettings.from(app).snapshot()
+        val settings = SelfHostedPushSettings.from(app)
         val manager = WorkManager.getInstance(app)
-        if (!snapshot.periodicEnabled || !snapshot.ready) {
+        if (!settings.periodicEnabled()) {
+            // The default-off path does not open encrypted token preferences.
             manager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
             return
         }
-        val hours = snapshot.periodicIntervalHours.toLong()
+        val hours = periodicPushIntervalHours(settings.snapshot())
+        if (hours == null) {
+            manager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
+            return
+        }
         val request = PeriodicWorkRequest.Builder(SelfHostedPeriodicPushWorker::class.java, hours, TimeUnit.HOURS)
             .setInitialDelay(hours, TimeUnit.HOURS)
             .setConstraints(

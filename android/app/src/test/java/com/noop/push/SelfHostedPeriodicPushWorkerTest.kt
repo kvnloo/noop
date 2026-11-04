@@ -31,7 +31,13 @@ class SelfHostedPeriodicPushWorkerTest {
         assertEquals(2, initial.acceptedBatches)
         assertEquals(2, initial.acceptedRecords)
 
+        val rememberedBefore = progress.devices.toSet()
+        val cursorsBefore = progress.cursors.toMap()
+        val windowsBefore = progress.windows.toMap()
         assertFalse(hasLocalUnsentPush(source, progress, sourceId, capabilities, today, zone))
+        assertEquals(rememberedBefore, progress.devices)
+        assertEquals(cursorsBefore, progress.cursors)
+        assertEquals(windowsBefore, progress.windows)
         assertEquals(2, transport.batches.size)
         assertEquals(1L, progress.cursor(PushAppendTable.HR_SAMPLE, "a")?.rowId)
     }
