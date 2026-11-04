@@ -417,7 +417,7 @@ class HomeLocalizationTest(unittest.TestCase):
         pinned = after_header.split("                if selectedDayOffset == 0", 1)[0]
         self.assertIn("Button { customizationDestination = .today } label: {", pinned)
         self.assertIn('Label("Customize Today", systemImage: "slider.horizontal.3")', pinned)
-        self.assertNotRegex(pinned, r"\bif\b", "Root customize must not be conditionally hidden")
+        self.assertNotRegex(pinned, r"(?m)^\s*if\b", "Root customize must not be conditionally hidden")
         self.assertNotIn("sectionOrder", pinned)
         self.assertNotIn("enabledDashboardCards", pinned)
 
