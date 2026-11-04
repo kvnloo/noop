@@ -274,6 +274,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2") // collectAsStateWithLifecycle
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // --- Experimental breath camera (default off): front-camera ImageAnalysis only, on-device ---
+    // CameraX (Apache-2.0). No preview/capture/video use case is bound; see com.noop.breathcam.
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+
     // --- Coroutines ---
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
