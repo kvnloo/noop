@@ -61,4 +61,50 @@ final class ScheduledDebugExportTests: XCTestCase {
         XCTAssertTrue(ScheduledDebugExport.backgroundTaskShouldResubmit(enabled: true))
         XCTAssertFalse(ScheduledDebugExport.backgroundTaskShouldResubmit(enabled: false))
     }
+
+    /// Exercise the real file deletion boundary with synthetic Documents, not only the stamp math.
+    func testPruneRemovesOlderPairButKeepsNewestAndUnrelatedFiles() throws {
+        let fm = FileManager.default
+        let docs = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: docs, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: docs) }
+
+        let old = ["noop-strap-log-260610-0700.txt", "noop-raw-capture-260610-0700.json"]
+        let newest = ["noop-strap-log-260617-0700.txt", "noop-raw-capture-260617-0700.json"]
+        let unrelated = ["noop-strap-log-260610-0700.json", "noop-backup-20260617.noopbak", "notes.txt"]
+        for name in old + newest + unrelated {
+            try Data("synthetic fixture".utf8).write(to: docs.appendingPathComponent(name))
+        }
+
+        ScheduledExportRetention.prune(in: docs, keep: 1)
+
+        for name in old {
+            XCTAssertFalse(fm.fileExists(atPath: docs.appendingPathComponent(name).path), name)
+        }
+        for name in newest + unrelated {
+            XCTAssertTrue(fm.fileExists(atPath: docs.appendingPathComponent(name).path), name)
+        }
+    }
+
+    func testClearRemovesOnlyScheduledExportsAndReportsActualCount() throws {
+        let fm = FileManager.default
+        let docs = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: docs, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: docs) }
+
+        let scheduled = ["noop-strap-log-260617-0700.txt", "noop-raw-capture-260617-0700.json"]
+        let unrelated = ["noop-strap-log-260617-0700.json", "personal-note.txt"]
+        for name in scheduled + unrelated {
+            try Data("synthetic fixture".utf8).write(to: docs.appendingPathComponent(name))
+        }
+
+        XCTAssertEqual(ScheduledExportRetention.clear(in: docs), 2)
+        XCTAssertEqual(ScheduledExportRetention.clear(in: docs), 0)
+        for name in scheduled {
+            XCTAssertFalse(fm.fileExists(atPath: docs.appendingPathComponent(name).path), name)
+        }
+        for name in unrelated {
+            XCTAssertTrue(fm.fileExists(atPath: docs.appendingPathComponent(name).path), name)
+        }
+    }
 }

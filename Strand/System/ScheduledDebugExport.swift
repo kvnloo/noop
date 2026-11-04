@@ -64,67 +64,23 @@ enum ScheduledDebugExport {
         set { UserDefaults.standard.set(min(max(newValue, 1), 100), forKey: K.keepCount) }
     }
 
-    /// Filename prefixes for the two scheduled-export file kinds this type writes into Documents (the
-    /// log `.txt` and the raw-capture `.json`). Nothing else in Documents matches either prefix, so
-    /// retention and the manual clear action only ever touch scheduled drops.
-    private static let logPrefix = "noop-strap-log-"
-    private static let rawPrefix = "noop-raw-capture-"
-
-    /// The `yyMMdd-HHmm` stamp embedded in one scheduled-export filename (log `.txt` or raw `.json`),
-    /// or nil if `name` isn't one of ours. Mirrors Android `LogExport.scheduledExportStamp`. Pure — no
-    /// file IO — so retention math is unit-testable.
+    /// Keep the existing pure API while moving ownership of file matching and deletion into a
+    /// stand-alone service that can be audited and tested without running an export or BGTask.
     static func exportStamp(fromFilename name: String) -> String? {
-        if name.hasPrefix(logPrefix), name.hasSuffix(".txt") {
-            return String(name.dropFirst(logPrefix.count).dropLast(4))
-        }
-        if name.hasPrefix(rawPrefix), name.hasSuffix(".json") {
-            return String(name.dropFirst(rawPrefix.count).dropLast(5))
-        }
-        return nil
+        ScheduledExportRetention.stamp(fromFilename: name)
     }
 
-    /// Scheduled-export STAMPS (not filenames) to prune to keep only the `keep` newest generations — a
-    /// day's log+raw pair shares a stamp and counts once. Mirrors Android
-    /// `LogExport.scheduledExportStampsToPrune`. `yyMMdd-HHmm` is fixed-width and zero-padded, so a
-    /// plain string sort orders it correctly with no date parsing needed (same trick as the Android
-    /// twin's `yyyyMMdd-HHmmss`). Empty when already within budget.
     static func exportStampsToPrune(_ names: [String], keep: Int) -> Set<String> {
-        let stamps = Array(Set(names.compactMap { exportStamp(fromFilename: $0) })).sorted(by: >)
-        guard stamps.count > keep else { return [] }
-        return Set(stamps.dropFirst(keep))
+        ScheduledExportRetention.stampsToPrune(names, keep: keep)
     }
 
-    /// Best-effort retention: delete scheduled-export files under `docs` beyond `keep` generations,
-    /// oldest first. Called after every write in `performExport`. Failures are ignored — a transient
-    /// hiccup here must never fail the export itself.
-    private static func pruneScheduledExports(in docs: URL, keep: Int) {
-        let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: docs.path) else { return }
-        let toPrune = exportStampsToPrune(names, keep: keep)
-        guard !toPrune.isEmpty else { return }
-        for name in names {
-            guard let stamp = exportStamp(fromFilename: name), toPrune.contains(stamp) else { continue }
-            try? fm.removeItem(at: docs.appendingPathComponent(name))
-        }
-    }
-
-    /// Manual "Clear scheduled exports" action: delete every scheduled-export file under Documents
-    /// right now, regardless of the retention setting. Never touches an interactive save/share (those
-    /// go through `FileExport`'s save panel / share sheet, not Documents) or anything else the user or
-    /// another feature put in Documents. Returns the number of files removed.
+    /// Manual "Clear scheduled exports" action from the Test Centre. Retention is scoped to files
+    /// with the two scheduled-export filename shapes, not other Documents or interactive exports.
     @discardableResult
     static func clearScheduledExports() -> Int {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         else { return 0 }
-        let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: docs.path) else { return 0 }
-        var removed = 0
-        for name in names where exportStamp(fromFilename: name) != nil {
-            if (try? fm.removeItem(at: docs.appendingPathComponent(name))) != nil {
-                removed += 1
-            }
-        }
-        return removed
+        return ScheduledExportRetention.clear(in: docs)
     }
 
     /// iOS BGTask identifier. Derived from the running bundle id (rather than hardcoded) so it tracks
@@ -285,7 +241,7 @@ enum ScheduledDebugExport {
         // Retention (#650): these accumulate in Documents with no UI in the loop to notice, so prune
         // after every write (scheduled OR manual "Run now") — mirrors Android pruning on every
         // `writeScheduledExport` call.
-        pruneScheduledExports(in: docs, keep: keepCount)
+        ScheduledExportRetention.prune(in: docs, keep: keepCount)
         return logURL
     }
 
