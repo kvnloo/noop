@@ -8,6 +8,7 @@ import StrandAnalytics
 struct HeartMeditationView: View {
     @EnvironmentObject private var live: LiveState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var motion = NoopMotionState.shared
     @AppStorage("live.heartMeditation.guide") private var guideOn = true
 
     let onClose: () -> Void
@@ -16,6 +17,7 @@ struct HeartMeditationView: View {
     @State private var startedMs: Int64 = 0
     @State private var frameMs: Int64 = 0
     @State private var pulseCount = 0
+    @State private var pulseAtMs: Int64 = 0
     @State private var bpm: Int?
     @State private var steadiness: HeartBeatSteadiness = .waiting
     @State private var swingBpm: Double?
@@ -35,6 +37,11 @@ struct HeartMeditationView: View {
 
     private var elapsedMs: Int64 { max(0, frameMs - startedMs) }
     private var showingBeats: Bool { steadiness != .waiting }
+    private var still: Bool { motion.poseStill(reduceMotion) }
+    private var haloProgress: Double {
+        guard pulseAtMs > 0, !still else { return 0 }
+        return max(0, 1 - Double(max(0, frameMs - pulseAtMs)) / 900)
+    }
     private var guideLevel: Double {
         guideOn ? heartPacerLevel(elapsedMs, bpm: pace) : 0
     }
@@ -42,8 +49,8 @@ struct HeartMeditationView: View {
     private var status: String {
         switch steadiness {
         case .waiting: return label("Waiting for steady beats")
-        case .noisy: return label("Signal unstable")
-        case .steady: return label("Steady rhythm")
+        case .noisy: return label("Some beats look noisy")
+        case .steady: return label("Steady beats")
         }
     }
 
@@ -53,23 +60,23 @@ struct HeartMeditationView: View {
             return heartPacerInhaling(elapsedMs, bpm: pace)
                 ? label("Breathe in") : label("Breathe out")
         }
-        return label("Follow the wave")
+        return label("Breathe slowly and watch the level follow")
     }
 
     var body: some View {
         ScreenScaffold(
             title: label("Heart meditation"),
-            subtitle: label("Follow the rhythm of your heart"),
+            subtitle: label("Each ripple is one of your heartbeats. The level rises and falls with the wave your breathing puts into your heart rate."),
             topBackground: liquidScaffoldSky()
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 HStack {
                     Spacer()
                     Button(action: onClose) {
-                        Label(label("Close meditation"), systemImage: "xmark")
+                        Label(label("Close heart meditation"), systemImage: "xmark")
                     }
                     .buttonStyle(.noopSecondary)
-                    .accessibilityLabel(Text(verbatim: label("Close meditation")))
+                    .accessibilityLabel(Text(verbatim: label("Close heart meditation")))
                 }
 
                 NoopCard {
@@ -81,10 +88,19 @@ struct HeartMeditationView: View {
                                     .scaleEffect(0.9 + 0.2 * guideLevel)
                                     .accessibilityHidden(true)
                             }
+                            if haloProgress > 0 {
+                                Circle()
+                                    .stroke(
+                                        StrandPalette.effortColor.opacity(0.4 * haloProgress),
+                                        lineWidth: NoopMetrics.hairlineWidth
+                                    )
+                                    .scaleEffect(1 + 0.22 * (1 - haloProgress))
+                                    .accessibilityHidden(true)
+                            }
                             LiquidVessel(
-                                value: showingBeats && !reduceMotion ? level : HeartMeditationTuning.restLevel,
+                                value: showingBeats && !still ? level : HeartMeditationTuning.restLevel,
                                 tint: StrandPalette.effortColor,
-                                animated: showingBeats && !reduceMotion
+                                animated: showingBeats && !still
                             )
                             .accessibilityHidden(true)
 
@@ -105,7 +121,7 @@ struct HeartMeditationView: View {
                         Text(verbatim: phase)
                             .font(StrandFont.headline)
                             .foregroundStyle(StrandPalette.textPrimary)
-                            .accessibilityAddTraits(.updatesFrequently)
+
 
                         Text(verbatim: status)
                             .font(StrandFont.caption)
@@ -124,11 +140,11 @@ struct HeartMeditationView: View {
                                 bpm: wave,
                                 tint: StrandPalette.effortColor,
                                 height: NoopMetrics.tileHeight,
-                                animated: !reduceMotion
+                                animated: !still
                             )
                             .accessibilityHidden(true)
                         } else {
-                            Text(verbatim: label("Waiting for a clean wave"))
+                            Text(verbatim: label("Sit still with the ring snug. The view starts once a few clean beats agree."))
                                 .font(StrandFont.caption)
                                 .foregroundStyle(StrandPalette.textTertiary)
                                 .frame(maxWidth: .infinity, minHeight: NoopMetrics.tileHeight)
@@ -140,15 +156,15 @@ struct HeartMeditationView: View {
                     NoopCard {
                         metric(
                             label("Wave swing"),
-                            value: swingBpm.map { "\(Int(($0 / 2).rounded()))" } ?? "—",
+                            value: swingBpm.map { "±\(Int(($0 / 2).rounded()))" } ?? "—",
                             unit: label("bpm")
                         )
                     }
                     NoopCard {
                         metric(
                             label("Rhythm focus"),
-                            value: focus.map { "\(Int(($0.focus * 100).rounded()))" } ?? "—",
-                            unit: "%"
+                            value: focus.map { "\(Int(($0.focus * 100).rounded()))% · ~\(String(format: "%.1f", $0.perMinute))" } ?? "—",
+                            unit: label("breaths/min")
                         )
                     }
                 }
@@ -167,7 +183,7 @@ struct HeartMeditationView: View {
                     .tint(StrandPalette.accent)
                 }
 
-                Text(verbatim: label("Wave and focus are estimates from clean live R-R timing, not medical measurements."))
+                Text(verbatim: label("Estimates from optical beat timing, with noisy beats skipped. They only mean something while you are still, and they are not a medical reading."))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +208,7 @@ struct HeartMeditationView: View {
             session.tick(now)
             // In Reduce Motion, redraw only when a beat arrives, quality changes or a breath
             // phase changes. The liquid primitive itself uses a static canvas in this mode.
-            if reduceMotion && session.pulses == previousPulses {
+            if still && session.pulses == previousPulses {
                 let oldPhase = heartPacerInhaling(elapsedMs, bpm: pace)
                 let newPhase = heartPacerInhaling(now - startedMs, bpm: pace)
                 if oldPhase == newPhase && session.steadiness == steadiness { return }
@@ -222,6 +238,7 @@ struct HeartMeditationView: View {
         frameMs = now
         let nextSteadiness = session.steadiness
         steadiness = nextSteadiness
+        if session.pulses != pulseCount { pulseAtMs = now }
         pulseCount = session.pulses
         bpm = session.cleanBpm
         swingBpm = nextSteadiness == .waiting ? nil : session.rhythm.swingBpm
