@@ -10,10 +10,10 @@ import org.junit.Test
 /**
  * [WhoopBleClient.dataRangeNewestUnix] offset/future-date correctness (#451/#928/#1012).
  *
- * Regression fixtures are David's REAL WHOOP 4.0 GET_DATA_RANGE frames captured 2026-07-11: the newest
- * banked record is 2026-07-11 16:00 (unix 1_783_785_625) and it sits at BYTE OFFSET 8 — off the old
- * 4-byte-aligned-from-7 grid, so the old scan returned null and a stale FUTURE word stayed latched in
- * strapNewestTs, which #228 then used to skip the periodic offload → auto-sync stalled ~25 min.
+ * Captured WHOOP 4.0 EVENT (0x30) frames contain plausible Unix words at offset 8 and
+ * 0x22 at the apparent command offset, but are not GET_DATA_RANGE command responses.
+ * Scanner parity is preserved; the envelope guard below prevents these bytes from moving
+ * the reported history frontier (#2736).
  */
 class DataRangeScanTest {
 
@@ -33,8 +33,8 @@ class DataRangeScanTest {
 
     @Test
     fun `reads the real WHOOP4 newest at byte offset 8 (old scan-from-7 missed it, returned null)`() {
-        // Three real captured frames → their true newest (offset-8 u32), all 2026-07-11 ~16:00, a few
-        // seconds apart. Each is well behind WALL_NOW, so none is treated as future.
+        // Three real 0x30 EVENT frames carry plausible offset-8 Unix words, not actual data-range
+        // responses. The scanner still finds them, but acceptsReply refuses their envelope.
         val expected = mapOf(
             "aa100057305d22009968526a083900001d2e2263" to 1_783_785_625L, // 16:00:25
             "aa10005730612200a268526ab0290000e87d155d" to 1_783_785_634L, // 16:00:34
@@ -196,4 +196,41 @@ class DataRangeScanTest {
     /** A negative cmdOff is rejected rather than indexing backwards. */
     @Test fun `isPendingResponse false for a negative cmdOff`() =
         assertFalse(DataRange.isPendingResponse(ByteArray(40), -1))
+
+    /** #2736: these published WHOOP4 frames spoofed GET_DATA_RANGE timestamps but are not replies. */
+    @Test fun rejectsNonResponseEnvelopeWithPlausibleUnix() {
+        val captured = listOf(
+            Triple("aa1800ff2802227bc76a00443c0000000000000000000101fe48aadd", 0x28, 1_791_458_082L),
+            Triple("aa100057307a2200437bc76af866000014a043a1", 0x30, 1_791_458_115L),
+        )
+        for ((raw, frameType, apparentUnix) in captured) {
+            val frame = hex(raw)
+            assertEquals(frameType, frame[4].toInt() and 0xFF)
+            assertEquals(34, frame[6].toInt() and 0xFF)
+            assertEquals(apparentUnix, DataRange.newestUnix(frame, 1_791_458_140L, 48L * 3600))
+            assertFalse(DataRange.matchesReplyEnvelope(frame, 6, 34))
+            assertFalse(DataRange.acceptsReply(frame, 6, 34) { true })
+        }
+    }
+
+    @Test fun recognizesRealCommandResponseEnvelopesAndSkipsVerdictForOtherTypes() {
+        val whoop4 = hex(
+            "aa4c00a7247e220a01010000000050070100a307010050070100000000000000020035030000" +
+                "c2fc13008046394b00000000bbe1636aa02d0000bbe1636aa02d0000c6e4636ac07c000000000447ea04",
+        )
+        val whoop5 = hex("aa010c000100271124e8220402000000c391bc3d")
+        assertEquals(0x24, whoop4[4].toInt() and 0xFF)
+        assertEquals(0x24, whoop5[8].toInt() and 0xFF)
+        assertTrue(DataRange.matchesReplyEnvelope(whoop4, 6, 34))
+        assertTrue(DataRange.matchesReplyEnvelope(whoop5, 10, 34))
+        assertTrue(DataRange.acceptsReply(whoop4, 6, 34) { true })
+        assertFalse(DataRange.matchesReplyEnvelope(whoop4, 1, 34))
+        var verdictCalled = false
+        assertFalse(DataRange.acceptsReply(hex("aa100057307a2200437bc76af866000014a043a1"), 6, 34) {
+            verdictCalled = true
+            true
+        })
+        assertFalse(verdictCalled)
+    }
+
 }

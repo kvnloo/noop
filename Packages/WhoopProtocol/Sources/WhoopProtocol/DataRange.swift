@@ -88,6 +88,19 @@ public enum DataRange {
         return behind
     }
 
+
+    /// True only for the expected command-response envelope and echoed opcode.
+    /// Both families place the inner packet type two bytes before the command:
+    /// WHOOP 4 type @4 / command @6; WHOOP 5/MG type @8 / command @10.
+    /// #2736: unrelated 0x28 and EVENT (0x30) frames can carry GET_DATA_RANGE (0x22)
+    /// at that offset, and an all-offset Unix scan can mistake their bytes for a
+    /// banked-history frontier. This shape check does not assert frame integrity;
+    /// acceptsReply additionally requires the full verified verdict.
+    public static func matchesReplyEnvelope(_ frame: [UInt8], cmdOff: Int, opcode: UInt8) -> Bool {
+        guard cmdOff >= 2, cmdOff < frame.count else { return false }
+        return frame[cmdOff - 2] == 0x24 && frame[cmdOff] == opcode
+    }
+
     /// The BLE seam's decision on a GET_DATA_RANGE COMMAND_RESPONSE: is this a reply to `opcode`, and
     /// may it move state? A reply is accepted only on the verifier's FULL verdict.
     ///
@@ -103,7 +116,7 @@ public enum DataRange {
     /// than restated here: the command table lives with the caller.
     public static func acceptsReply(_ frame: [UInt8], cmdOff: Int, opcode: UInt8,
                                     verdictOK: @autoclosure () -> Bool) -> Bool {
-        guard cmdOff >= 0, cmdOff < frame.count, frame[cmdOff] == opcode else { return false }
+        guard matchesReplyEnvelope(frame, cmdOff: cmdOff, opcode: opcode) else { return false }
         return verdictOK()
     }
 
