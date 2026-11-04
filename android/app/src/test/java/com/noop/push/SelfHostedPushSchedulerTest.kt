@@ -17,6 +17,8 @@ class SelfHostedPushSchedulerTest {
         assertEquals(ExistingWorkPolicy.REPLACE, SelfHostedPushScheduler.EXISTING_WORK_POLICY)
         assertEquals(ExistingWorkPolicy.APPEND_OR_REPLACE, SelfHostedPushScheduler.CONTINUATION_WORK_POLICY)
         assertTrue(SelfHostedPushScheduler.UNIQUE_WORK.isNotBlank())
+        assertTrue(SelfHostedPushScheduler.UNIQUE_PERIODIC_WORK.isNotBlank())
+        assertFalse(SelfHostedPushScheduler.UNIQUE_WORK == SelfHostedPushScheduler.UNIQUE_PERIODIC_WORK)
         assertTrue(SelfHostedPushScheduler.BACKOFF_SECONDS >= 10)
     }
 

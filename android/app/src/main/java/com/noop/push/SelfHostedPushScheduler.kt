@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequest
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
@@ -50,6 +52,7 @@ internal fun requiredPushNetworkType(wifiOnly: Boolean): NetworkType =
 /** The only entry point that queues pushes. Unique work serialises every trigger to one worker. */
 object SelfHostedPushScheduler {
     internal const val UNIQUE_WORK = "self-hosted-health-push"
+    internal const val UNIQUE_PERIODIC_WORK = "self-hosted-health-push-periodic"
     internal const val BACKOFF_SECONDS = 30L
     // A new true offload supersedes stale/running work. Cancellable deterministic requests and exact
     // acks make replay safe, while REPLACE prevents an unbounded chain of rapid offload triggers.
@@ -58,15 +61,46 @@ object SelfHostedPushScheduler {
 
     fun enqueueAfterSuccessfulOffload(context: Context) = enqueueExternal(context)
 
-    fun enqueueLaunchCatchUp(context: Context) = enqueueExternal(context)
+    fun enqueueLaunchCatchUp(context: Context) {
+        syncPeriodic(context)
+        enqueueExternal(context)
+    }
 
     fun enqueueManualCatchUp(context: Context) = enqueueExternal(context)
+
+    /** A separate clock never replaces the one-time push chain or its reservation. */
+    fun syncPeriodic(context: Context) {
+        val app = context.applicationContext
+        val snapshot = SelfHostedPushSettings.from(app).snapshot()
+        val manager = WorkManager.getInstance(app)
+        if (!snapshot.periodicEnabled || !snapshot.ready) {
+            manager.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
+            return
+        }
+        val hours = snapshot.periodicIntervalHours.toLong()
+        val request = PeriodicWorkRequest.Builder(SelfHostedPeriodicPushWorker::class.java, hours, TimeUnit.HOURS)
+            .setInitialDelay(hours, TimeUnit.HOURS)
+            .setConstraints(
+                Constraints.Builder().setRequiredNetworkType(requiredPushNetworkType(snapshot.wifiOnly)).build(),
+            )
+            .build()
+        try {
+            manager.enqueueUniquePeriodicWork(
+                UNIQUE_PERIODIC_WORK, ExistingPeriodicWorkPolicy.UPDATE, request,
+            )
+        } catch (_: Throwable) {
+            SelfHostedPushSettings.from(app).recordError(app.getString(R.string.push_error_enqueue_failed))
+        }
+    }
+
+    internal fun enqueuePeriodicCatchUp(context: Context) = enqueueExternal(context)
 
     /** Revoke an in-flight destination snapshot before queueing a baseline for the newly saved URL. */
     fun destinationChanged(context: Context) {
         val app = context.applicationContext
         PushRunSignal.clear(app)
         WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
+        syncPeriodic(app)
         enqueueExternal(app)
     }
 
@@ -75,6 +109,7 @@ object SelfHostedPushScheduler {
         val app = context.applicationContext
         PushRunSignal.clear(app)
         WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
+        syncPeriodic(app)
         enqueueExternal(app)
     }
 
@@ -120,6 +155,7 @@ object SelfHostedPushScheduler {
         SelfHostedPushSettings.from(app).setEnabled(false)
         PushRunSignal.clear(app)
         WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
+        WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_PERIODIC_WORK)
     }
 
     private fun enqueueExternal(context: Context) {
