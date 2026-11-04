@@ -68,6 +68,8 @@ sealed class OuraDriverPhase {
     object InstallingKey : OuraDriverPhase()
 
     data class AuthFailed(val status: OuraAuthStatus) : OuraDriverPhase()
+    /** A shared-link auth reply is ambiguous; reconnect instead of claiming the key was refused. */
+    object RetryableAuthFailure : OuraDriverPhase()
     object Stopped : OuraDriverPhase()
 }
 
@@ -102,6 +104,12 @@ class OuraDriver(
 ) {
     var phase: OuraDriverPhase = OuraDriverPhase.Idle
         private set
+
+    /** Only a nonce answering our outstanding get_nonce may produce a proof (#2508). */
+    private var nonceOutstanding = false
+    private var proofOutstanding = false
+    private var unexpectedNonceSeen = false
+    val expectsAuthNonce: Boolean get() = phase == OuraDriverPhase.Authenticating && nonceOutstanding
 
     /** Tracks how many of the live-HR enable triplet ACKs have been seen. */
     private var liveHREnableStep = 0
@@ -166,6 +174,9 @@ class OuraDriver(
                 emptyList()
             } else {
                 phase = OuraDriverPhase.Authenticating
+                nonceOutstanding = true
+                proofOutstanding = false
+                unexpectedNonceSeen = false
                 // Enable notifications, then request the auth nonce. SyncTime can follow auth.
                 listOf(
                     OuraCommands.enableAllNotifications(mask = notificationMask),
@@ -175,50 +186,66 @@ class OuraDriver(
         }
 
         is OuraTransition.NonceReceived -> {
-            val key = effectiveKey
-            if (key == null) {
-                phase = OuraDriverPhase.NeedsKeyInstall
+            if (!expectsAuthNonce) {
+                unexpectedNonceSeen = true
                 emptyList()
             } else {
-                // Compute the proof and submit it. On any crypto error, fail honestly (no proof sent).
-                val cmd = try {
-                    OuraAuth.authenticateCommand(after.nonce, key)
-                } catch (e: Exception) {
-                    null
-                }
-                if (cmd == null) {
-                    phase = OuraDriverPhase.AuthFailed(OuraAuthStatus.AUTH_ERROR)
+                nonceOutstanding = false
+                val key = effectiveKey
+                if (key == null) {
+                    phase = OuraDriverPhase.NeedsKeyInstall
                     emptyList()
                 } else {
-                    listOf(OuraCommand("submit_proof", cmd))
+                    // Compute the proof and submit it. On any crypto error, fail honestly (no proof sent).
+                    val cmd = try {
+                        OuraAuth.authenticateCommand(after.nonce, key)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (cmd == null) {
+                        phase = OuraDriverPhase.AuthFailed(OuraAuthStatus.AUTH_ERROR)
+                        emptyList()
+                    } else {
+                        proofOutstanding = true
+                        listOf(OuraCommand("submit_proof", cmd))
+                    }
                 }
             }
         }
 
-        is OuraTransition.AuthCompleted -> when (after.status) {
-            OuraAuthStatus.SUCCESS -> {
-                // A connect the app does not want live HR for (suspended night) skips the triplet
-                // entirely: `Streaming` here means "authenticated, idle", which is all the history
-                // fetch / SyncTime / status reads need. Nothing is written to the daytime-HR feature.
-                if (!liveHRWanted) {
-                    phase = OuraDriverPhase.Streaming
+        is OuraTransition.AuthCompleted -> {
+            // Only statuses for a proof we submitted are ours; ignore late status after auth OK.
+            if (phase != OuraDriverPhase.Authenticating || !proofOutstanding) {
+                emptyList()
+            } else {
+                proofOutstanding = false
+                if (unexpectedNonceSeen && after.status != OuraAuthStatus.SUCCESS) {
+                    phase = OuraDriverPhase.RetryableAuthFailure
                     emptyList()
                 } else {
-                    phase = OuraDriverPhase.EnablingLiveHR
-                    liveHREnableStep = 0
-                    // Begin the live-HR enable triplet (gen-appropriate; gen3 verified, gen4/5 same path).
-                    listOf(OuraCommands.liveHREnableSequence()[0])
+                    when (after.status) {
+                        OuraAuthStatus.SUCCESS -> {
+                            // A connect suspended overnight must not turn daytime HR on.
+                            if (!liveHRWanted) {
+                                phase = OuraDriverPhase.Streaming
+                                emptyList()
+                            } else {
+                                phase = OuraDriverPhase.EnablingLiveHR
+                                liveHREnableStep = 0
+                                listOf(OuraCommands.liveHREnableSequence()[0])
+                            }
+                        }
+                        OuraAuthStatus.IN_FACTORY_RESET -> {
+                            // A factory-reset ring needs an explicitly opted-in key install.
+                            phase = OuraDriverPhase.NeedsKeyInstall
+                            emptyList()
+                        }
+                        OuraAuthStatus.AUTH_ERROR, OuraAuthStatus.NOT_ORIGINAL_DEVICE -> {
+                            phase = OuraDriverPhase.AuthFailed(after.status)
+                            emptyList()
+                        }
+                    }
                 }
-            }
-            OuraAuthStatus.IN_FACTORY_RESET -> {
-                // Ring needs a key install first; this is an explicit, named provisioning step the app
-                // drives, not the normal flow. Surface honestly.
-                phase = OuraDriverPhase.NeedsKeyInstall
-                emptyList()
-            }
-            OuraAuthStatus.AUTH_ERROR, OuraAuthStatus.NOT_ORIGINAL_DEVICE -> {
-                phase = OuraDriverPhase.AuthFailed(after.status)
-                emptyList()
             }
         }
 
@@ -305,6 +332,9 @@ class OuraDriver(
     fun keyInstallAcknowledged(): List<OuraCommand> {
         if (phase != OuraDriverPhase.InstallingKey || installedKey == null) return emptyList()
         phase = OuraDriverPhase.Authenticating
+        nonceOutstanding = true
+        proofOutstanding = false
+        unexpectedNonceSeen = false
         return listOf(
             OuraCommands.enableAllNotifications(mask = notificationMask),
             OuraCommand("get_nonce", OuraAuth.getAuthNonceCommand()),
@@ -319,13 +349,16 @@ class OuraDriver(
      * Swift `authNonceRetryCommand`.
      */
     fun authNonceRetryCommand(): OuraCommand? {
-        if (phase != OuraDriverPhase.Authenticating) return null
+        if (!expectsAuthNonce) return null
         return OuraCommand("get_nonce", OuraAuth.getAuthNonceCommand())
     }
 
     /** Stop: reset the flow so a fresh session re-runs auth (the app key is session-scoped, s3.1). */
     fun stop() {
         phase = OuraDriverPhase.Stopped
+        nonceOutstanding = false
+        proofOutstanding = false
+        unexpectedNonceSeen = false
         liveHREnableStep = 0
         lastRingTimestamp = 0
         installedKey = null
