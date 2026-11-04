@@ -211,6 +211,21 @@ struct FullDayChartView: View {
 
     // MARK: Chart
 
+    /// The zoomed chart must stay mounted even when this read window has no samples; otherwise
+    /// its pinch/pan/hold gestures disappear and the user cannot navigate back to recorded data.
+    enum ChartPresentation: Equatable {
+        case loading
+        case empty
+        case chart
+        case chartWithEmptyState
+    }
+
+    static func chartPresentation(isLoading: Bool, hasPoints: Bool, isZoomed: Bool) -> ChartPresentation {
+        if hasPoints { return .chart }
+        if isZoomed { return isLoading ? .chart : .chartWithEmptyState }
+        return isLoading ? .loading : .empty
+    }
+
     @ViewBuilder private var chartCard: some View {
         ChartCard(
             title: LocalizedStringKey(metric.title),
@@ -219,12 +234,21 @@ struct FullDayChartView: View {
             height: 280,
             tint: StrandPalette.metricRose
         ) {
-            if loading && series.points.isEmpty {
+            switch Self.chartPresentation(isLoading: loading,
+                                          hasPoints: !series.points.isEmpty,
+                                          isZoomed: zoomDomain != nil) {
+            case .loading:
                 loadingState
-            } else if series.points.isEmpty {
+            case .empty:
                 emptyState
-            } else {
+            case .chart:
                 chart
+            case .chartWithEmptyState:
+                // Preserve OverviewHRChart's gesture host and time axis. The honest empty-state
+                // notice is visual only: it must not intercept pinch, pan, hold, or double-tap.
+                chart.overlay {
+                    emptyState.allowsHitTesting(false)
+                }
             }
         } footer: {
             if !series.points.isEmpty { statsFooter }
