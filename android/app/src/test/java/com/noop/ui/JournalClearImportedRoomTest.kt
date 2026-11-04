@@ -70,7 +70,7 @@ class JournalClearImportedRoomTest {
             val native = dao.journal(nativeSource, from, to)
             assertEquals(listOf(otherQuestion), native.map { it.question })
             dao.deleteJournalEntry(nativeSource, day, question)
-            assertEquals(after, visible(), "repeated clear must not alter effective answers")
+            assertEquals("repeated clear must not alter effective answers", after, visible())
         } finally {
             db.close()
         }
