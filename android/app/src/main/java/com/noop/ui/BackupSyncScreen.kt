@@ -84,9 +84,11 @@ fun BackupSyncScreen() {
     var snapshots by remember { mutableStateOf<List<BackupSync.SnapshotDoc>>(emptyList()) }
     var showSnapshotPicker by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<Pair<String, Uri>?>(null) }
+    // A size refusal is recoverable only after the user confirms a second time for this same file.
+    var oversizeRestore by remember { mutableStateOf<Pair<Uri, String>?>(null) }
 
     // Runs the actual destructive restore for a chosen backup Uri, off the main thread.
-    fun runRestore(uri: Uri) {
+    fun runRestore(uri: Uri, allowOversize: Boolean = false) {
         busy = true
         scope.launch {
             // Clear in a `finally` so it clears on ANY exit — the twin of the Apple `defer` in
@@ -99,7 +101,9 @@ fun BackupSyncScreen() {
             // the wanted behaviour — the screen stays disabled through the restart rather than briefly
             // accepting taps against a database that has already been swapped underneath it.
             try {
-                val r = withContext(Dispatchers.IO) { DataBackup.importFrom(context, uri) }
+                val r = withContext(Dispatchers.IO) {
+                    DataBackup.importFrom(context, uri, allowOversize = allowOversize)
+                }
                 when (r) {
                     is DataBackup.ImportResult.NeedsRestart -> {
                         // #57: the restore CLOSED and swapped the database file. The long-lived WhoopRepository +
@@ -123,11 +127,16 @@ fun BackupSyncScreen() {
                         }
                     }
                     is DataBackup.ImportResult.Failed -> backupFailure = r.message
-                    // #1807: recoverable, but not from here — this screen restores a folder snapshot
-                    // directly and has no confirm step to hang the override on. Settings → Backup & restore
-                    // → Import does, and shows the same sentence with a way through. Which is the reason
-                    // it has to be READABLE here: the dialog is where the reader learns where to go.
-                    is DataBackup.ImportResult.TooLarge -> backupFailure = r.message
+                    // A decompressed SQLite entry over the cap must never bypass the guard silently.
+                    // If the user already confirmed, another size refusal is an actual failure (e.g.
+                    // an oversized settings entry, whose separate cap is never lifted).
+                    is DataBackup.ImportResult.TooLarge -> {
+                        if (allowOversize) {
+                            backupFailure = r.message
+                        } else {
+                            oversizeRestore = uri to r.message
+                        }
+                    }
                 }
             } finally {
                 busy = false
@@ -487,6 +496,37 @@ fun BackupSyncScreen() {
             dismissButton = {
                 TextButton(onClick = { pendingRestore = null }) {
                     Text(uiString(R.string.l10n_backup_sync_screen_cancel_77dfd213), style = NoopType.body, color = Palette.textSecondary)
+                }
+            },
+        )
+    }
+
+    // The initial Replace dialog protects every restore. A size refusal adds a second, explicit
+    // decision; only Restore here retries the exact same URI with the SQLite size guard lifted.
+    oversizeRestore?.let { (pendingUri, pendingMessage) ->
+        AlertDialog(
+            onDismissRequest = { oversizeRestore = null },
+            containerColor = Palette.surfaceOverlay,
+            text = {
+                Text(pendingMessage, style = NoopType.subhead, color = Palette.textSecondary)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    oversizeRestore = null
+                    runRestore(pendingUri, allowOversize = true)
+                }) {
+                    Text(
+                        uiString(R.string.l10n_settings_screen_restore_3cbe6d6b),
+                        style = NoopType.body, color = Palette.accent,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { oversizeRestore = null }) {
+                    Text(
+                        uiString(R.string.l10n_backup_sync_screen_cancel_77dfd213),
+                        style = NoopType.body, color = Palette.textSecondary,
+                    )
                 }
             },
         )
