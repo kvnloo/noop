@@ -1327,6 +1327,26 @@ private fun SleepHeroVessel(fraction: Double, value: Double, tint: Color, diamet
 
 // MARK: - 1. HERO — stage breakdown for the navigated night
 
+/** A sleep HR line needs at least two one-minute buckets, matching iOS. Pure JVM regression seam. */
+internal fun hasSleepNightHeartRateLine(bucketCount: Int): Boolean = bucketCount >= 2
+
+/** Reuse one chart for real-stage Classic nights and the proportional stage fallback. */
+@Composable
+private fun SleepNightHeartRateLine(nightHr: List<HrBucket>) {
+    if (!hasSleepNightHeartRateLine(nightHr.size)) return
+    LineChart(
+        values = nightHr.map { it.avgBpm },
+        modifier = Modifier.fillMaxWidth().height(Metrics.compactChartHeight)
+            .semantics {
+                contentDescription = uiString(R.string.l10n_sleep_screen_sleep_heart_rate_chart_8ec47ae1)
+            },
+        color = Palette.metricRose,
+        fill = false,
+        timestamps = nightHr.map { it.bucket },
+        formatValue = { "${Math.round(it)} bpm" },
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Hero(
@@ -1455,6 +1475,8 @@ private fun Hero(
                         tint = Palette.restColor,
                         footer = {},
                     ) {
+                        // #579/#1537: the real-stage Classic path must keep the night HR line.
+                        SleepNightHeartRateLine(nightHr)
                         StageTimeline(
                             realSegments = real,
                             s = s,
@@ -1478,25 +1500,8 @@ private fun Hero(
                     // Reconstructed architecture (light → deep → light → rem → light → awake) as the
                     // flat proportional strip. No MotionStrip and no fake steps here: invented
                     // architecture has no genuine timeline to anchor to (mirrors the iOS else-branch).
-                    // #1537: heart rate across the night, above the stage strip — the twin of the iOS
-                    // Classic view's `sleepHRChart`, which Android never had. Same window as the stage
-                    // strip below (the night's own onset..wake), and the same 60-second buckets iOS asks
-                    // for, so the two platforms plot the same shape from the same rows. Drawn only with
-                    // at least two buckets, matching iOS's `buckets.count >= 2`: one point is not a line,
-                    // and a night the strap never sampled should show nothing rather than a flat stub.
-                    if (nightHr.size >= 2) {
-                        LineChart(
-                            values = nightHr.map { it.avgBpm },
-                            modifier = Modifier.fillMaxWidth().height(Metrics.compactChartHeight)
-                                .semantics {
-                                    contentDescription = uiString(R.string.l10n_sleep_screen_sleep_heart_rate_chart_8ec47ae1)
-                                },
-                            color = Palette.metricRose,
-                            fill = false,
-                            timestamps = nightHr.map { it.bucket },
-                            formatValue = { "${Math.round(it)} bpm" },
-                        )
-                    }
+                    // Keep the same HR line when this night has only a proportional stage strip.
+                    SleepNightHeartRateLine(nightHr)
                     val segments = stageSegments(s)
                     if (segments.isNotEmpty()) {
                         HypnogramWithAxis(
