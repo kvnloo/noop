@@ -2188,9 +2188,15 @@ final class IntelligenceEngine: ObservableObject {
         // The WHOLE apple-health daily history, chronological. Used both as a key-presence set for the
         // By-Day badge AND as the SDNN+RHR input for the Apple-Watch recovery fold below (a watch-only user
         // has these daily aggregates but no raw stream, so the raw-HR scoring loop never touched them).
-        let appleRows = ((try? await store.dailyMetrics(deviceId: Repository.appleHealthSource,
-                                                        from: "0000-01-01", to: "9999-12-31")) ?? [])
-            .sorted { $0.day < $1.day }
+        let appleRows: [DailyMetric]
+        do {
+            appleRows = try await store.dailyMetrics(deviceId: Repository.appleHealthSource,
+                                                    from: "0000-01-01", to: "9999-12-31")
+                .sorted { $0.day < $1.day }
+        } catch {
+            diagnosticSink?("re-score: Apple daily read failed; history repair remains pending", nil)
+            return
+        }
         let appleHealthDays = Set(appleRows.map { $0.day })
 
         // Recovery (Charge) test mode (Group G): read the zero-cost gate ONCE here (a single Bool) before
@@ -2429,16 +2435,27 @@ final class IntelligenceEngine: ObservableObject {
         var appleRecoveryRows: [DailyMetric] = []
         let appleByDay = Dictionary(appleRows.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a })
         for w in watchScored {
-            guard let recovery = w.recovery, let row = appleByDay[w.day] else { continue }
-            appleRecoveryRows.append(row.with(recovery: recovery, skinTempDevC: row.skinTempDevC,
-                                              skinTempC: row.skinTempC))
-            // Surface the watch-only day in the By-Day list with its watch provenance + confidence.
+            guard let row = appleByDay[w.day] else { continue }
+            // The source-only gate may now return nil for a previously-scored sparse day.
+            // Clear that old Apple-derived Charge rather than leaving it inflated; WHOOP
+            // days were excluded above and Apple Health never imports a provider Charge.
+            if row.recovery != w.recovery {
+                appleRecoveryRows.append(row.with(recovery: w.recovery,
+                                                  skinTempDevC: row.skinTempDevC,
+                                                  skinTempC: row.skinTempC))
+            }
+            guard let recovery = w.recovery else { continue }
             out.append(Computed(day: w.day, recovery: recovery, strain: row.strain,
                                 sleepMin: row.totalSleepMin, hrv: row.avgHrv, rhr: row.restingHr,
                                 source: .appleHealth, confidence: w.confidence))
         }
         if !appleRecoveryRows.isEmpty {
-            _ = try? await store.upsertDailyMetrics(appleRecoveryRows, deviceId: Repository.appleHealthSource)
+            do {
+                _ = try await store.upsertDailyMetrics(appleRecoveryRows, deviceId: Repository.appleHealthSource)
+            } catch {
+                diagnosticSink?("re-score: Apple recovery write failed; history repair remains pending", nil)
+                return
+            }
         }
 
         markPostLoopPhase("watchFold")
