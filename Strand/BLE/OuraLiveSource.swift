@@ -512,6 +512,9 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// True while a teardown was USER/COORDINATOR-initiated (`stop()`), so the disconnect handler suppresses
     /// the auto-reconnect (mirrors BLEManager's `intentionalDisconnect`). Cleared on every `connect(_:)`.
     private var intentionalDisconnect = false
+    /// One bounded retry for a refusal without second-client evidence; a repeated bad key still
+    /// reaches needsPairing. Unexpected extra nonces instead use the normal reconnect path (#2508).
+    private var authRefusalRetries = 0
     /// Consecutive involuntary reconnect attempts, driving the capped-exponential backoff (3, 6, 12, 24,
     /// 48, 60s). Reset to 0 on a successful connect and on an explicit `connect(_:)`. Matches BLEManager
     /// (#414) and the Android `ReconnectBackoff` so a ring genuinely out of range doesn't hammer BLE.
@@ -1666,6 +1669,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// is the documented way out of that dead end — and never scans past a known ring.
     public func reconnect() {
         needsPairing = nil
+        authRefusalRetries = 0
         intentionalDisconnect = false
         failedReconnectAttempts = 0
         if let p = peripheral, p.state == .connected {
@@ -1688,6 +1692,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
 
     /// Tear down: cancel the connection, stop scanning, flush, clear all transient state. Idempotent.
     public func stop() {
+        authRefusalRetries = 0
         // A deliberate teardown (device switch / removal) must NOT auto-reconnect: mark it intentional and
         // drop the reconnect target so any pending backoff bails and no fresh one is scheduled (#912).
         intentionalDisconnect = true
@@ -1889,8 +1894,24 @@ public final class OuraLiveSource: NSObject, ObservableObject {
                 announceNeedsPairing(reason: .factoryResetOrNoKey)
             }
         case .authFailed(let status):
-            announceNeedsPairing(reason: .authFailed(status))
+            if authRefusalRetries == 0 {
+                authRefusalRetries = 1
+                log("Oura: auth status \(status.rawValue) - retrying once before a pairing verdict")
+                clearAuthWatchdog()
+                driver.stop()
+                if let p = peripheral { central.cancelPeripheralConnection(p) }
+            } else {
+                announceNeedsPairing(reason: .authFailed(status))
+            }
+        case .retryableAuthFailure:
+            log("Oura: shared-link auth refusal after unexpected nonce - reconnecting, not a pairing verdict")
+            clearAuthWatchdog()
+            driver.stop()
+            if let p = peripheral { central.cancelPeripheralConnection(p) }
+        case .enablingLiveHR:
+            authRefusalRetries = 0
         case .streaming:
+            authRefusalRetries = 0
             if !reachedStreaming {
                 reachedStreaming = true
                 linkPhase = .authenticated
@@ -3396,9 +3417,13 @@ extension OuraLiveSource: @preconcurrency CBPeripheralDelegate {
     private func handleSecure(_ routing: OuraDriver.SecureRouting) {
         switch routing {
         case .nonce(let nonce):
-            clearAuthWatchdog()   // the ring answered: the healthy path, and the watchdog's only exit
-            silentSessionsInARow = 0
-            log("Oura: auth nonce received - submitting proof")
+            if driver?.expectsAuthNonce == true {
+                clearAuthWatchdog()   // the ring answered our outstanding request
+                silentSessionsInARow = 0
+                log("Oura: auth nonce received - submitting proof")
+            } else {
+                log("Oura: foreign nonce ignored (no get_nonce outstanding)")
+            }
             advance(.nonceReceived(nonce))
         case .authStatus(let status):
             if status.isSuccess {
