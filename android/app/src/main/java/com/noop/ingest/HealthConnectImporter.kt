@@ -914,15 +914,23 @@ object HealthConnectImporter {
      * REPLACES the whole row, so a fresh steps-only row would null every other column.
      *
      * Returns the live sum, or the stored count when today read zero, or null when Health Connect
-     * is unavailable / steps aren't granted / there's nothing at all. Never throws.
+     * is unavailable / steps aren't granted / there's nothing at all. Ordinary read and storage
+     * failures fall back; coroutine cancellation propagates to the caller.
      */
-    suspend fun refreshTodaySteps(context: Context, repo: WhoopRepository): Int? {
-        if (sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) return null
+    suspend fun refreshTodaySteps(
+        context: Context,
+        repo: WhoopRepository,
+        testClient: HealthConnectClient? = null,
+    ): Int? {
+        // A supplied test client exercises real permission/Room catches without an SDK provider.
+        // Normal callers use the SDK availability check and the system-provided client.
+        if (testClient == null && sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) return null
         if (ImportCategory.ACTIVITY !in selectedCategories(context)) return null
-        val client = client(context)
+        val client = testClient ?: client(context)
         val granted = try {
             client.permissionController.getGrantedPermissions()
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             return null
         }
         if (HealthPermission.getReadPermission(StepsRecord::class) !in granted) return null
@@ -934,8 +942,8 @@ object HealthConnectImporter {
         // (sum within a source, MAX across sources), instead of summing them into a ~2x inflated count.
         val stepsBySource = HashMap<String, Long>()
         val selfPackage = context.packageName // #528: skip our own writes (see readAll / isSelfWritten)
-        // readAll swallows a failed read (the map stays empty), so a flaky provider degrades to the stored
-        // row below rather than clobbering it with zero.
+        // readAll swallows ordinary read failures (the map stays empty), so a flaky provider degrades
+        // to the stored row instead of clobbering it with zero. Cancellation still propagates.
         readAll(
             client, StepsRecord::class,
             // #1002: reach back an extra day. The FILTER is in the phone's zone but the day key below is
@@ -962,6 +970,7 @@ object HealthConnectImporter {
         val existing = try {
             repo.appleDaily(HC_DEVICE, dayKey, dayKey).firstOrNull()
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             null
         }
         // Zero is indistinguishable from "no data yet today" — never overwrite a stored count with it.
@@ -973,6 +982,7 @@ object HealthConnectImporter {
             if (existing == null) repo.upsertDevice(HC_DEVICE, name = "Health Connect")
             repo.upsertAppleDaily(listOf(updated))
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             return existing?.steps
         }
         return sum.toInt()
@@ -984,7 +994,8 @@ object HealthConnectImporter {
      * Read every page of [type] within [filter], invoking [onRecord] for each record.
      * Loops on the response page token so we never miss records past the first page.
      *
-     * Returns TRUE when the type was read to completion, FALSE when it was skipped by the catch below.
+     * Returns TRUE when the type was read to completion, FALSE for a recoverable read failure.
+     * Coroutine cancellation always propagates rather than being reported as a skipped record type.
      * Every accumulating caller ignores this: for them a failed type is simply absent, which costs that
      * type's contribution and nothing else. It matters for a caller whose write REPLACES rather than adds
      * (#949 hydration), because there "read nothing" and "there is nothing" are the same empty map — and
@@ -1017,6 +1028,7 @@ object HealthConnectImporter {
                 pageToken = response.pageToken
             } while (pageToken != null)
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             // One record type failing (e.g. a device/SDK validation quirk like "count must not be less
             // than 1" seen on some Health Connect builds) must NOT abort the whole import — log it and
             // keep whatever was read, so every other data type still comes in (issue #34). The reads
