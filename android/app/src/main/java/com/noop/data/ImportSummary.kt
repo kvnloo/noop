@@ -29,12 +29,14 @@ data class ImportSummary(
      * would quietly overstate coverage.
      */
     val columnCoverageRows: Int = 0,
+    /** True for completed imports, including an empty successful scan; false for rejected/failed imports. */
+    val succeeded: Boolean = true,
 ) {
     val totalRows: Int get() = counts.values.sum()
 
     companion object {
-        /** A failed/empty import carrying a reason. */
+        /** Return a rejected/failed import without confusing it with a successful empty scan. */
         fun failure(source: String, reason: String) =
-            ImportSummary(source = source, counts = emptyMap(), message = reason)
+            ImportSummary(source = source, counts = emptyMap(), message = reason, succeeded = false)
     }
 }
