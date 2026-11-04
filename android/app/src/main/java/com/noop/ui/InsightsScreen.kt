@@ -1312,7 +1312,7 @@ private fun resolveExperimentBehaviour(candidates: List<String>, saved: String):
 }
 
 /** Only explicit Journal "No" days with finite outcomes can form an experiment
- * baseline; never-answered is unknown (#322/#1768). yyyy-MM-dd sorts by date.
+ * baseline; never-answered is unknown (ryanbr/noop#1768; earlier #682). yyyy-MM-dd sorts by date.
  * Mirrors experimentExplicitNoBaselineDays in InsightsView.swift. */
 internal fun experimentExplicitNoBaselineDays(
     outcomeDays: Map<String, Double>,
