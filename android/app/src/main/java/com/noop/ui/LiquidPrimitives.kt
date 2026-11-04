@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
@@ -60,7 +62,10 @@ val liquidHeartPink: Color = Color(red = 1f, green = 107f / 255f, blue = 129f / 
 // MARK: - LiquidVessel — a circular liquid gauge
 
 /**
- * A circular liquid gauge. [value] is 0..1 (null = empty / no-data). Square (aspectRatio 1:1).
+ * A circular gauge governed by Android's shared ring/vessel preference (#2345).
+ * [value] is 0..1 (null = empty / no-data); the caller owns its centre score.
+ * In ring mode [GlowRing] draws only the arc. The original liquid simulation below
+ * is retained when the user chooses vessels.
  *
  * When [animated] and Reduce Motion is off it runs a live 60fps-class `withFrameNanos` clock: each frame
  * it steps a remembered [LiquidSim] against the shared [LiquidMotion] tilt and the latest [value], then
@@ -70,6 +75,10 @@ val liquidHeartPink: Color = Color(red = 1f, green = 107f / 255f, blue = 129f / 
  *
  * Mirrors the iOS `LiquidVessel` view.
  */
+/** Invalid or absent gauge fractions must pose an empty arc. */
+internal fun gaugeRingFraction(value: Double?): Float =
+    value?.takeIf { it.isFinite() }?.coerceIn(0.0, 1.0)?.toFloat() ?: 0f
+
 @Composable
 fun LiquidVessel(
     value: Double?,
@@ -90,6 +99,27 @@ fun LiquidVessel(
     // and why this went unnoticed for so long.
     onTap: (() -> Unit)? = null,
 ) {
+    // Keep the Today preference key for existing saved choices. Read on screen entry.
+    val gaugeContext = LocalContext.current
+    val ringGauges = remember(gaugeContext) { NoopPrefs.todayRingGauges(gaugeContext) }
+    if (ringGauges) {
+        // All callers specify bounded square dimensions or a fixed height.
+        BoxWithConstraints(modifier = modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
+            val ringSize = minOf(maxWidth, maxHeight)
+            GlowRing(
+                fraction = gaugeRingFraction(value),
+                value = 0.0, // The enclosing screen already draws its number or empty state.
+                color = tint,
+                diameter = ringSize,
+                lineWidth = ringSize * 0.10f,
+                modifier = if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier,
+                showsLabel = false,
+                animated = animated,
+            )
+        }
+        return
+    }
+
     val renderStill = rememberPoseStill()
 
     if (animated && !renderStill) {

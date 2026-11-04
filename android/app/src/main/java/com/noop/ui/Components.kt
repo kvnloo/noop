@@ -988,9 +988,10 @@ fun GlowRing(
     showsLabel: Boolean = true,
     format: (Double) -> String = { it.toInt().toString() },
     targetRange: ClosedFloatingPointRange<Float>? = null,
+    animated: Boolean = true,
 ) {
     val target = fraction.coerceIn(0f, 1f)
-    val renderStill = rememberPoseStill()
+    val renderStill = rememberPoseStill() || !animated
 
     // When renderStill is true, use final values directly (no animation at all).
     // When false, animate from 0 to target.

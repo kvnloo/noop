@@ -187,13 +187,33 @@ private fun ForecastCard(f: RecoveryForecast) {
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    GlowRing(
-                        fraction = (f.charge / 100.0).coerceIn(0.0, 1.0).toFloat(),
-                        value = f.charge,
-                        color = Palette.recoveryColor(f.charge),
-                        diameter = 168.dp,
-                        lineWidth = 168.dp * 0.10f,
-                    )
+                    val gaugeContext = LocalContext.current
+                    val ringDiameter = 168.dp
+                    val chargeFraction = (f.charge / 100.0).coerceIn(0.0, 1.0)
+                    val chargeTint = Palette.recoveryColor(f.charge)
+                    if (remember(gaugeContext) { NoopPrefs.todayRingGauges(gaugeContext) }) {
+                        GlowRing(
+                            fraction = chargeFraction.toFloat(),
+                            value = f.charge,
+                            color = chargeTint,
+                            diameter = ringDiameter,
+                            lineWidth = ringDiameter * 0.10f,
+                        )
+                    } else {
+                        Box(modifier = Modifier.size(ringDiameter), contentAlignment = Alignment.Center) {
+                            LiquidVessel(
+                                value = chargeFraction,
+                                tint = chargeTint,
+                                modifier = Modifier.size(ringDiameter),
+                            )
+                            CountUpText(
+                                value = f.charge,
+                                format = { it.toInt().toString() },
+                                style = glowRingCenterTextStyle(ringDiameter),
+                                color = Palette.textPrimary,
+                            )
+                        }
+                    }
                     Text(
                         uiString(R.string.l10n_intelligence_screen_band_ec8a8993, band),
                         style = NoopType.captionNumber,
