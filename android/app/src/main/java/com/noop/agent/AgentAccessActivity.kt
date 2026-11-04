@@ -68,10 +68,10 @@ class AgentAccessActivity : Activity() {
             14f, Color.rgb(200, 210, 215),
         )
 
-        label("1 · Pair with your broker", 18f)
+        label("1 · Pair with z0bridge (or your z0live broker)", 18f)
         pairingStatus = label("", 14f)
         val linkField = EditText(this).apply {
-            hint = "Paste z0live://pair… link from your Hermes host"
+            hint = "Paste noop-agent://pair… (z0bridge) or z0live://pair… link"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setTextColor(Color.WHITE); setHintTextColor(Color.GRAY)
         }
@@ -81,6 +81,7 @@ class AgentAccessActivity : Activity() {
         button("Forget pairing (also stops access)") {
             AgentAccessService.stop(this)
             AgentAccess.pairingStore(this).forget()
+            AgentAccess.trustStore(this).forget()
             AgentAccess.audit(this).record("pairing", null, "forgotten")
             render()
         }
@@ -117,6 +118,7 @@ class AgentAccessActivity : Activity() {
 
     private fun pair(link: String) {
         pairingStatus.text = "Checking with your broker…"
+        if (Z0BridgeLink.isV2(link)) { pairZ0Bridge(link); return }
         io.execute {
             val result = runCatching {
                 val (url, token) = AgentPairing.parseLink(link)
@@ -133,12 +135,36 @@ class AgentAccessActivity : Activity() {
         }
     }
 
+    /** z0bridge v2: claim the one-time code over the tailnet, pin the key the link named, replace any legacy pairing. */
+    private fun pairZ0Bridge(link: String) {
+        io.execute {
+            val result = runCatching {
+                val parsed = Z0BridgeLink.parse(link)
+                val trust = Z0Bridge.trustFromClaim(parsed, Z0Bridge.claim(parsed), System.currentTimeMillis())
+                AgentAccessService.stop(this)
+                AgentAccess.trustStore(this).save(trust)
+                AgentAccess.pairingStore(this).forget()
+                AgentAccess.audit(this).record("pairing", null, "paired_z0bridge", mapOf("broker" to trust.host, "device" to trust.deviceShort, "kid" to trust.kid.take(8)))
+            }
+            main.post {
+                if (isDestroyed) return@post
+                if (result.isFailure) pairingStatus.text = "Pairing failed: z0bridge link invalid, used, expired, or z0bridge unreachable over Tailscale."
+                render()
+            }
+        }
+    }
+
+    private fun pairingText(): String? {
+        AgentAccess.trustStore(this).load()?.let { return "Paired with z0bridge ${it.host} · this phone …${it.deviceShort} · key ${it.kid.take(8)}" }
+        return AgentAccess.pairingStore(this).load()?.let { "Paired with ${it.brokerHost} · device …${it.deviceShort} (legacy z0live pairing)" }
+    }
+
     private fun render() {
-        val p = AgentAccess.pairingStore(this).load()
+        val p = pairingText()
         if (!pairingStatus.text.startsWith("Pairing failed") && !pairingStatus.text.startsWith("Checking")) {
-            pairingStatus.text = p?.let { "Paired with ${it.brokerHost} · device …${it.deviceShort}" } ?: "Not paired."
+            pairingStatus.text = p ?: "Not paired."
         } else if (p != null && pairingStatus.text.startsWith("Checking")) {
-            pairingStatus.text = "Paired with ${p.brokerHost} · device …${p.deviceShort}"
+            pairingStatus.text = p
         }
         confirm.visibility = if (pendingLink != null) android.view.View.VISIBLE else android.view.View.GONE
         val g = AgentAccess.grant

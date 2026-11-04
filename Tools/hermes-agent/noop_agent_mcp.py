@@ -148,6 +148,70 @@ def credentials() -> dict:
     return json.loads(CREDENTIALS.read_text())
 
 
+class Z0BridgeMinter:
+    """Short-lived scoped access tokens for this phone's NOOP, minted by the host's z0bridge.
+
+    `credentials.json` then carries no phone token at all, only
+    `"z0bridge": {"credential_file": PATH, "aud": "noop@dev_…", "scopes": [...], "ttl": 120}`. The
+    credential file (0600, from `z0bridge enroll-local`) holds z0bridge's URL and the Hermes app
+    credential. Tokens stay in memory and are re-minted 20 s before they expire, so revoking the
+    credential or a scope in z0bridge takes effect within one token lifetime.
+    """
+
+    def __init__(self, cfg: dict) -> None:
+        path = Path(cfg["credential_file"]).expanduser()
+        if path.stat().st_mode & 0o077:
+            raise PhoneError(f"{path} must be 0600")
+        data = json.loads(path.read_text())
+        self.url, self._secret = data["url"].rstrip("/"), data["credential"]
+        self.aud, self.ttl = cfg["aud"], int(cfg.get("ttl", 120))
+        self._token, self._exp = "", 0.0
+
+    def token(self) -> str:
+        if self._token and self._exp - 20 > time.time():
+            return self._token
+        # No explicit scope: z0bridge mints every scope the credential still holds for this audience, so
+        # revoking one scope in z0bridge narrows the next token instead of breaking every call.
+        body = {"aud": self.aud, "ttl": self.ttl}
+        req = urllib.request.Request(self.url + "/v1/token", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Authorization": "Bearer " + self._secret, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                minted = json.loads(resp.read(16384))
+        except urllib.error.HTTPError as e:
+            code = ""
+            try:
+                code = (json.loads(e.read(4096) or b"{}").get("error") or {}).get("code", "")
+            except ValueError:
+                pass
+            raise PhoneError(f"z0bridge refused a token for NOOP (HTTP {e.code} {code}): the Hermes credential, a scope or the phone was revoked")
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            raise PhoneError(f"z0bridge unreachable on this host ({type(e).__name__}); is `z0bridge serve` running?")
+        self._token, self._exp = minted["access_token"], time.time() + int(minted.get("expires_in", 60))
+        return self._token
+
+    def forget(self) -> None:
+        self._token, self._exp = "", 0.0
+
+
+def bearer_source(creds: dict):
+    """Callable returning the bearer for the phone: a z0bridge access token, or the legacy z0live token."""
+    if creds.get("z0bridge"):
+        return Z0BridgeMinter(creds["z0bridge"])
+    if not creds.get("token"):
+        raise PhoneError("credentials have neither a z0bridge section nor a legacy token; run noop-agent-pair")
+    token = creds["token"]
+
+    class Legacy:
+        def token(self) -> str:
+            return token
+
+        def forget(self) -> None:
+            pass
+
+    return Legacy()
+
+
 def phone_url(creds: dict) -> str:
     if os.environ.get("NOOP_AGENT_URL"):
         return os.environ["NOOP_AGENT_URL"].rstrip("/")
@@ -176,6 +240,7 @@ class Phone:
     def __init__(self) -> None:
         self.creds = credentials()
         self.base = phone_url(self.creds)
+        self.bearer = bearer_source(self.creds)
         self.initialized = False
 
     def rpc(self, method: str, params: dict | None = None, notify: bool = False) -> dict | None:
@@ -186,13 +251,15 @@ class Phone:
             body["id"] = str(uuid.uuid4())
         req = urllib.request.Request(self.base + "/mcp", data=json.dumps(body).encode(), method="POST", headers={
             "Content-Type": "application/json", "Accept": "application/json, text/event-stream",
-            "Authorization": "Bearer " + self.creds["token"], "MCP-Protocol-Version": PROTOCOL,
+            "Authorization": "Bearer " + self.bearer.token(), "MCP-Protocol-Version": PROTOCOL,
         })
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
                 raw = resp.read(512 * 1024)
                 status = resp.status
         except urllib.error.HTTPError as e:
+            if e.code == 401:
+                self.bearer.forget()
             raise PhoneError({401: "phone refused the credential (not granted, revoked or re-paired)",
                               403: "phone refused the request origin"}.get(e.code, f"phone HTTP {e.code}"))
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
