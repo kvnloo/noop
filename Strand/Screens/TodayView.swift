@@ -3095,7 +3095,7 @@ struct TodayView: View {
     /// Screen-4 insight headline, when the HRV baseline is established, the gold "primed" read
     /// keyed on how far today's HRV sits above/below the learned baseline ("HRV 12% over baseline");
     /// otherwise the recovery-state word. Purely a re-presentation of the existing recovery + HRV
-    /// bindings (no new computation beyond the baseline mean already available on `repo.days`).
+    /// bindings, using the same epoch-aware baseline as the Charge breakdown.
     private func hrvInsightStatus(_ d: DailyMetric?, score: Double?) -> String {
         guard let pct = hrvBaselineDeltaPct(d) else { return synthesisWord(score) }
         return pct >= 0
@@ -3114,26 +3114,16 @@ struct TodayView: View {
         return lead + ". " + synthesisDetail(d)
     }
 
-    /// Today's HRV as a percentage above/below the learned baseline (mean of prior nights' avgHrv),
-    /// rounded to a whole percent. nil until there are enough banked HRV nights to form a stable
-    /// baseline (mirrors the recovery seed gate), the insight then falls back to the state word.
+    /// Today's HRV compared with the already-folded Charge HRV baseline. Never
+    /// re-average repo.days: it includes pre-recalibration and imported nights.
+    /// An unusable Charge baseline falls back to the qualitative synthesis word.
     private func hrvBaselineDeltaPct(_ d: DailyMetric?) -> Int? {
-        guard let today = d?.avgHrv, today > 0 else { return nil }
-        // Baseline = mean of the prior nights' HRV, excluding the row being read so "vs baseline"
-        // compares it against the rest of history. Excludes the row's OWN day (not always the selected
-        // day) so a carried prior-day synthesis (#543) isn't compared against a baseline that includes
-        // itself. Needs the same seed depth recovery uses to be honest.
-        let excludeDay = d?.day ?? selectedDayKey
-        let prior = repo.days
-            .filter { $0.day != excludeDay }
-            .compactMap(\.avgHrv)
-            .filter { $0 > 0 }
-        return Self.hrvBaselineDeltaPct(today: today, priorHrvs: prior)
+        guard let today = d?.avgHrv else { return nil }
+        return Self.hrvBaselineDeltaPct(today: today, baseline: repo.chargeBaselines?.hrv)
     }
 
-    /// Pure core of the HRV-vs-baseline delta: today's HRV against the mean of the prior nights' HRV,
-    /// rounded to a whole percent. nil until there are enough banked HRV nights to form a stable
-    /// baseline (mirrors the recovery seed gate), the insight then falls back to the state word.
+    /// Pure HRV delta presentation: the same established Charge HRV baseline,
+    /// with the existing measurement-method ratio guard preserved.
     ///
     /// STOPGAP (#696): NOOP mixes HRV measurement methods on the shared `avgHrv` field,     /// strap/WHOOP-CSV HRV is RMSSD (~20-100 ms) while Apple-Health-imported HRV is SDNN
     /// (~100-200 ms). With no method awareness, an SDNN reading (e.g. an Oura ring's 176 ms)
@@ -3145,11 +3135,10 @@ struct TodayView: View {
     /// word) when the delta is implausibly large. The raw HRV tile value stays honest; only the
     /// "X% over baseline" comparison is hidden. Proper fix = tag HRV provenance/method per row
     /// and isolate baselines (separate follow-up).
-    static func hrvBaselineDeltaPct(today: Double, priorHrvs prior: [Double]) -> Int? {
-        guard today > 0 else { return nil }
-        guard prior.count >= Baselines.minNightsSeed else { return nil }
-        let baseline = prior.reduce(0, +) / Double(prior.count)
-        guard baseline > 0 else { return nil }
+    static func hrvBaselineDeltaPct(today: Double, baseline state: BaselineState?) -> Int? {
+        guard today > 0, today.isFinite, let state, state.usable else { return nil }
+        let baseline = state.baseline
+        guard baseline > 0, baseline.isFinite else { return nil }
         let pct = ((today - baseline) / baseline * 100).rounded()
         // Stopgap method-mismatch guard (#696): a real night-to-night HRV move never doubles or halves
         // the value, so a reading outside [0.5x, 2x] of the baseline is almost always a units/method

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.noop.analytics.Baselines
 import com.noop.analytics.DaytimeStress
 import com.noop.analytics.HrvFreqDomain
 import com.noop.analytics.StressIndex
@@ -190,7 +191,12 @@ fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
 
     // Rebuild the model only when the inputs (days, stored) actually change — the
     // derivation is O(n) over the full history, so we memoize on the inputs.
-    val model = remember(days, stored) { StressModel.build(days, stored) }
+    val prefs = NoopPrefs.of(context)
+    val hrvEpoch = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
+    val recoveryEpoch = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble()
+    val model = remember(days, stored, hrvEpoch, recoveryEpoch) {
+        StressModel.build(days, stored, hrvBaselineEpoch = hrvEpoch, recoveryBaselineEpoch = recoveryEpoch)
+    }
 
     LazyScreenScaffold(
         title = uiString(R.string.l10n_stress_screen_stress_bad33342),
@@ -1710,7 +1716,12 @@ internal class StressModel private constructor(
     companion object {
         /** Build from oldest→newest daily metrics plus any stored "stress" series.
          *  Returns null only when there is no usable signal at all. */
-        fun build(days: List<DailyMetric>, stored: Map<String, Double>): StressModel? {
+        fun build(
+            days: List<DailyMetric>,
+            stored: Map<String, Double>,
+            hrvBaselineEpoch: Double = 0.0,
+            recoveryBaselineEpoch: Double = 0.0,
+        ): StressModel? {
             // Carry (#543): today's own row is often vitals-less until the overnight is analyzed —
             // especially right after an app update relaunches and re-runs the pass — so score the NEWEST
             // day that actually carries usable signal (RHR/HRV, or a stored/imported stress value) instead
@@ -1727,8 +1738,16 @@ internal class StressModel private constructor(
             // against its own recent past rather than itself.
             val baseline = if (idx > 0) days.subList(0, idx).takeLast(30) else emptyList()
 
-            val rhrBase = baseline.mapNotNull { it.restingHr?.toDouble() }
-            val hrvBase = baseline.mapNotNull { it.avgHrv }
+            // Historical days keep their own prior window. Post-reset days use
+            // independent HRV and resting-HR UTC cuts, matching Swift and Charge.
+            val rhrCut = Baselines.firstCountedDay(recoveryBaselineEpoch)
+            val hrvCut = Baselines.firstCountedDay(hrvBaselineEpoch)
+            val rhrBase = baseline
+                .filter { rhrCut == null || today.day < rhrCut || it.day >= rhrCut }
+                .mapNotNull { it.restingHr?.toDouble() }
+            val hrvBase = baseline
+                .filter { hrvCut == null || today.day < hrvCut || it.day >= hrvCut }
+                .mapNotNull { it.avgHrv }
 
             val meanRHR = mean(rhrBase)
             val sdRHR = std(rhrBase, meanRHR)

@@ -201,14 +201,17 @@ struct StressView: View {
         freqHRV = advanced.freq
     }
 
-    /// Recompute the cached `StressModel` only when (repo.days, storedSeries)
-    /// actually changed since the last build. Equality is an O(n) value compare,
-    /// far cheaper than the model rebuild it guards.
+    /// Recompute the cached model only when its days, stored series, or
+    /// recalibration epochs change. The epoch is a scoring input, not a UI-only flag.
     private func rebuildModelIfNeeded() {
-        let signature = StressInputs(days: repo.days, stored: storedSeries)
+        let hrvEpoch = Baselines.hrvBaselineEpoch()
+        let recoveryEpoch = Baselines.recoveryBaselineEpoch()
+        let signature = StressInputs(days: repo.days, stored: storedSeries,
+                                     hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch)
         guard signature != modelSignature else { return }
         modelSignature = signature
-        model = StressModel(days: repo.days, stored: storedSeries)
+        model = StressModel(days: repo.days, stored: storedSeries,
+                            hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch)
     }
 
     // MARK: Loaded content
@@ -816,15 +819,20 @@ enum StressRamp {
 private struct StressInputs: Equatable {
     let days: [DailyMetric]
     let stored: [StoredPoint]
+    let hrvBaselineEpoch: Double
+    let recoveryBaselineEpoch: Double
 
     struct StoredPoint: Equatable {
         let day: String
         let value: Double
     }
 
-    init(days: [DailyMetric], stored: [(day: String, value: Double)]) {
+    init(days: [DailyMetric], stored: [(day: String, value: Double)],
+         hrvBaselineEpoch: Double, recoveryBaselineEpoch: Double) {
         self.days = days
         self.stored = stored.map { StoredPoint(day: $0.day, value: $0.value) }
+        self.hrvBaselineEpoch = hrvBaselineEpoch
+        self.recoveryBaselineEpoch = recoveryBaselineEpoch
     }
 }
 
@@ -856,7 +864,8 @@ struct StressModel {
 
     /// Build from oldest→newest daily metrics plus any stored "stress" series.
     /// Returns nil only when there is no usable signal at all.
-    init?(days: [DailyMetric], stored: [(day: String, value: Double)]) {
+    init?(days: [DailyMetric], stored: [(day: String, value: Double)],
+          hrvBaselineEpoch: Double = 0, recoveryBaselineEpoch: Double = 0) {
         // Stored values keyed by day, clamped to 0–3.
         let storedByDay: [String: Double] = Dictionary(
             stored.map { ($0.day, min(max($0.value, 0), 3)) },
@@ -879,8 +888,19 @@ struct StressModel {
         // against its own recent past rather than itself.
         let baseline = idx > 0 ? Array(days[0..<idx].suffix(30)) : []
 
-        let rhrBase = baseline.compactMap { $0.restingHr }.map(Double.init)
-        let hrvBase = baseline.compactMap { $0.avgHrv }
+        // The scored day keeps its own history when viewing a pre-reset day.
+        // For post-reset days, drop any earlier night whose UTC day start Charge
+        // would discard. RHR and HRV have independent reset epochs.
+        let rhrCut = Baselines.firstCountedDay(baselineEpoch: recoveryBaselineEpoch)
+        let hrvCut = Baselines.firstCountedDay(baselineEpoch: hrvBaselineEpoch)
+        let rhrBase = baseline.filter { row in
+            guard let cut = rhrCut, today.day >= cut else { return true }
+            return row.day >= cut
+        }.compactMap { $0.restingHr }.map(Double.init)
+        let hrvBase = baseline.filter { row in
+            guard let cut = hrvCut, today.day >= cut else { return true }
+            return row.day >= cut
+        }.compactMap { $0.avgHrv }
 
         let meanRHR = StressMath.mean(rhrBase)
         let sdRHR   = StressMath.std(rhrBase, mean: meanRHR)

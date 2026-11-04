@@ -4,6 +4,7 @@ import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -50,5 +51,36 @@ class StressModelTest {
         val model = StressModel.build(days, mapOf("2026-07-02" to 2.5))
         assertNotNull(model)
         assertEquals("the latest day's stored stress must win over a carry", 2.5, model!!.score, 0.001)
+    }
+    /** #2818: independent Charge epoch cuts and historical readback parity with Swift. */
+    @Test
+    fun epochCutsAreIndependentAndKeepHistoricalDayContext() {
+        val old = (14..18).map { day("2026-07-%02d".format(it), rhr = 55, hrv = 90.0) }
+        val recent = listOf(
+            day("2026-07-19", rhr = 59, hrv = 77.0),
+            day("2026-07-20", rhr = 60, hrv = 78.0),
+            day("2026-07-21", rhr = 61, hrv = 79.0),
+            day("2026-07-22", rhr = 60, hrv = 78.0),
+        )
+        val all = old + recent + day("2026-07-23", rhr = 59, hrv = 82.0)
+        val legacy = StressModel.build(all, emptyMap())!!
+        val recalibrated = StressModel.build(
+            all, emptyMap(), hrvBaselineEpoch = 1_784_376_000.0,
+            recoveryBaselineEpoch = 1_784_548_800.0,
+        )!!
+        assertEquals(-8.0 / 3.0, legacy.hrvDelta!!, 1e-9)
+        assertEquals(16.0 / 9.0, legacy.rhrDelta!!, 1e-9)
+        assertEquals(4.0, recalibrated.hrvDelta!!, 1e-9)
+        assertEquals(-1.5, recalibrated.rhrDelta!!, 1e-9)
+        assertTrue(recalibrated.score < 1.0)
+
+        val historical = old.take(4)
+        val before = StressModel.build(historical, emptyMap())!!
+        val withFutureReset = StressModel.build(
+            historical, emptyMap(), hrvBaselineEpoch = 1_784_376_000.0,
+            recoveryBaselineEpoch = 1_784_548_800.0,
+        )!!
+        assertEquals(before.hrvDelta!!, withFutureReset.hrvDelta!!, 1e-9)
+        assertEquals(before.rhrDelta!!, withFutureReset.rhrDelta!!, 1e-9)
     }
 }
