@@ -16,6 +16,8 @@ class SelfHostedPushSettings private constructor(
     data class Snapshot(
         val enabled: Boolean,
         val wifiOnly: Boolean,
+        val periodicEnabled: Boolean,
+        val periodicIntervalHours: Int,
         val endpoint: PushEndpointPolicy.ValidEndpoint?,
         val hasToken: Boolean,
         val lastSuccessAt: Long?,
@@ -37,6 +39,8 @@ class SelfHostedPushSettings private constructor(
         return Snapshot(
             enabled = enabled,
             wifiOnly = wifiOnly(),
+            periodicEnabled = periodicEnabled(),
+            periodicIntervalHours = periodicIntervalHours(),
             endpoint = endpoint,
             hasToken = !secrets.value.getString(KEY_TOKEN, null).isNullOrBlank(),
             lastSuccessAt = prefs.getLong(KEY_LAST_SUCCESS, 0L).takeIf { it > 0 },
@@ -55,6 +59,23 @@ class SelfHostedPushSettings private constructor(
 
     fun endpointText(): String = prefs.getString(KEY_ENDPOINT, "").orEmpty()
     fun wifiOnly(): Boolean = prefs.getBoolean(KEY_WIFI_ONLY, true)
+    fun periodicEnabled(): Boolean = prefs.getBoolean(KEY_PERIODIC_ENABLED, false)
+    fun periodicIntervalHours(): Int =
+        prefs.getInt(KEY_PERIODIC_INTERVAL_HOURS, DEFAULT_PERIODIC_HOURS)
+            .takeIf { it in PERIODIC_INTERVALS } ?: DEFAULT_PERIODIC_HOURS
+
+    fun setPeriodicEnabled(enabled: Boolean) {
+        check(prefs.edit().putBoolean(KEY_PERIODIC_ENABLED, enabled).commit()) {
+            "Could not persist periodic push preference"
+        }
+    }
+
+    fun setPeriodicIntervalHours(hours: Int) {
+        require(hours in PERIODIC_INTERVALS) { "Unsupported periodic push interval" }
+        check(prefs.edit().putInt(KEY_PERIODIC_INTERVAL_HOURS, hours).commit()) {
+            "Could not persist periodic push interval"
+        }
+    }
 
     fun setWifiOnly(wifiOnly: Boolean) {
         check(prefs.edit().putBoolean(KEY_WIFI_ONLY, wifiOnly).commit()) {
@@ -91,6 +112,8 @@ class SelfHostedPushSettings private constructor(
             edit.remove(KEY_CAPABILITIES_ENDPOINT)
                 .remove(KEY_CAPABILITIES_STREAMS)
                 .remove(KEY_CAPABILITIES_AT)
+                .remove(KEY_CAPABILITIES_VERSION)
+                .remove(KEY_CAPABILITIES_STATE_ID)
         }
         edit.apply()
         return validation
@@ -161,7 +184,25 @@ class SelfHostedPushSettings private constructor(
             .putString(KEY_CAPABILITIES_ENDPOINT, endpoint.url)
             .putString(KEY_CAPABILITIES_STREAMS, capabilities.wireNames.joinToString(","))
             .putLong(KEY_CAPABILITIES_AT, atMillis)
+            .putString(KEY_CAPABILITIES_VERSION, capabilities.protocolVersion)
+            .putString(KEY_CAPABILITIES_STATE_ID, capabilities.receiverStateId)
             .commit()) { "Could not persist receiver capabilities" }
+    }
+
+    /** Cached identity is valid only after a real capability GET to this endpoint. */
+    internal fun cachedCapabilities(endpoint: PushEndpointPolicy.ValidEndpoint): PushCapabilities? {
+        val names = capabilitiesFor(endpoint) ?: return null
+        val version = prefs.getString(KEY_CAPABILITIES_VERSION, null)
+            ?.takeIf { it == PushProtocol.VERSION } ?: return null
+        val receiverId = prefs.getString(KEY_CAPABILITIES_STATE_ID, null)
+            ?.takeIf { id -> runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false) }
+            ?: return null
+        return PushCapabilities(
+            appendTables = PushAppendTable.entries.filterTo(mutableSetOf()) { it.wireName in names },
+            mutableTables = PushMutableTable.entries.filterTo(mutableSetOf()) { it.wireName in names },
+            protocolVersion = version,
+            receiverStateId = receiverId,
+        )
     }
 
     @Synchronized
@@ -209,7 +250,8 @@ class SelfHostedPushSettings private constructor(
 
     private fun clearCapabilities() {
         prefs.edit().remove(KEY_CAPABILITIES_ENDPOINT)
-            .remove(KEY_CAPABILITIES_STREAMS).remove(KEY_CAPABILITIES_AT).apply()
+            .remove(KEY_CAPABILITIES_STREAMS).remove(KEY_CAPABILITIES_AT)
+            .remove(KEY_CAPABILITIES_VERSION).remove(KEY_CAPABILITIES_STATE_ID).apply()
     }
 
     fun nextDeviceIndex(namespace: String): Int = prefs.getInt("$KEY_NEXT_DEVICE.$namespace", 0).coerceAtLeast(0)
@@ -267,6 +309,10 @@ class SelfHostedPushSettings private constructor(
         private const val SECRETS = "self_hosted_push_secrets"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_WIFI_ONLY = "wifi_only"
+        private const val KEY_PERIODIC_ENABLED = "periodic_enabled"
+        private const val KEY_PERIODIC_INTERVAL_HOURS = "periodic_interval_hours"
+        internal val PERIODIC_INTERVALS = setOf(6, 12, 24)
+        internal const val DEFAULT_PERIODIC_HOURS = 24
         private const val KEY_ENDPOINT = "endpoint"
         private const val KEY_TOKEN = "bearer_token"
         private const val KEY_SOURCE_ID = "source_id"
@@ -279,6 +325,8 @@ class SelfHostedPushSettings private constructor(
         private const val KEY_CAPABILITIES_ENDPOINT = "capabilities_endpoint"
         private const val KEY_CAPABILITIES_STREAMS = "capabilities_streams"
         private const val KEY_CAPABILITIES_AT = "capabilities_at"
+        private const val KEY_CAPABILITIES_VERSION = "capabilities_version"
+        private const val KEY_CAPABILITIES_STATE_ID = "capabilities_state_id"
         private const val KEY_NEXT_DEVICE = "next_device"
         private const val KEY_CYCLE_MORE = "cycle_more"
         private const val KEY_CYCLE_REJECTED = "cycle_rejected"

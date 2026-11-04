@@ -2583,6 +2583,10 @@
     <string name="push_enabled_detail">Exportiert neue und geänderte Daten nach vollständiger Strap-Synchronisierung und holt Rückstände beim App-Start nach.</string>
     <string name="push_wifi_only">Nur WLAN</string>
     <string name="push_wifi_only_detail">Verwendet für Verbindungstests und Exporte nur ungetaktetes WLAN. Ausschalten, um Mobilfunk und andere verbundene Netzwerke zu erlauben.</string>
+    <string name="push_periodic_toggle">Geplanter Export</string>
+    <string name="push_periodic_detail">Prüft zusätzlich etwa alle 6, 12 oder 24 Stunden auf neue lokale Daten. Erfordert automatischen Export. Ohne Änderungen wird nichts gesendet.</string>
+    <string name="push_periodic_interval">Prüfintervall</string>
+    <string name="push_periodic_hours">%1$d Std.</string>
     <string name="push_export_now">Jetzt exportieren</string>
     <string name="push_export_now_detail">Startet jetzt einen Abgleich. Der automatische Export muss aktiviert sein.</string>
     <string name="push_config_required">Speichere vor dem Aktivieren einen gültigen Endpunkt und ein Token.</string>

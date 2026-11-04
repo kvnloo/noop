@@ -9,6 +9,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SelfHostedPushSettingsTest {
+    @Test fun periodicPushDefaultsOffAndAllowsOnlySixTwelveOrTwentyFourHours() {
+        val plain = FakePushPrefs()
+        val settings = SelfHostedPushSettings.forTest(plain, FakePushPrefs())
+        assertFalse(settings.snapshot().periodicEnabled)
+        assertEquals(24, settings.snapshot().periodicIntervalHours)
+        settings.setPeriodicEnabled(true)
+        settings.setPeriodicIntervalHours(6)
+        assertTrue(SelfHostedPushSettings.forTest(plain, FakePushPrefs()).snapshot().periodicEnabled)
+        assertEquals(6, settings.snapshot().periodicIntervalHours)
+        settings.setPeriodicIntervalHours(12)
+        assertEquals(12, settings.snapshot().periodicIntervalHours)
+        settings.setPeriodicIntervalHours(24)
+        assertEquals(24, settings.snapshot().periodicIntervalHours)
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            settings.setPeriodicIntervalHours(1)
+        }
+    }
+
+    @Test fun cachedReceiverIdentityIsScopedAndClearedWhenCredentialChanges() {
+        val settings = SelfHostedPushSettings.forTest(FakePushPrefs(), FakePushPrefs())
+        val endpoint = (PushEndpointPolicy.validate("https://one.example/push")
+            as PushEndpointPolicy.Result.Valid).endpoint
+        val other = (PushEndpointPolicy.validate("https://two.example/push")
+            as PushEndpointPolicy.Result.Valid).endpoint
+        settings.saveEndpoint(endpoint.url)
+        assertNull(settings.cachedCapabilities(endpoint))
+        val capability = PushCapabilities(
+            setOf(PushAppendTable.HR_SAMPLE), setOf(PushMutableTable.JOURNAL),
+            receiverStateId = "00000000-0000-4000-8000-000000000123",
+        )
+        settings.recordCapabilities(endpoint, capability, atMillis = 1234L)
+        assertEquals(capability, settings.cachedCapabilities(endpoint))
+        assertNull(settings.cachedCapabilities(other))
+        settings.saveToken("rotated")
+        assertNull(settings.cachedCapabilities(endpoint))
+    }
+
     @Test fun wifiOnlyDefaultsOnAndPersistsOptOut() {
         val plain = FakePushPrefs()
         val settings = SelfHostedPushSettings.forTest(plain, FakePushPrefs())

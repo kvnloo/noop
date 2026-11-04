@@ -2,6 +2,7 @@ package com.noop.push
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.noop.R
 import com.noop.ui.NoopButton
 import com.noop.ui.NoopButtonKind
+import com.noop.ui.Metrics
 import com.noop.ui.NoopType
 import com.noop.ui.Palette
 import com.noop.ui.ScreenScaffold
@@ -285,6 +287,44 @@ fun SelfHostedPushScreen() {
                         snapshot = settings.snapshot()
                     },
                 )
+                SettingsToggleRow(
+                    title = stringResource(R.string.push_periodic_toggle),
+                    detail = stringResource(R.string.push_periodic_detail),
+                    checked = snapshot.periodicEnabled,
+                    onCheckedChange = { enabled ->
+                        settings.setPeriodicEnabled(enabled)
+                        SelfHostedPushScheduler.syncPeriodic(context)
+                        snapshot = settings.snapshot()
+                    },
+                )
+                if (snapshot.periodicEnabled) {
+                    Text(
+                        stringResource(R.string.push_periodic_interval),
+                        style = NoopType.subhead,
+                        color = Palette.textPrimary,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Metrics.space8),
+                    ) {
+                        for (hours in listOf(6, 12, 24)) {
+                            NoopButton(
+                                text = stringResource(R.string.push_periodic_hours, hours),
+                                kind = if (snapshot.periodicIntervalHours == hours) {
+                                    NoopButtonKind.Primary
+                                } else {
+                                    NoopButtonKind.Secondary
+                                },
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    settings.setPeriodicIntervalHours(hours)
+                                    SelfHostedPushScheduler.syncPeriodic(context)
+                                    snapshot = settings.snapshot()
+                                },
+                            )
+                        }
+                    }
+                }
                 NoopButton(
                     text = stringResource(R.string.push_export_now),
                     kind = NoopButtonKind.Secondary,
