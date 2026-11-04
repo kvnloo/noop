@@ -76,9 +76,9 @@ extension StepsEstimateEngine {
     /// The WHOOP 5/MG raw-counter trace for one day. Recomputes the SAME wrap-aware sum
     /// `AnalyticsEngine.analyzeDay` runs over the cumulative `step_motion_counter` series: the time-ordered
     /// records filtered to the LOCAL day, each consecutive `(cur - prev) & 0xFFFF` increment, the dropped
-    /// deltas (>= `maxStepDelta`, a sync-gap / reboot boundary), and the `ticksPerStep` scaling. Reports the
-    /// counter series length, the kept/dropped delta counts, the raw tick total and the scaled steps - the
-    /// SAME value the daily `steps_est` carries (byte-identical math), so the trace can never diverge.
+    /// activity-class / rate / boundary guards and the `ticksPerStep` scaling. Reports the counter series
+    /// length, rejected-delta reasons, raw tick total and scaled steps - the SAME value the daily
+    /// `DailyMetric.steps` carries (byte-identical math), so the trace can never diverge.
     ///
     /// - Parameters mirror the analyzeDay step block exactly: the day's step samples (any order), the local
     ///   day key, the tz offset, and the user's ticks-per-step. `daySteps` is the calendar-day stream the
@@ -87,9 +87,6 @@ extension StepsEstimateEngine {
                                        dayKey: String,
                                        tzOffsetSeconds: Int,
                                        ticksPerStep: Double) -> [String] {
-        // The SAME maxStepDelta gate AnalyticsEngine.analyzeDay uses for the daily steps total.
-        let maxStepDelta = 512
-
         // The SAME filter + sort: keep only this LOCAL day's samples, time-ordered.
         let sorted = daySteps
             .filter { AnalyticsEngine.dayString($0.ts, offsetSec: tzOffsetSeconds) == dayKey }
@@ -119,30 +116,41 @@ extension StepsEstimateEngine {
             return lines
         }
 
-        // Walk the wrap-aware deltas exactly as the production sum does.
+        // Reuse the production class/rate guards: the trace must not count ticks discarded by scoring.
+        let hasActivityClasses = StepsCounter.hasActivityClasses(sorted)
         var rawTotal = 0
         var keptDeltas = 0
-        var droppedDeltas = 0
+        var droppedBoundary = 0
+        var droppedRate = 0
+        var droppedClass = 0
         var minDelta = Int.max
         var maxDelta = Int.min
         for i in 1..<sorted.count {
             let delta = (sorted[i].counter - sorted[i - 1].counter) & 0xFFFF  // wrap-aware u16 increment
-            if delta >= 1 && delta < maxStepDelta {
+            if delta == 0 { continue }
+            if delta >= StepsCounter.maxStepDelta {
+                droppedBoundary += 1
+            } else if !StepsCounter.isPlausibleDelta(
+                previousTs: sorted[i - 1].ts, currentTs: sorted[i].ts, delta: delta) {
+                droppedRate += 1
+            } else if !StepsCounter.shouldCountDelta(
+                activityClass: sorted[i].activityClass, hasActivityClasses: hasActivityClasses) {
+                droppedClass += 1
+            } else {
                 rawTotal += delta
                 keptDeltas += 1
                 minDelta = Swift.min(minDelta, delta)
                 maxDelta = Swift.max(maxDelta, delta)
-            } else if delta >= maxStepDelta {
-                droppedDeltas += 1   // a sync-gap / reboot boundary, not real steps (>= 512)
             }
         }
+        let droppedDeltas = droppedBoundary + droppedRate + droppedClass
 
         let firstCounter = sorted.first!.counter
         let lastCounter = sorted.last!.counter
         lines.append("stepsRaw day=\(dayKey) counterSamples=\(sorted.count) "
             + "firstCounter=\(firstCounter) lastCounter=\(lastCounter) (cumulative u16 @57)")
         lines.append("stepsRaw deltas kept=\(keptDeltas) dropped=\(droppedDeltas) "
-            + "(dropped = delta>=\(maxStepDelta), a sync-gap/reboot boundary)")
+            + "(boundary=\(droppedBoundary) rate=\(droppedRate) class=\(droppedClass); zero ignored)")
         if keptDeltas > 0 {
             lines.append("stepsRaw keptRange min=\(minDelta) max=\(maxDelta) "
                 + "(each = (cur-prev)&0xFFFF, wrap-aware)")
