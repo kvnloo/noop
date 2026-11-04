@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 RES = ROOT / "android/app/src/main/res"
 LOCALES = ("values", "values-de", "values-es", "values-fr", "values-it",
            "values-pl", "values-pt-rPT", "values-ru", "values-zh")
-FORMAT = re.compile(r"%\\d+\\$[sd]")
+FORMAT = re.compile(r"%\d+\$[sd]")
 
 
 class AgentLocaleCoverageTest(unittest.TestCase):
