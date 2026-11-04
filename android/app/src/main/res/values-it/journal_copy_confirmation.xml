@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journal_copy_explainer">Puoi copiare le risposte Sì/No precedenti se sono ancora valide. I valori numerici devono essere registrati di nuovo.</string>
+    <string name="journal_copy_action">Copia le risposte precedenti</string>
+</resources>
