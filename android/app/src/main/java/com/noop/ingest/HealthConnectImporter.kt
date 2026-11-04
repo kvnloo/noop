@@ -917,10 +917,16 @@ object HealthConnectImporter {
      * is unavailable / steps aren't granted / there's nothing at all. Ordinary read and storage
      * failures fall back; coroutine cancellation propagates to the caller.
      */
-    suspend fun refreshTodaySteps(context: Context, repo: WhoopRepository): Int? {
-        if (sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) return null
+    suspend fun refreshTodaySteps(
+        context: Context,
+        repo: WhoopRepository,
+        testClient: HealthConnectClient? = null,
+    ): Int? {
+        // A supplied test client exercises real permission/Room catches without an SDK provider.
+        // Normal callers use the SDK availability check and the system-provided client.
+        if (testClient == null && sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) return null
         if (ImportCategory.ACTIVITY !in selectedCategories(context)) return null
-        val client = client(context)
+        val client = testClient ?: client(context)
         val granted = try {
             client.permissionController.getGrantedPermissions()
         } catch (e: Exception) {
