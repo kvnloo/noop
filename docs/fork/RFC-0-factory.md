@@ -49,18 +49,29 @@ channel branches are generated, so fixes go to the feature branch and the channe
 
 ## CI/CD
 
-- **Pull requests into `main`** run upstream's real workflows: Android CI (`build-and-test`), i18n Coverage,
+> **Blocker found 2026-11-03:** GitHub Actions is disabled on `kvnloo/noop` ("Actions has been disabled for this
+> repository", although the repo setting says enabled; no run since 2026-10-22). Until Kevin re-enables it in
+> Settings → Actions (or GitHub support lifts it), CI runs off-GitHub as described below.
+
+- **Pull requests into `main`** are meant to run upstream's real workflows: Android CI (`build-and-test`), i18n Coverage,
   Source Hygiene, Tools Python CI, Swift Packages CI and App build (path-filtered, see upstream CONTRIBUTING).
+  While Actions is off, `noop-channel verify <pr>` runs the Android unit suite and the `Tools/` Python suites for the
+  exact PR head on the fleet runner and reports PASS/FAIL; Swift packages are marked "not executed (needs macOS)".
   A fork PR is "green" only when every check that applies to its paths passed on the exact head.
-- **Pushes to `channels/**`** run `fork-channels.yml`: Kotlin unit tests, then `assembleDemoDebug` (nightly)
-  or `assembleFullDebug` (preview), APK certificate check against the tracked fork debug key, SHA-256,
-  and a rolling pre-release `channel-<name>` with the APK and `build-info.txt` (commit, features, run).
-- **Install**: `noop-channel install <channel>` downloads that release, verifies the signer matches the
-  installed app, and runs `adb install -r` (never uninstall: the strap and ring keys live in NOOP's data).
-  - nightly = **demo flavour** (`com.noop.whoop.demo.debug`, synthetic data) installs beside the real app, so a
-    broken feature can never touch the strap or ring.
-  - preview = **full flavour** (`com.noop.whoop.debug`), the app on the S25 today; it replaces `integrate/s25-*`.
-- **Sync**: `noop-channel sync` fast-forwards `main` to upstream, rebases `channels/base`, recomposes both channels.
+- **Channels**: `noop-channel` (Hermes ops dir `noop-channels/`, config `channels.json`) composes `channels/nightly` and
+  `channels/preview` from `channels/base` + listed feature branches (`git merge --no-ff`, rerere on). A feature that
+  conflicts is skipped and reported, never hand-resolved inside the channel; fix it on its own branch.
+  - Builds: Kotlin unit tests, then `assembleDemoDebug` (nightly) or `assembleFullDebug` (preview), on the MBP host lane
+    (fork-debug key, so `adb install -r` keeps data). `.github/workflows/fork-channels.yml` on `channels/base` does the same
+    on GitHub once Actions is back, and publishes a rolling `channel-<name>` pre-release.
+  - nightly = **demo flavour** (`com.noop.whoop.demo.debug`, synthetic data) installs beside the real app on the S22
+    worker phone, so a broken feature can never touch the strap or ring.
+  - preview = **full flavour** (`com.noop.whoop.debug`), the app on the S25 today; it replaces `integrate/s25-*`. Installing
+    preview on the S25 stays a deliberate step (signer must match the installed app; never uninstall).
+- **GitOps loop**: systemd user timer `noop-channels.timer` runs `noop-channel tick` every 2 hours: fast-forward `main` to
+  upstream, rebase `channels/base`, recompose channels whose inputs changed, build stale ones, install nightly.
+- First compose (2026-11-03): nightly merged 18 of 24 feature branches; preview merged 5 of 6. The skipped ones
+  conflict with current upstream and are each covered by an `NF-FAV-*` card.
 
 ## The ChatGPT factory
 
