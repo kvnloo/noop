@@ -1,5 +1,6 @@
 package com.noop.analytics
 
+import com.noop.data.DailyMetric
 import com.noop.data.HrSample
 import com.noop.data.StepSample
 import org.junit.Assert.assertEquals
@@ -7,6 +8,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -182,4 +184,72 @@ class AnalyticsEngineDayBoundsTest {
         assertEquals(expected, lines.joinToString("\n"))
     }
 
+    // --- Rest with missing coverage at the day boundary -----------------------
+
+    /**
+     * Twin of Swift testDayWithoutAsleepCoverageKeepsRestUnknownAtFractionalOffsets.
+     * Steps on the target day, with spill into both neighbours, are activity rather than
+     * evidence of sleep. Both the live score and persisted-row composite stay unknown.
+     */
+    @Test fun dayWithoutAsleepCoverageKeepsRestUnknownAtFractionalOffsets() {
+        for (off in listOf(5 * 3600L + 1800L, -(9 * 3600L + 1800L))) {
+            val day = "2021-06-15"
+            val localMid = AnalyticsEngine.dayStartUtcSeconds(day) - off
+            var counter = 100
+            val steps = (localMid - 7_200L until localMid + 86_400L + 7_200L step 60).map { ts ->
+                counter += 7
+                StepSample(deviceId = "t", ts = ts, counter = counter and 0xFFFF)
+            }
+            val result = AnalyticsEngine.analyzeDay(
+                day = day, steps = steps, daySteps = steps,
+                profile = UserProfile(weightKg = 75.0, heightCm = 178.0, age = 30.0, sex = "male"),
+                tzOffsetSeconds = off,
+            )
+            assertNotNull("off=$off: the fixture must have activity", result.daily.steps)
+            assertNull("off=$off", result.daily.totalSleepMin)
+            assertNull("off=$off: missing asleep time is not Rest 0", result.rest)
+            assertEquals("off=$off", ScoreConfidence.CALIBRATING, result.restConfidence)
+            assertNull("off=$off: persisted row must also be unscorable", RestScorer.restFromDaily(result.daily))
+        }
+    }
+
+    /**
+     * Twin of Swift testRestFromDailyIsNilWhenAsleepTotalIsMissingWhateverElseTheRowCarries.
+     * Leftover efficiency, stage, recovery and strain must never invent sleep coverage.
+     */
+    @Test fun restFromDailyIsNullWhenAsleepTotalIsMissingWhateverElseTheRowCarries() {
+        fun row(tst: Double?, eff: Double?, deep: Double? = 90.0, rem: Double? = 100.0): DailyMetric =
+            DailyMetric(
+                deviceId = "t", day = "2021-06-15", totalSleepMin = tst, efficiency = eff,
+                deepMin = deep, remMin = rem, lightMin = 200.0, disturbances = 3,
+                restingHr = 52, avgHrv = 61.0, recovery = 74.0, strain = 11.5, exerciseCount = 1,
+            )
+
+        assertNull(RestScorer.restFromDaily(row(tst = null, eff = 0.93)))
+        assertNull(RestScorer.restFromDaily(row(tst = 0.0, eff = 0.93)))
+        assertNull(RestScorer.restFromDaily(row(tst = -15.0, eff = 0.93)))
+        assertNull(RestScorer.restFromDaily(row(tst = 420.0, eff = null)))
+        // Positive control: both required inputs present do produce a composite.
+        assertNotNull(RestScorer.restFromDaily(row(tst = 420.0, eff = 0.93)))
+    }
+
+    /** Twin of Swift testRestConfidenceWithoutSessionIsCalibratingWhateverTheStageInputsSay. */
+    @Test fun restConfidenceWithoutSessionIsCalibratingWhateverTheStageInputsSay() {
+        assertEquals(ScoreConfidence.CALIBRATING, ScoreConfidence.forRest(false, true))
+        assertEquals(
+            ScoreConfidence.CALIBRATING,
+            ScoreConfidence.forRest(
+                hasSession = false, hasStagedSleep = true,
+                asleepSeconds = 7.0 * 3600.0, restorativeSeconds = 3.0 * 3600.0,
+                efficiency = 0.95, gravitySparse = false, stageCoverage = 1.0,
+            ),
+        )
+        assertEquals(
+            ScoreConfidence.CALIBRATING,
+            ScoreConfidence.forRest(
+                hasSession = false, hasStagedSleep = false,
+                asleepSeconds = 0.0, restorativeSeconds = 0.0, efficiency = 0.0,
+            ),
+        )
+    }
 }

@@ -1,5 +1,7 @@
 package com.noop.analytics
 
+import com.noop.data.DailyMetric
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -286,4 +288,151 @@ class EffectRankerTest {
         assertEquals("Half", ranked.first().behavior)
     }
 
+
+    // --- Rest outcome: missing coverage and local day keys --------------------
+
+    /** Synthetic persisted row: the score is derived by RestScorer, never supplied by the test. */
+    private fun restRow(
+        day: String, tstMin: Double?, eff: Double?,
+        deepMin: Double? = 80.0, remMin: Double? = 90.0,
+    ): DailyMetric = DailyMetric(
+        deviceId = "t", day = day, totalSleepMin = tstMin, efficiency = eff,
+        deepMin = deepMin, remMin = remMin,
+    )
+
+    /** The same scored-only sleep_performance series as Swift Rest.composite(daily:). */
+    private fun restOutcome(rows: List<DailyMetric>): Map<String, Double> {
+        val outcome = HashMap<String, Double>()
+        for (row in rows) {
+            val score = RestScorer.restFromDaily(row)
+            if (score != null) outcome[row.day] = score
+        }
+        return outcome
+    }
+
+    /**
+     * Twin of Swift testAnsweredDaysWithoutRestCoverageLeaveBothGroups.
+     * Answered journal days without a scorable night are absent, never zero-valued.
+     */
+    @Test
+    fun answeredDaysWithoutRestCoverageLeaveBothGroups() {
+        val rows = mutableListOf<DailyMetric>()
+        val yes = mutableSetOf<String>()
+        val no = mutableSetOf<String>()
+        for (d in 1..6) {
+            val day = "y$d"
+            yes.add(day)
+            rows.add(restRow(day, tstMin = 300.0 + d, eff = 0.80))
+        }
+        for (d in 1..6) {
+            val day = "n$d"
+            no.add(day)
+            rows.add(restRow(day, tstMin = 450.0 + d, eff = 0.92))
+        }
+        val gaps: List<Triple<String, Double?, Double?>> = listOf(
+            Triple("y-gap1", null, 0.95),
+            Triple("y-gap2", 0.0, 0.95),
+            Triple("n-gap1", null, null),
+            Triple("n-gap2", null, 0.97),
+        )
+        for ((day, total, eff) in gaps) {
+            if (day.startsWith("y")) yes.add(day) else no.add(day)
+            rows.add(restRow(day, tstMin = total, eff = eff))
+        }
+        val outcome = restOutcome(rows)
+        assertEquals("only scorable nights enter the series", 12, outcome.size)
+        for ((day, _, _) in gaps) {
+            assertNull("$day: unknown Rest has no outcome point", outcome[day])
+        }
+
+        val e = EffectRanker.effect(yes, no, outcome, "Late meal", "Rest")
+        assertNotNull(e)
+        val effect = e!!
+        assertEquals(6, effect.nWith)
+        assertEquals(6, effect.nWithout)
+        assertEquals(yes.mapNotNull { outcome[it] }.average(), effect.meanWith, 1e-9)
+        assertEquals(no.mapNotNull { outcome[it] }.average(), effect.meanWithout, 1e-9)
+        assertTrue("a zero outcome would drag down the mean", effect.meanWith > 40.0)
+    }
+
+    /**
+     * Twin of Swift testBehaviourWhoseYesDaysAllLackRestYieldsNoInsight.
+     * Six explicit Yes answers without nights cannot be interpreted as a low Rest effect.
+     */
+    @Test
+    fun behaviourWhoseYesDaysAllLackRestYieldsNoInsight() {
+        val rows = mutableListOf<DailyMetric>()
+        val yes = mutableSetOf<String>()
+        val no = mutableSetOf<String>()
+        for (d in 1..6) {
+            val day = "y$d"
+            yes.add(day)
+            rows.add(restRow(day, tstMin = null, eff = 0.9))
+        }
+        for (d in 1..6) {
+            val day = "n$d"
+            no.add(day)
+            rows.add(restRow(day, tstMin = 420.0, eff = 0.9))
+        }
+        val outcome = restOutcome(rows)
+        assertEquals(6, outcome.size)
+        assertNull(EffectRanker.effect(yes, no, outcome, "Alcohol", "Rest"))
+        assertTrue(
+            EffectRanker.rankNoLag(
+                behaviors = mapOf("Alcohol" to yes), controls = mapOf("Alcohol" to no),
+                outcomeByDay = outcome, outcome = "Rest",
+            ).isEmpty(),
+        )
+    }
+
+    /**
+     * Twin of Swift testRestOutcomeValueIsTheCompositeNotARawComponent.
+     * 4 h / 8 h need, 80% efficiency, 60 min deep + 60 min REM, neutral consistency:
+     * 0.50 * 0.50 + 0.20 * 0.80 + 0.20 * 1.0 + 0.10 * 0.50 = 0.66.
+     */
+    @Test
+    fun restOutcomeValueIsTheCompositeNotARawComponent() {
+        val outcome = restOutcome(
+            listOf(restRow("d", tstMin = 240.0, eff = 0.80, deepMin = 60.0, remMin = 60.0)),
+        )
+        assertEquals(66.0, outcome.getValue("d"), 1e-9)
+    }
+
+    /**
+     * Twin of Swift testJournalAndRestJoinOnTheLocalDayKeyAtAFractionalOffset.
+     * At +5:30, the first half hour of the local day is still the previous UTC date;
+     * UTC-joining No answers would overlap the Yes days.
+     */
+    @Test
+    fun journalAndRestJoinOnTheLocalDayKeyAtAFractionalOffset() {
+        val off = 5 * 3600L + 1800L
+        fun local(day: String, secondsAfterMidnight: Long): Long =
+            AnalyticsEngine.dayStartUtcSeconds(day) - off + secondsAfterMidnight
+
+        val yesDays = (10..15).map { "2021-06-$it" }
+        val noDays = (16..21).map { "2021-06-$it" }
+        val yesTs = yesDays.map { local(it, 86_399L) }
+        val noTs = noDays.map { local(it, 30L) }
+
+        val yesLocal = yesTs.map { AnalyticsEngine.dayString(it, off) }.toSet()
+        val noLocal = noTs.map { AnalyticsEngine.dayString(it, off) }.toSet()
+        assertEquals(yesDays.toSet(), yesLocal)
+        assertEquals(noDays.toSet(), noLocal)
+        val noUtc = noTs.map { AnalyticsEngine.dayString(it, 0L) }.toSet()
+        assertTrue("fixture must cross a UTC day edge", noUtc != noLocal)
+        assertFalse("UTC No keys would mix into Yes days", noUtc.intersect(yesLocal).isEmpty())
+        assertTrue("local groups must be disjoint", yesLocal.intersect(noLocal).isEmpty())
+
+        val rows = yesDays.map { restRow(it, tstMin = 330.0, eff = 0.82) } +
+            noDays.map { restRow(it, tstMin = 470.0, eff = 0.93) }
+        val outcome = restOutcome(rows)
+        val e = EffectRanker.effect(yesLocal, noLocal, outcome, "Late screen", "Rest")
+        assertNotNull(e)
+        val effect = e!!
+        assertEquals(6, effect.nWith)
+        assertEquals(6, effect.nWithout)
+        assertEquals(outcome.getValue("2021-06-10"), effect.meanWith, 1e-9)
+        assertEquals(outcome.getValue("2021-06-16"), effect.meanWithout, 1e-9)
+        assertTrue(effect.delta < 0.0)
+    }
 }
