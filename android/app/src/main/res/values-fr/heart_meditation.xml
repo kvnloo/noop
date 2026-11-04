@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Méditation cardiaque</string>
+    <string name="l10n_heart_meditation_subtitle">Chaque onde est l\'un de vos battements. Le niveau monte et descend avec l\'onde que votre respiration imprime à votre fréquence cardiaque.</string>
+    <string name="l10n_heart_meditation_close">Fermer la méditation cardiaque</string>
+    <string name="l10n_heart_meditation_waiting">En attente de battements réguliers</string>
+    <string name="l10n_heart_meditation_waiting_detail">Restez immobile, la bague bien ajustée. La vue démarre dès que quelques battements propres concordent.</string>
+    <string name="l10n_heart_meditation_noisy">Certains battements semblent bruités</string>
+    <string name="l10n_heart_meditation_steady">Battements réguliers</string>
+    <string name="l10n_heart_meditation_breathe_in">Inspirez</string>
+    <string name="l10n_heart_meditation_breathe_out">Expirez</string>
+    <string name="l10n_heart_meditation_follow_wave">Respirez lentement et regardez le niveau suivre</string>
+    <string name="l10n_heart_meditation_swing_label">Amplitude de l\'onde</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d bpm</string>
+    <string name="l10n_heart_meditation_focus_label">Focus du rythme</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">En cours · il faut ~1 min de battements réguliers</string>
+    <string name="l10n_heart_meditation_guide_on">Guide respiratoire · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Guide respiratoire désactivé</string>
+    <string name="l10n_heart_meditation_guide_state_on">Activé</string>
+    <string name="l10n_heart_meditation_guide_state_off">Désactivé</string>
+    <string name="l10n_heart_meditation_estimate_note">Estimations issues du rythme optique des battements, battements bruités ignorés. Elles n\'ont de sens qu\'au repos immobile et ne sont pas une mesure médicale.</string>
+    <string name="l10n_heart_meditation_open_hint">Touchez le cœur pour une méditation synchronisée sur vos battements</string>
+    <string name="l10n_heart_meditation_open_action">Ouvrir la méditation cardiaque</string>
+</resources>

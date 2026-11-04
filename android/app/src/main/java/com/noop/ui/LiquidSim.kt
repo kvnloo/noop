@@ -139,7 +139,9 @@ class LiquidSim(target: Double, private val reduceMotion: Boolean = false) {
         }
     }
 
-    fun splash(n: Int) {
+    /** Throw [n] drops and stir the surface by [kick] energy (a tap is the full 0.5; a heartbeat pulse in
+     *  the heart meditation view is a gentler kick so the surface stays calm between beats). */
+    fun splash(n: Int, kick: Double = 0.5) {
         val count = if (reduceMotion) min(n, 4) else n
         val depth = max(0.10, 2.0 * level * 0.9)
         repeat(count) {
@@ -156,7 +158,7 @@ class LiquidSim(target: Double, private val reduceMotion: Boolean = false) {
         }
         val over = drops.size - 40
         if (over > 0) repeat(over) { drops.removeAt(0) }
-        energy = min(1.2, energy + 0.5)
+        energy = min(1.2, energy + kick)
     }
 
     /**
