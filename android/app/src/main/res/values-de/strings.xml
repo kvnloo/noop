@@ -2873,4 +2873,33 @@
     <string name="raw_diag_ecg_probe_running">Auf diesem Strap läuft möglicherweise noch eine Aufzeichnung. Das Ergebnis steht im Strap-Log.</string>
     <string name="today_customize_live_session_availability">Erscheint heute, wenn Live Sessions in den Einstellungen aktiviert sind oder eine Session aktiv ist.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today nach Ihren Wünschen, Herzfrequenz für jede App und Italienisch</string>
+
+    <!-- Oura Test Centre feature mode control (#2119); translated across every shipped locale. -->
+    <string name="oura_test_section_title">OURA</string>
+    <string name="oura_test_section_desc">Experimentelle Steuerung für einen gekoppelten Oura-Ring. Jede Änderung des Funktionsmodus muss bestätigt werden.</string>
+    <string name="oura_onset_title">Oura-Schlafbeginn als Schlüssel (experimentell)</string>
+    <string name="oura_onset_desc">Nutzt den stabilen Schlafbeginn des Rings, um doppelte Nachtaufzeichnungen zu vermeiden. Standardmäßig aus; siehe Bandprotokoll.</string>
+    <string name="oura_feature_title">Oura-Funktionen aktivieren (experimentell)</string>
+    <string name="oura_feature_desc">Nur Aus oder Automatisch. Der Status kommt vom Ring. Eine Umgehung der Kontosperre ist nicht belegt. Tagespuls und Ruhepuls sind ausgeschlossen.</string>
+    <string name="oura_feature_spo2">SpO2</string>
+    <string name="oura_feature_real_steps">Echte Schritte</string>
+    <string name="oura_feature_exercise_hr">Trainingspuls</string>
+    <string name="oura_feature_cva_ppg">CVA-PPG-Abtastung</string>
+    <string name="oura_feature_off">Aus</string>
+    <string name="oura_feature_automatic">Automatisch</string>
+    <string name="oura_feature_requested">Angefordert</string>
+    <string name="oura_feature_connected_live">Live verbunden</string>
+    <string name="oura_feature_unknown">Unbekannt</string>
+    <string name="oura_feature_active">aktiv</string>
+    <string name="oura_feature_searching">sucht</string>
+    <string name="oura_feature_no_ppg">kein PPG</string>
+    <string name="oura_feature_cold">kalt</string>
+    <string name="oura_feature_status_format">%1$s · %2$s</string>
+    <string name="oura_feature_enable">Aktivieren</string>
+    <string name="oura_feature_disable">Deaktivieren</string>
+    <string name="oura_feature_write_title">An den Ring senden?</string>
+    <string name="oura_feature_write_confirm">%1$s an den Ring senden? Dieser experimentelle Befehl ist umkehrbar. Prüfen Sie den zurückgelesenen Status. Die Umgehung der Kontosperre ist nicht bestätigt.</string>
+    <string name="oura_feature_write">Senden</string>
+    <string name="oura_feature_not_written_title">Nicht gesendet</string>
+    <string name="oura_feature_not_written_desc">Kein authentifizierter Oura-Ring verbunden oder Android hat den Befehl abgelehnt. Verbinden Sie den Ring und versuchen Sie es erneut.</string>
 </resources>

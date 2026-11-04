@@ -158,6 +158,12 @@ class SourceCoordinator(
     private val _ouraLinkPhase = MutableStateFlow(OuraLiveSource.LinkPhase.DISCONNECTED)
     val ouraLinkPhase: StateFlow<OuraLiveSource.LinkPhase> = _ouraLinkPhase.asStateFlow()
 
+    /** Latest feature-status readbacks from the active Oura ring, empty otherwise. */
+    private val _ouraFeatureStatuses =
+        MutableStateFlow<Map<Int, com.noop.oura.OuraFeatureStatus>>(emptyMap())
+    val ouraFeatureStatuses: StateFlow<Map<Int, com.noop.oura.OuraFeatureStatus>> =
+        _ouraFeatureStatuses.asStateFlow()
+
     /** Collects the active Oura source's adoptPhase / needsPairing into the mirrors above; cancelled and
      *  nulled on teardown so a forgotten ring never leaks a stale outcome. */
     private var ouraStateJob: kotlinx.coroutines.Job? = null
@@ -612,6 +618,7 @@ class SourceCoordinator(
             launch { source.ouraWearState.collect { _ouraWearState.value = it } }
             launch { source.batteryPct.collect { _ouraBatteryPct.value = it } }   // #2075
             launch { source.linkPhase.collect { _ouraLinkPhase.value = it } }     // #2305
+            launch { source.featureStatuses.collect { _ouraFeatureStatuses.value = it } }
         }
         return source
     }
@@ -625,6 +632,11 @@ class SourceCoordinator(
     fun reconnectActiveRing() {
         (activeSource as? OuraLiveSource)?.reconnect()
     }
+
+    /** Only the Test Centre action calls this; no device-switch or auto-connect path writes a mode.
+     * False when a WHOOP/other strap is active, or when the ring rejects dispatch. */
+    fun writeActiveOuraFeatureMode(feature: Int, mode: Int): Boolean =
+        (activeSource as? OuraLiveSource)?.writeFeatureMode(feature, mode) == true
 
     /**
      * #771 (twin of Swift's `SourceCoordinator.adoptOuraSerial`): the live Oura source read the ring's stable
@@ -662,6 +674,7 @@ class SourceCoordinator(
         _ouraWearState.value = null   // #628: no live Oura source -> no wear badge
         _ouraBatteryPct.value = null  // #2075: nor a stale ring charge
         _ouraLinkPhase.value = OuraLiveSource.LinkPhase.DISCONNECTED   // #2305
+        _ouraFeatureStatuses.value = emptyMap()
         // A stale speed/cadence/power readout must not outlive the strap session (the source's own stop()
         // already pushes an empty SensorMetrics, but reset here too so leaving for WHOOP / FTMS / Huami —
         // none of which feed this flow — is clean and immediate).

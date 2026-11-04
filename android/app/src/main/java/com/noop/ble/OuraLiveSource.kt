@@ -231,6 +231,10 @@ class OuraLiveSource(
     private val _linkPhase = MutableStateFlow(LinkPhase.DISCONNECTED)
     val linkPhase: StateFlow<LinkPhase> = _linkPhase.asStateFlow()
 
+    /** Per-connection, ring-reported feature statuses. No UI-requested values enter this map. */
+    private val _featureStatuses = MutableStateFlow<Map<Int, com.noop.oura.OuraFeatureStatus>>(emptyMap())
+    val featureStatuses: StateFlow<Map<Int, com.noop.oura.OuraFeatureStatus>> = _featureStatuses.asStateFlow()
+
     // MARK: - Live wear/charge indicator (#628 twin) — On wrist / Off wrist / charging
     //
     // The ring emits no "worn" event, so wear is inferred: a LIVE-HR push (0x2F) means a finger; a silent
@@ -356,6 +360,8 @@ class OuraLiveSource(
     /** Feature ids whose status we have already logged this session (SpO2 0x04 / real_steps 0x0b), so the
      *  read-only feature-status diagnostic prints once per feature, not on every reconnect. */
     private val loggedFeatureStatuses = mutableSetOf<Int>()
+    /** A local OFF request was dispatched; this is not evidence of cloud entitlement. */
+    private val manuallyDisabledFeatures = mutableSetOf<Int>()
     /** Product-info replies already logged this session, keyed by op+body so the #771/#772 serial/hardware
      *  capture prints each DISTINCT reply once — get_serial and get_hardware both answer under op 0x19, so a
      *  per-op guard would swallow the second (observed on-device: only the serial reached the log). Twin of
@@ -1253,6 +1259,8 @@ class OuraLiveSource(
         pendingSyncTime = null
         loggedTierBKinds.clear()
         loggedFeatureStatuses.clear()
+        manuallyDisabledFeatures.clear()
+        _featureStatuses.value = emptyMap()
         loggedProductInfo.clear()
         pendingAnchorEvents.clear()
         // Per-drain / per-session protocol state starts clean (twin of Swift's connect-setup reset).
@@ -1358,6 +1366,8 @@ class OuraLiveSource(
         pendingSyncTime = null
         loggedTierBKinds.clear()
         loggedFeatureStatuses.clear()
+        manuallyDisabledFeatures.clear()
+        _featureStatuses.value = emptyMap()
         loggedProductInfo.clear()
         reachedStreaming = false
         clearAuthWatchdog()
@@ -1510,8 +1520,10 @@ class OuraLiveSource(
                     loggedAnchor = false
                     pendingSyncTime = null
                     loggedTierBKinds.clear()
-        loggedFeatureStatuses.clear()
-        loggedProductInfo.clear()
+                    loggedFeatureStatuses.clear()
+                    manuallyDisabledFeatures.clear()
+                    _featureStatuses.value = emptyMap()
+                    loggedProductInfo.clear()
                     reachedStreaming = false
                     // A disconnect MID-install is an honest failure (no 0x25 ack will arrive); a disconnect
                     // after streaming leaves the completed Streaming outcome intact. Drop any in-flight key
@@ -1693,9 +1705,9 @@ class OuraLiveSource(
                     scheduleHistoryFetch()
                     fetchHistoryIfIdle()
                     write(OuraCommands.getBattery())
-                    // Read-only diagnostic: ask the ring its SpO2 / real-steps feature status once, so a
-                    // capture confirms (from the ring itself) that these server-flag features are
-                    // subscription-gated OFF for an offline ring. NEVER an enable/set-mode write.
+                    // Read-only SpO2 / real-steps probe. All-zero does not prove cloud
+                    // entitlement: the same bytes can follow an explicit local OFF request.
+                    // No automatic SetFeatureMode write runs here.
                     write(OuraCommands.spo2ReadStatus())
                     write(OuraCommands.realStepsReadStatus())
                     // Read-only capture (#771/#772): the ring's GetProductInfo serial + hardware pages are
@@ -1804,6 +1816,35 @@ class OuraLiveSource(
         if (d.phase != OuraDriverPhase.Streaming) return
         write(OuraCommands.liveHRDisable())
         write(OuraCommands.liveHRUnsubscribe())
+    }
+
+    /**
+     * Test Centre ONLY, after explicit per-feature UI confirmation. This method independently
+     * enforces the four-feature / off-or-automatic allow-list and authenticated-link gate.
+     * Returns true only if Android accepted the mode write for dispatch, not if the ring
+     * applied it; the next GetFeatureStatus read is the verification. Nothing calls this
+     * from connect/driver. Mode flip verified for SpO2 on Gen 3; account-gate bypass unproven.
+     */
+    fun writeFeatureMode(feature: Int, mode: Int): Boolean {
+        if (!OuraCommands.featureModeWriteAllowed(feature, mode)) return false
+        if (_linkPhase.value != LinkPhase.AUTHENTICATED || gatt == null || writeChar == null) {
+            log("Oura: feature-mode write SKIPPED - no authenticated connected ring")
+            return false
+        }
+        val command = OuraCommands.setFeatureMode(feature, mode)
+        val frame = command.bytes.joinToString("") { "%02x".format(it) }
+        lastWriteAccepted = null
+        write(command)
+        if (lastWriteAccepted != true) {
+            log("Oura: feature-mode WRITE not accepted by Android BLE stack")
+            return false
+        }
+        log("Oura: feature-mode WRITE feature=0x${feature.toString(16)} mode=$mode frame=$frame" +
+            " - EXPERIMENT; awaiting ring status readback (account-gate bypass unproven)")
+        loggedFeatureStatuses.remove(feature) // force a fresh exportable log after writing
+        if (mode == 0) manuallyDisabledFeatures.add(feature) else manuallyDisabledFeatures.remove(feature)
+        write(OuraCommands.featureReadStatus(feature))
+        return true
     }
 
     /** Write one built command to the ring's write characteristic (Write Without Response). Logged by its
@@ -1954,13 +1995,10 @@ class OuraLiveSource(
         }
     }
 
-    /**
-     * Log a feature-status read reply once per feature (read-only diagnostic). Confirms, from the ring
-     * itself, whether a server-flag feature (SpO2 0x04 / real_steps 0x0b) is subscribed/emitting — NOOP
-     * cannot enable these offline (server ClientConfiguration gate), so a `subscription == 0` here is the
-     * honest "not a bug, it's a gate" reading. Never scored, never stored.
-     */
+    /** Publish every readback for Test Centre, even when the exportable log is deduplicated.
+     * A zero status identifies neither the cloud nor the sender of an earlier OFF request. */
     private fun logFeatureStatus(st: com.noop.oura.OuraFeatureStatus) {
+        _featureStatuses.value = _featureStatuses.value + (st.feature to st)
         if (!loggedFeatureStatuses.add(st.feature)) return
         val name = when (st.feature) {
             OuraCommands.featureSpO2 -> "SpO2 (0x04)"
@@ -1968,11 +2006,14 @@ class OuraLiveSource(
             OuraCommands.featureDaytimeHR -> "daytime-HR (0x02)"
             else -> "0x${st.feature.toString(16)}"
         }
-        // A gated/unavailable feature reports ALL-ZERO (mode/status/state); the streaming daytime-HR, by
-        // contrast, reads mode=1 status=0x11 state=2. Flag the all-zero case as the honest "cloud never
-        // enabled it" — NOT `subscription==0` alone, since daytime-HR is subscription=0 yet active.
+        // All-zero can follow our manual off request; never diagnose cloud entitlement from it.
         val off = st.mode == 0 && st.status == 0 && st.state == 0
-        val gate = if (off) " - INACTIVE (server-gated off; the cloud never enabled it, not emitted offline)" else ""
+        val gate = when {
+            off && st.feature in manuallyDisabledFeatures ->
+                " - INACTIVE (after local off request; cause not independently proven)"
+            off -> " - INACTIVE (ring reports off; cause unknown)"
+            else -> ""
+        }
         // Name the enum fields so the log reads plainly (OURA_PROTOCOL.md s7.1 [ring4-ble]) — e.g. a gated
         // feature prints `mode=0 (off) … subscription=0 (off)`, the active daytime-HR `mode=1 (automatic)`.
         log("Oura: feature status $name mode=${st.mode} (${featureModeName(st.mode)}) status=${st.status} " +

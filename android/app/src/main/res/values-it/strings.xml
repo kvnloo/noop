@@ -2828,4 +2828,33 @@
     <string name="raw_diag_ecg_probe_running">Una acquisizione potrebbe essere ancora attiva su questo strap. Il verdetto va nello strap log.</string>
     <string name="today_customize_live_session_availability">Compare oggi se le sessioni in diretta sono attivate nelle Impostazioni o una sessione è attiva.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Oggi a modo tuo, frequenza cardiaca leggibile da ogni app e l\'italiano</string>
+
+    <!-- Oura Test Centre feature mode control (#2119); translated across every shipped locale. -->
+    <string name="oura_test_section_title">OURA</string>
+    <string name="oura_test_section_desc">Controlli sperimentali per un anello Oura associato. Ogni modifica alla modalità richiede conferma.</string>
+    <string name="oura_onset_title">Inizio sonno Oura (sperimentale)</string>
+    <string name="oura_onset_desc">Usa un inizio sonno stabile per evitare registrazioni notturne duplicate. Disattivato per impostazione predefinita; controlla il registro.</string>
+    <string name="oura_feature_title">Attiva funzioni Oura (sperimentale)</string>
+    <string name="oura_feature_desc">Solo Spento o Automatico. Lo stato arriva dalla lettura del dispositivo. La possibilità di aggirare il blocco account non è provata. Esclusi battito diurno e a riposo.</string>
+    <string name="oura_feature_spo2">SpO2</string>
+    <string name="oura_feature_real_steps">Passi reali</string>
+    <string name="oura_feature_exercise_hr">FC durante attività</string>
+    <string name="oura_feature_cva_ppg">Campionatore PPG CVA</string>
+    <string name="oura_feature_off">Spento</string>
+    <string name="oura_feature_automatic">Automatico</string>
+    <string name="oura_feature_requested">Richiesto</string>
+    <string name="oura_feature_connected_live">Live connesso</string>
+    <string name="oura_feature_unknown">Sconosciuto</string>
+    <string name="oura_feature_active">attivo</string>
+    <string name="oura_feature_searching">ricerca</string>
+    <string name="oura_feature_no_ppg">nessun PPG</string>
+    <string name="oura_feature_cold">freddo</string>
+    <string name="oura_feature_status_format">%1$s · %2$s</string>
+    <string name="oura_feature_enable">Attiva</string>
+    <string name="oura_feature_disable">Disattiva</string>
+    <string name="oura_feature_write_title">Inviare al dispositivo?</string>
+    <string name="oura_feature_write_confirm">Inviare %1$s al dispositivo? Il comando sperimentale è reversibile. Controlla lo stato restituito. Non è provato che aggiri il blocco account.</string>
+    <string name="oura_feature_write">Invia</string>
+    <string name="oura_feature_not_written_title">Non inviato</string>
+    <string name="oura_feature_not_written_desc">Nessun anello Oura autenticato è connesso, oppure Android ha rifiutato il comando. Connetti il dispositivo e riprova.</string>
 </resources>

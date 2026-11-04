@@ -2889,4 +2889,33 @@
     <string name="raw_diag_ecg_probe_running">A capture may still be running on this strap. The verdict goes to the strap log.</string>
     <string name="today_customize_live_session_availability">Appears today when Live Sessions is enabled in Settings or a session is active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today your way, heart rate any app can read, and Italian</string>
+
+    <!-- Oura Test Centre feature mode control (#2119); translated across every shipped locale. -->
+    <string name="oura_test_section_title">OURA</string>
+    <string name="oura_test_section_desc">Experimental controls for a paired Oura ring. Every feature-mode write requires confirmation.</string>
+    <string name="oura_onset_title">Oura onset keying (experimental)</string>
+    <string name="oura_onset_desc">Uses the ring’s stable sleep onset to suppress duplicate night records. Off by default; check the strap log.</string>
+    <string name="oura_feature_title">Oura feature enable (experimental)</string>
+    <string name="oura_feature_desc">Off or Automatic only. Status is read from the ring. Account-gate bypass is unproven. Daytime HR and resting HR are excluded.</string>
+    <string name="oura_feature_spo2">SpO2</string>
+    <string name="oura_feature_real_steps">Real steps</string>
+    <string name="oura_feature_exercise_hr">Exercise HR</string>
+    <string name="oura_feature_cva_ppg">CVA PPG sampler</string>
+    <string name="oura_feature_off">Off</string>
+    <string name="oura_feature_automatic">Automatic</string>
+    <string name="oura_feature_requested">Requested</string>
+    <string name="oura_feature_connected_live">Connected live</string>
+    <string name="oura_feature_unknown">Unknown</string>
+    <string name="oura_feature_active">active</string>
+    <string name="oura_feature_searching">searching</string>
+    <string name="oura_feature_no_ppg">no PPG</string>
+    <string name="oura_feature_cold">cold</string>
+    <string name="oura_feature_status_format">%1$s · %2$s</string>
+    <string name="oura_feature_enable">Enable</string>
+    <string name="oura_feature_disable">Disable</string>
+    <string name="oura_feature_write_title">Write to the ring?</string>
+    <string name="oura_feature_write_confirm">Send %1$s to the ring? This experimental write is reversible; check the feature status readback. Bypassing the account gate is unproven.</string>
+    <string name="oura_feature_write">Write</string>
+    <string name="oura_feature_not_written_title">Not written</string>
+    <string name="oura_feature_not_written_desc">No authenticated Oura ring is connected, or Android rejected the write. Connect the ring and try again.</string>
 </resources>

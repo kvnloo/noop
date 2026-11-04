@@ -405,6 +405,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val ouraWearState: StateFlow<com.noop.oura.OuraWearState?> =
         noopApp.sourceCoordinator.ouraWearState
 
+    /** Test Centre only: the active ring's last confirmed feature-status reads, never requested state. */
+    val ouraFeatureStatuses: StateFlow<Map<Int, com.noop.oura.OuraFeatureStatus>> =
+        noopApp.sourceCoordinator.ouraFeatureStatuses
+
+    /** Called only after Test Centre's explicit per-feature confirmation. */
+    fun writeActiveOuraFeatureMode(feature: Int, mode: Int): Boolean =
+        noopApp.sourceCoordinator.writeActiveOuraFeatureMode(feature, mode)
+
     /** #656: a journal day-offset (daysBack; -1 = Tomorrow) the Today journal widget asks the journal
      *  (Insights) to open at, so tapping a SPECIFIC day's bar lands on THAT day instead of always today.
      *  InsightsScreen consumes it on open and clears it via [requestJournalDay]`(null)`. */
