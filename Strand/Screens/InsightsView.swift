@@ -28,6 +28,19 @@ import WhoopStore
 
 /// `.task(id:)` key for the Insights journal load: the data-refresh sequence plus today's day-key, so the
 /// load re-runs both on a data change and on a calendar-day rollover (#860 item 4).
+/// Only explicitly answered Journal "No" days with finite outcome measurements
+/// can form an experiment baseline. Never-answered days are unknown (#322/#1768).
+/// ISO yyyy-MM-dd day keys sort chronologically.
+func experimentExplicitNoBaselineDays(
+    outcomeDays: [String: Double], explicitNoDays: Set<String>,
+    before: String, limit: Int
+) -> [String] {
+    Array(outcomeDays.keys
+        .filter { $0 < before && explicitNoDays.contains($0) && outcomeDays[$0]?.isFinite == true }
+        .sorted()
+        .suffix(max(1, limit)))
+}
+
 private struct InsightsLoadKey: Equatable {
     let seq: Int
     let dayKey: String
@@ -807,13 +820,11 @@ struct InsightsView: View {
         let outcomeDays = outcomeByKey[outcome.key] ?? [:]
         let loggedDays = behaviours[behavior] ?? []
 
-        // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
-        // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
-        // "Intervention" is now an honest present-vs-absent contrast, not a raw pre/post window.
-        let baselineDays = outcomeDays.keys
-            .filter { $0 < experimentStartedDay && !loggedDays.contains($0) }
-            .sorted()
-            .suffix(max(1, experimentBaselineDays))
+        // Only explicit "No" answers with measured outcomes are controls.
+        // A never-answered day is unknown, not a baseline observation.
+        let baselineDays = experimentExplicitNoBaselineDays(
+            outcomeDays: outcomeDays, explicitNoDays: controls[behavior] ?? [],
+            before: experimentStartedDay, limit: experimentBaselineDays)
         // Intervention = the first `duration` outcome days in the window where the behaviour
         // WAS logged.
         let interventionWindow = outcomeDays.keys
