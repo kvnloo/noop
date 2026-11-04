@@ -1908,6 +1908,11 @@ object IntelligenceEngine {
             add(WhoopRepository.HEALTH_CONNECT_SOURCE)
             addAll(WEARABLE_IMPORT_SOURCES)
         }.distinct()
+        // Legacy Charge has no rule-version tag. A nil source-only fold can clear only a
+        // computed cell whose persisted score provenance names the same import source.
+        // Unattributed cached-only strap rows (possibly missing pruned raw streams) survive.
+        val cachedComputedByDay = repo.dailyMetrics(computedId, oldestDay, newestDay).associateBy { it.day }
+        val pendingImportClears = ArrayList<Triple<String, String, DailyMetric>>()
         for (source in importSourceIds) {
             val rows = repo.dailyMetrics(source, oldestDay, newestDay)
             // A real export that already carries its OWN recovery WINS , never overwrite a verbatim imported
@@ -1915,8 +1920,20 @@ object IntelligenceEngine {
             val byDay = rows.associateBy { it.day }
             for (r in rows) if (r.recovery != null) importScoredDays.add(r.day)
             for (w in watchRecoveries(rows, importScoredDays)) {
-                val recovery = w.recovery ?: continue
                 val row = byDay[w.day] ?: continue
+                val recovery = w.recovery
+                if (recovery == null) {
+                    val inputSource =
+                        if (source == importedDeviceId && w.day in healthConnectDays) {
+                            WhoopRepository.HEALTH_CONNECT_SOURCE
+                        } else source
+                    if (cachedComputedByDay[w.day]?.recovery != null &&
+                        repo.scoreInputSource(computedId, w.day, "recovery") == inputSource
+                    ) {
+                        pendingImportClears.add(Triple(w.day, inputSource, row))
+                    }
+                    continue
+                }
                 val scored = row.copy(deviceId = computedId, recovery = recovery)
                 dailies.add(scored)
                 importScoredDays.add(w.day)
@@ -1943,6 +1960,13 @@ object IntelligenceEngine {
                     ),
                 )
             }
+        }
+        // A later source may have supplied a real score; defer all nil invalidations until
+        // those sources were considered. Only per-source, provenance-matched cells are cleared.
+        for ((day, inputSource, row) in pendingImportClears) {
+            if (!importScoredDays.add(day)) continue
+            dailies.add(row.copy(deviceId = computedId, recovery = null))
+            resolvedScoreOwnerByDay[day] = inputSource
         }
         // Snapshot the persisted/merged daily history BEFORE the delete+re-upsert below rewrites the
         // computed window. This is the accumulated view the readiness card + dashboard read ("N of 7
