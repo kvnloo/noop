@@ -72,6 +72,28 @@ class ManualWorkoutRescoreTest {
         assertFalse(ManualWorkoutRescore.improves(recomputed, summedKcal, currentStrain = null))
     }
 
+    @Test fun manualCaloriesSuggestionCoverageAndKeytelOracle() {
+        val dense = (0 until 900).map { HrSample("my-whoop", 1_000L + it, 140) }
+        val kcal = ManualWorkoutRescore.suggestedCalories(dense, 1_000L, 1_900L, profile, 190.0)
+        // 55.1841 kJ/min * 15 min / 4.184 = 197.84 kcal: synthetic, not measured.
+        assertEquals(197.84, kcal ?: 0.0, 0.01)
+        assertEquals(197.84, ManualWorkoutRescore.suggestedCalories(
+            dense + dense.take(60), 1_000L, 1_900L, profile, 190.0) ?: 0.0, 0.01)
+        val sparse = (0 until 900 step 3).map { HrSample("my-whoop", 1_000L + it, 140) }
+        assertNull(ManualWorkoutRescore.suggestedCalories(sparse, 1_000L, 1_900L, profile, 190.0))
+        val split = ((0 until 300) + (600 until 900))
+            .map { HrSample("my-whoop", 1_000L + it, 140) }
+        assertNull(ManualWorkoutRescore.suggestedCalories(split, 1_000L, 1_900L, profile, 190.0))
+        assertNull(ManualWorkoutRescore.suggestedCalories(dense, 1_900L, 1_000L, profile, 190.0))
+    }
+
+    @Test fun manualCaloriesSuggestionNeverReplacesTypedValue() {
+        assertTrue(ManualWorkoutRescore.shouldPrefillCalories(null, false))
+        assertFalse(ManualWorkoutRescore.shouldPrefillCalories(0.0, false))
+        assertFalse(ManualWorkoutRescore.shouldPrefillCalories(220.0, false))
+        assertFalse(ManualWorkoutRescore.shouldPrefillCalories(null, true))
+    }
+
     @Test fun underScoredWorkoutGetsRescoredAndIsIdempotent() {
         val stored = 1.0
         assertTrue(ManualWorkoutRescore.looksUnderScored(stored))

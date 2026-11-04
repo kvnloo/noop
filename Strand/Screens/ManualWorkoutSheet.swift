@@ -1,5 +1,6 @@
 import SwiftUI
 import StrandDesign
+import StrandAnalytics
 import WhoopStore
 
 /// Carries the measured natural height of the Sport picker's floating suggestion panel up to the
@@ -28,6 +29,8 @@ struct ManualWorkoutSheet: View {
     let onSave: (_ row: WorkoutRow, _ replacing: WorkoutRow?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var profile: ProfileStore
 
     @State private var sport: String
     @State private var start: Date
@@ -37,6 +40,7 @@ struct ManualWorkoutSheet: View {
     @State private var end: Date
     @State private var avgHrText: String
     @State private var kcalText: String
+    @State private var kcalEditedByUser = false
     /// Distance as ENTERED, in the user's unit (km or mi) — converted to stored metres on save (#1195).
     @State private var distanceText: String
 
@@ -189,7 +193,11 @@ struct ManualWorkoutSheet: View {
                             .accessibilityLabel("Average heart rate in beats per minute, optional")
                     }
                     field(String(localized: "Calories")) {
-                        numberInput(String(localized: "optional"), text: $kcalText, unit: "kcal", field: .calories)
+                        numberInput(String(localized: "optional"),
+                                    text: Binding(get: { kcalText }, set: {
+                                        kcalEditedByUser = true
+                                        kcalText = $0
+                                    }), unit: "kcal", field: .calories)
                             .accessibilityLabel("Calories in kilocalories, optional")
                     }
                 }
@@ -198,6 +206,31 @@ struct ManualWorkoutSheet: View {
             if avgHrEditedNote { noteRow(String(localized: "Avg HR is shown as typed. The HR graph, zones and Effort stay from the recorded session.")) }
             footer
         }
+        .task(id: "\(Int(start.timeIntervalSince1970)):\(Int(end.timeIntervalSince1970))") {
+            await prefillCaloriesFromHR()
+        }
+    }
+
+    /// A suggestion, never a rewrite of an existing entry. A changed span cancels the old read,
+    /// and a user edit (including clearing the field) wins over any in-flight result.
+    private func prefillCaloriesFromHR() async {
+        guard ManualWorkoutRescore.shouldPrefillCalories(
+            existingKcal: editing?.energyKcal, userEdited: kcalEditedByUser) else { return }
+        kcalText = ""
+        let first = Int(start.timeIntervalSince1970)
+        let last = Int(end.timeIntervalSince1970)
+        guard last > first, last <= Int(Date().timeIntervalSince1970),
+              last - first <= 20_000 else { return }
+        let samples = await repo.hrSamples(from: first, to: last, limit: 20_000)
+        guard !Task.isCancelled, ManualWorkoutRescore.shouldPrefillCalories(
+            existingKcal: editing?.energyKcal, userEdited: kcalEditedByUser) else { return }
+        let user = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
+                               age: Double(profile.age), sex: profile.sex,
+                               stepTicksPerStep: profile.stepTicksPerStep)
+        let suggestion = ManualWorkoutRescore.suggestedCalories(
+            windowSamples: samples, startTs: first, endTs: last,
+            profile: user, hrMax: Double(profile.hrMax))
+        kcalText = suggestion.map { String(Int($0.rounded())) } ?? ""
     }
 
     // MARK: - Sport picker
@@ -504,6 +537,8 @@ struct ManualWorkoutSheet: View {
 #if DEBUG
 #Preview("Add") {
     ManualWorkoutSheet { _, _ in }
+        .environmentObject(Repository(deviceId: "my-whoop"))
+        .environmentObject(ProfileStore())
         .preferredColorScheme(.dark)
 }
 
@@ -512,6 +547,8 @@ struct ManualWorkoutSheet: View {
         startTs: Int(Date().timeIntervalSince1970) - 3600, endTs: Int(Date().timeIntervalSince1970),
         sport: "Running", source: "manual", durationS: 3600, energyKcal: 540,
         avgHr: 148, maxHr: 172, strain: 12.4, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil)) { _, _ in }
+        .environmentObject(Repository(deviceId: "my-whoop"))
+        .environmentObject(ProfileStore())
         .preferredColorScheme(.dark)
 }
 #endif

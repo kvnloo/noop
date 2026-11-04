@@ -95,6 +95,43 @@ final class ManualWorkoutRescoreTests: XCTestCase {
         XCTAssertFalse(ManualWorkoutRescore.improves(recomputed, over: summedKcal, currentStrain: nil))
     }
 
+    /// #2830 — only a sufficiently covered, recorded HR span can suggest editable calories.
+    func testManualCaloriesSuggestionCoverageAndKeytelOracle() {
+        let dense = (0..<900).map { HRSample(ts: 1_000 + $0, bpm: 140) }
+        let kcal = ManualWorkoutRescore.suggestedCalories(
+            windowSamples: dense, startTs: 1_000, endTs: 1_900,
+            profile: profile, hrMax: 190)
+        // Keytel (male, 80 kg, age 30, HR 140):
+        // (0.6309*140 + 0.1988*80 + 0.2017*30 - 55.0969) * 15 / 4.184
+        // = 55.1841*15/4.184 = 197.84 kcal. Synthetic oracle, not measured accuracy.
+        XCTAssertEqual(kcal ?? 0, 197.84, accuracy: 0.01)
+        // Duplicate timestamps cannot manufacture extra energy.
+        let withDuplicates = dense + Array(dense.prefix(60))
+        XCTAssertEqual(ManualWorkoutRescore.suggestedCalories(
+            windowSamples: withDuplicates, startTs: 1_000, endTs: 1_900,
+            profile: profile, hrMax: 190) ?? 0, 197.84, accuracy: 0.01)
+        // 300 readings at 3-second cadence: only a third of the interval is observed.
+        XCTAssertNil(ManualWorkoutRescore.suggestedCalories(
+            windowSamples: stride(from: 1_000, to: 1_900, by: 3).map { HRSample(ts: $0, bpm: 140) },
+            startTs: 1_000, endTs: 1_900, profile: profile, hrMax: 190))
+        // Two dense runs separated by an unobserved 301-second gap cannot be bridged.
+        let split = (0..<300).map { HRSample(ts: 1_000 + $0, bpm: 140) }
+                  + (600..<900).map { HRSample(ts: 1_000 + $0, bpm: 140) }
+        XCTAssertNil(ManualWorkoutRescore.suggestedCalories(
+            windowSamples: split, startTs: 1_000, endTs: 1_900,
+            profile: profile, hrMax: 190))
+        XCTAssertNil(ManualWorkoutRescore.suggestedCalories(
+            windowSamples: dense, startTs: 1_900, endTs: 1_000,
+            profile: profile, hrMax: 190))
+    }
+
+    func testManualCaloriesSuggestionNeverReplacesTypedValue() {
+        XCTAssertTrue(ManualWorkoutRescore.shouldPrefillCalories(existingKcal: nil, userEdited: false))
+        XCTAssertFalse(ManualWorkoutRescore.shouldPrefillCalories(existingKcal: 0, userEdited: false))
+        XCTAssertFalse(ManualWorkoutRescore.shouldPrefillCalories(existingKcal: 220, userEdited: false))
+        XCTAssertFalse(ManualWorkoutRescore.shouldPrefillCalories(existingKcal: nil, userEdited: true))
+    }
+
     /// End-to-end shape of the fix: a workout saved with ~1 kcal (sparse live HR) gets rescored from a
     /// dense offloaded window, and the result both clears the under-scored gate and improves.
     func testUnderScoredWorkoutGetsRescoredFromDenseWindow() {

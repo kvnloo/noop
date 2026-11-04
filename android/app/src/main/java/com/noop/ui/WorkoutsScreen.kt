@@ -1,5 +1,7 @@
 package com.noop.ui
 
+import com.noop.analytics.ManualWorkoutRescore
+
 import com.noop.R
 import com.noop.data.HrBucket
 import androidx.compose.ui.unit.sp
@@ -373,6 +375,7 @@ fun WorkoutsScreen(vm: AppViewModel) {
 
     dialog?.let { target ->
         ManualWorkoutDialog(
+            vm = vm,
             editing = target.editing,
             isCopy = target.isCopy,
             onDismiss = { dialog = null },
@@ -2045,6 +2048,7 @@ private fun Cell(text: String, modifier: Modifier, color: Color? = null) {
 
 @Composable
 private fun ManualWorkoutDialog(
+    vm: AppViewModel,
     editing: WorkoutRow?,
     isCopy: Boolean = false,
     onDismiss: () -> Unit,
@@ -2073,6 +2077,25 @@ private fun ManualWorkoutDialog(
     }
     var avgHr by remember { mutableStateOf(editing?.avgHr?.toString() ?: "") }
     var kcal by remember { mutableStateOf(editing?.energyKcal?.let { it.roundToInt().toString() } ?: "") }
+    var kcalEditedByUser by remember { mutableStateOf(false) }
+    val contextForEstimate = LocalContext.current
+    // Changing either endpoint cancels the previous suggestion; a user edit always wins.
+    LaunchedEffect(startMillis, endMillis) {
+        if (!ManualWorkoutRescore.shouldPrefillCalories(editing?.energyKcal, kcalEditedByUser)) return@LaunchedEffect
+        kcal = ""
+        val first = startMillis / 1000L
+        val last = endMillis / 1000L
+        val now = System.currentTimeMillis() / 1000L
+        val suggestion = if (last > first && last <= now && last - first <= 20_000L) {
+            val profile = ProfileStore.from(contextForEstimate.applicationContext)
+            val samples = vm.repo.hrSamplesUnion(vm.activeStrapId, first, last, 20_000)
+            ManualWorkoutRescore.suggestedCalories(
+                samples, first, last, profile.toUserProfile(), profile.hrMax.toDouble())
+        } else null
+        if (ManualWorkoutRescore.shouldPrefillCalories(editing?.energyKcal, kcalEditedByUser)) {
+            kcal = suggestion?.roundToInt()?.toString() ?: ""
+        }
+    }
     // #1195: distance as ENTERED, in the user's unit (km/mi), converted to stored metres on save. Pre-fill
     // in that unit so an untouched edit round-trips the stored value. Period decimal (Locale.US) to match
     // toDoubleOrNull parsing, exactly as the macOS ManualWorkoutSheet does.
@@ -2188,7 +2211,10 @@ private fun ManualWorkoutDialog(
                 )
                 DialogField("Distance ($distUnit, optional)", distance, onChange = { distance = it }, numeric = true)
                 DialogField("Avg HR (bpm, optional)", avgHr, onChange = { avgHr = it }, numeric = true)
-                DialogField("Calories (kcal, optional)", kcal, onChange = { kcal = it }, numeric = true)
+                DialogField("Calories (kcal, optional)", kcal, onChange = {
+                    kcalEditedByUser = true
+                    kcal = it
+                }, numeric = true)
                 if (built == null) {
                     Text(
                         uiString(R.string.l10n_workouts_screen_enter_a_sport_a_positive_duration_3da88ad5),

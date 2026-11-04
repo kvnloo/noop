@@ -32,6 +32,43 @@ public enum ManualWorkoutRescore {
     /// still-sparse window (recompute ≈ current) is a no-op and the pass is idempotent.
     public static let improvementMarginKcal = 1.0
 
+    /// Whether a draft's calories field is still eligible for an automatic suggestion. Existing
+    /// values and any typed override always take precedence, including a typed zero or blank.
+    public static func shouldPrefillCalories(existingKcal: Double?, userEdited: Bool) -> Bool {
+        existingKcal == nil && !userEdited
+    }
+
+    /// Estimate an editable manual-workout Calories value only from a sufficiently observed HR span.
+    /// The existing bout formula assumes HR represents the intervening time. Unlike detector bouts,
+    /// a hand-picked interval has no motion gate, so do not extrapolate isolated readings over
+    /// dropouts. Require >= 60 distinct seconds, >= 50% coverage and <= 30 s between readings
+    /// (including both window edges). No stored score or user-entered value is changed here.
+    public static func suggestedCalories(windowSamples: [HRSample], startTs: Int, endTs: Int,
+                                         profile: UserProfile, hrMax: Double,
+                                         restingHR: Double? = nil) -> Double? {
+        guard endTs > startTs, endTs - startTs <= 20_000 else { return nil }
+        let ordered = windowSamples.filter { $0.ts >= startTs && $0.ts < endTs }
+            .sorted { $0.ts < $1.ts }
+        var distinct: [HRSample] = []
+        distinct.reserveCapacity(ordered.count)
+        for sample in ordered {
+            if let last = distinct.last {
+                if sample.ts == last.ts { continue }
+                if sample.ts - last.ts > 30 { return nil }
+            } else if sample.ts - startTs > 30 {
+                return nil
+            }
+            distinct.append(sample)
+        }
+        guard let last = distinct.last,
+              distinct.count >= 60,
+              distinct.count >= (endTs - startTs + 1) / 2,
+              endTs - last.ts <= 30 else { return nil }
+        let kcal = Calories.estimateBoutCalories(distinct, profile: profile,
+                                                hrmax: hrMax, restingHR: restingHR).0
+        return kcal.isFinite && kcal > 0 && kcal <= 20_000 ? kcal : nil
+    }
+
     /// Does this manual workout currently look under-scored (missing/negligible calories)? The gate the
     /// post-sync pass uses to decide whether to attempt a rescore at all — so well-scored workouts
     /// (a 4.0's dense live HR) are never touched.
