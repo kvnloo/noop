@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Hermes 智能体访问</string>
+    <string name="agent_settings_title">Hermes 访问（实验性）</string>
+    <string name="agent_settings_blurb">默认关闭。Hermes 可通过 Tailscale 读取有限摘要。操作需另行授权；每次调用都会记录。</string>
+    <string name="agent_subtitle">实验性 · 仅分支版 · 默认关闭</string>
+    <string name="agent_intro">Hermes 可经 Tailscale 读取有限 NOOP 摘要，经许可也可打开页面或发送提示。仅在授权有效时响应请求，所有调用均记录。每日明细需单独授权。不构成医疗建议。</string>
+    <string name="agent_pair_section">1 · 与服务器配对</string>
+    <string name="agent_link_hint">粘贴 Hermes 配对链接</string>
+    <string name="agent_pair_button">配对</string>
+    <string name="agent_confirm_pair">确认链接配对</string>
+    <string name="agent_forget_pair">解除配对并停止访问</string>
+    <string name="agent_grant_section">2 · 授权会话</string>
+    <string name="agent_minutes">%1$d 分钟</string>
+    <string name="agent_hours">%1$d 小时</string>
+    <string name="agent_detail">同时允许每日数据（否则仅摘要）</string>
+    <string name="agent_actions">允许安全操作：打开 NOOP 页面或发送提示</string>
+    <string name="agent_allow">允许 Hermes 访问</string>
+    <string name="agent_stop">立即停止访问</string>
+    <string name="agent_audit_section">3 · 活动日志（仅此手机）</string>
+    <string name="agent_clear_audit">清除活动日志</string>
+    <string name="agent_checking">正在向服务器验证…</string>
+    <string name="agent_pair_failed">配对失败。请检查链接、有效期和 Tailscale 连接。</string>
+    <string name="agent_paired">已与 %1$s 配对 · 设备 …%2$s</string>
+    <string name="agent_not_paired">未配对。</string>
+    <string name="agent_grant_on">开启至 %1$s · %2$s · 监听地址 %3$s</string>
+    <string name="agent_grant_off_error">关闭 · %1$s</string>
+    <string name="agent_grant_off">关闭</string>
+    <string name="agent_no_activity">暂无智能体活动。</string>
+    <string name="agent_channel_desc">在 Hermes 访问及发送提示时显示。</string>
+    <string name="agent_nav_suggest">Hermes 建议打开 %1$s</string>
+    <string name="agent_nav_tap">点按打开 NOOP。</string>
+    <string name="agent_note_footer">由 Hermes 通过 NOOP 发送。不构成医疗建议。</string>
+    <string name="agent_fgs_until">Hermes 可访问 NOOP 至 %1$s</string>
+    <string name="agent_starting">正在启动…</string>
+    <string name="agent_fgs_detail">%1$s · 仅限 tailnet · 调用均记录</string>
+    <string name="agent_stop_now">立即停止</string>
+    <string name="agent_summaries">摘要</string>
+    <string name="agent_daily_detail">每日明细</string>
+    <string name="agent_safe_actions">安全操作</string>
+    <string name="agent_error_foreground">Android 拒绝了前台服务。</string>
+    <string name="agent_error_tailnet">此手机未连接 Tailscale。</string>
+    <string name="agent_error_pair_first">请先与服务器配对。</string>
+    <string name="agent_error_bind">无法监听 tailnet 地址（%1$s）。</string>
+    <string name="agent_special_use">经所有者授权、限时通过 Tailscale 进行本地访问。</string>
+</resources>

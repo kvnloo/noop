@@ -2692,6 +2692,20 @@ fun SettingsScreen(
                 onClick = onOpenSelfHostedPush,
             )
         }
+        // Experimental, fork-only: Hermes agent access over the owner's own tailnet (com.noop.agent).
+        SettingsCard(
+            icon = Icons.Filled.CloudSync,
+            title = context.getString(com.noop.R.string.agent_settings_title),
+            blurb = context.getString(com.noop.R.string.agent_settings_blurb),
+        ) {
+            NoopButton(
+                text = context.getString(com.noop.R.string.agent_title),
+                leadingIcon = Icons.Filled.CloudSync,
+                kind = NoopButtonKind.Secondary,
+                fullWidth = true,
+                onClick = { context.startActivity(android.content.Intent(context, com.noop.agent.AgentAccessActivity::class.java)) },
+            )
+        }
         // --- Experimental · WHOOP 5 / MG --- (hidden when the user is confidently on a 4.0, #22)
         // Developer-only 5/MG controls now live in Test Centre. Keep the implementation below during
         // the compatibility transition, but never render a second copy in everyday Settings.

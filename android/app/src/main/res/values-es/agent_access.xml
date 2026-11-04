@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Acceso del agente Hermes</string>
+    <string name="agent_settings_title">Acceso Hermes (Experimental)</string>
+    <string name="agent_settings_blurb">Desactivado por defecto. Tu Hermes lee resúmenes limitados por Tailscale. Las acciones necesitan otro permiso; cada llamada se registra.</string>
+    <string name="agent_subtitle">Experimental · solo fork · desactivado</string>
+    <string name="agent_intro">Hermes lee resúmenes limitados de NOOP por tu red Tailscale y, con permiso, abre pantallas o envía notas. Solo las autorizaciones activas admiten solicitudes; todas se registran. El detalle diario necesita permiso aparte. No es consejo médico.</string>
+    <string name="agent_pair_section">1 · Vincular con tu servidor</string>
+    <string name="agent_link_hint">Pega el enlace de Hermes</string>
+    <string name="agent_pair_button">Vincular</string>
+    <string name="agent_confirm_pair">Confirmar vínculo del enlace</string>
+    <string name="agent_forget_pair">Olvidar vínculo y detener acceso</string>
+    <string name="agent_grant_section">2 · Autorizar una sesión</string>
+    <string name="agent_minutes">%1$d min</string>
+    <string name="agent_hours">%1$d h</string>
+    <string name="agent_detail">Permitir datos diarios (si no, solo resúmenes)</string>
+    <string name="agent_actions">Permitir acciones seguras: abrir NOOP o enviar una nota</string>
+    <string name="agent_allow">Permitir acceso a Hermes</string>
+    <string name="agent_stop">Detener acceso ahora</string>
+    <string name="agent_audit_section">3 · Registro de actividad (solo este teléfono)</string>
+    <string name="agent_clear_audit">Borrar registro de actividad</string>
+    <string name="agent_checking">Comprobando con el servidor…</string>
+    <string name="agent_pair_failed">Error de vínculo. Revisa el enlace, caducidad y Tailscale.</string>
+    <string name="agent_paired">Vinculado a %1$s · dispositivo …%2$s</string>
+    <string name="agent_not_paired">Sin vincular.</string>
+    <string name="agent_grant_on">ACTIVO hasta %1$s · %2$s · escuchando en %3$s</string>
+    <string name="agent_grant_off_error">INACTIVO · %1$s</string>
+    <string name="agent_grant_off">INACTIVO</string>
+    <string name="agent_no_activity">Aún no hay actividad del agente.</string>
+    <string name="agent_channel_desc">Se muestra durante el acceso y para notas.</string>
+    <string name="agent_nav_suggest">Hermes sugiere abrir %1$s</string>
+    <string name="agent_nav_tap">Toca para abrir NOOP.</string>
+    <string name="agent_note_footer">De Hermes a través de NOOP. No es consejo médico.</string>
+    <string name="agent_fgs_until">Hermes tiene acceso a NOOP hasta %1$s</string>
+    <string name="agent_starting">Iniciando…</string>
+    <string name="agent_fgs_detail">%1$s · solo tailnet · llamadas registradas</string>
+    <string name="agent_stop_now">Detener ahora</string>
+    <string name="agent_summaries">resúmenes</string>
+    <string name="agent_daily_detail">datos diarios</string>
+    <string name="agent_safe_actions">acciones seguras</string>
+    <string name="agent_error_foreground">Android rechazó el servicio en primer plano.</string>
+    <string name="agent_error_tailnet">Tailscale no está conectado en este teléfono.</string>
+    <string name="agent_error_pair_first">Vincula primero tu servidor.</string>
+    <string name="agent_error_bind">No se puede escuchar en tailnet (%1$s).</string>
+    <string name="agent_special_use">Acceso local por Tailscale autorizado y limitado en el tiempo.</string>
+</resources>

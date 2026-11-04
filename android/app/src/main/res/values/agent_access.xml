@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Hermes agent access</string>
+    <string name="agent_settings_title">Hermes agent access (Experimental)</string>
+    <string name="agent_settings_blurb">Off by default. Your own Hermes can read limited summaries over Tailscale. Actions need a separate grant; every call is logged.</string>
+    <string name="agent_subtitle">Experimental · fork-only · off by default</string>
+    <string name="agent_intro">Hermes can read limited NOOP summaries over your own Tailscale network and, with permission, open a screen or post a note. Only active grants allow requests; every call is logged. Daily detail needs separate permission. Not medical advice.</string>
+    <string name="agent_pair_section">1 · Pair with your broker</string>
+    <string name="agent_link_hint">Paste pairing link from Hermes</string>
+    <string name="agent_pair_button">Pair</string>
+    <string name="agent_confirm_pair">Confirm pairing from link</string>
+    <string name="agent_forget_pair">Forget pairing and stop access</string>
+    <string name="agent_grant_section">2 · Grant a session</string>
+    <string name="agent_minutes">%1$d min</string>
+    <string name="agent_hours">%1$d h</string>
+    <string name="agent_detail">Also allow daily values (otherwise summaries only)</string>
+    <string name="agent_actions">Allow safe actions: open a NOOP screen or post a coach note</string>
+    <string name="agent_allow">Allow Hermes access</string>
+    <string name="agent_stop">Stop access now</string>
+    <string name="agent_audit_section">3 · Activity log (this phone only)</string>
+    <string name="agent_clear_audit">Clear activity log</string>
+    <string name="agent_checking">Checking with your broker…</string>
+    <string name="agent_pair_failed">Pairing failed. Check the link, expiry, and Tailscale connection.</string>
+    <string name="agent_paired">Paired with %1$s · device …%2$s</string>
+    <string name="agent_not_paired">Not paired.</string>
+    <string name="agent_grant_on">ON until %1$s · %2$s · listening at %3$s</string>
+    <string name="agent_grant_off_error">OFF · %1$s</string>
+    <string name="agent_grant_off">OFF</string>
+    <string name="agent_no_activity">No agent activity yet.</string>
+    <string name="agent_channel_desc">Shown while Hermes has access and for coach notes.</string>
+    <string name="agent_nav_suggest">Hermes suggests: open %1$s</string>
+    <string name="agent_nav_tap">Tap to open NOOP.</string>
+    <string name="agent_note_footer">From Hermes through NOOP. Not medical advice.</string>
+    <string name="agent_fgs_until">Hermes has NOOP access until %1$s</string>
+    <string name="agent_starting">Starting…</string>
+    <string name="agent_fgs_detail">%1$s · tailnet only · every call logged</string>
+    <string name="agent_stop_now">Stop now</string>
+    <string name="agent_summaries">summaries</string>
+    <string name="agent_daily_detail">daily detail</string>
+    <string name="agent_safe_actions">safe actions</string>
+    <string name="agent_error_foreground">Android denied the foreground service.</string>
+    <string name="agent_error_tailnet">Tailscale is not connected on this phone.</string>
+    <string name="agent_error_pair_first">Pair with your broker first.</string>
+    <string name="agent_error_bind">Cannot listen on the tailnet address (%1$s).</string>
+    <string name="agent_special_use">Owner-approved, time-limited local access over Tailscale.</string>
+</resources>

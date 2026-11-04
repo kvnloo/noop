@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_title">Dostęp agenta Hermes</string>
+    <string name="agent_settings_title">Dostęp Hermes (Eksperymentalny)</string>
+    <string name="agent_settings_blurb">Domyślnie wyłączone. Hermes czyta ograniczone podsumowania przez Tailscale. Działania wymagają osobnej zgody; każda prośba jest zapisywana.</string>
+    <string name="agent_subtitle">Eksperymentalne · tylko fork · wyłączone</string>
+    <string name="agent_intro">Hermes odczytuje ograniczone podsumowania NOOP przez Tailscale i za zgodą otwiera ekrany lub wysyła notatki. Tylko aktywna zgoda pozwala na żądania; każde jest zapisane. Dane dzienne wymagają osobnej zgody. To nie porada medyczna.</string>
+    <string name="agent_pair_section">1 · Sparuj z brokerem</string>
+    <string name="agent_link_hint">Wklej link parowania z Hermes</string>
+    <string name="agent_pair_button">Sparuj</string>
+    <string name="agent_confirm_pair">Potwierdź parowanie z linku</string>
+    <string name="agent_forget_pair">Usuń parowanie i zatrzymaj dostęp</string>
+    <string name="agent_grant_section">2 · Zezwól na sesję</string>
+    <string name="agent_minutes">%1$d min</string>
+    <string name="agent_hours">%1$d godz.</string>
+    <string name="agent_detail">Pozwól też na dane dzienne (inaczej tylko podsumowania)</string>
+    <string name="agent_actions">Zezwól na bezpieczne akcje: otwórz NOOP lub wyślij notatkę</string>
+    <string name="agent_allow">Zezwól Hermes na dostęp</string>
+    <string name="agent_stop">Zatrzymaj dostęp teraz</string>
+    <string name="agent_audit_section">3 · Dziennik aktywności (tylko ten telefon)</string>
+    <string name="agent_clear_audit">Wyczyść dziennik aktywności</string>
+    <string name="agent_checking">Sprawdzanie brokera…</string>
+    <string name="agent_pair_failed">Parowanie nieudane. Sprawdź link, ważność i Tailscale.</string>
+    <string name="agent_paired">Sparowano z %1$s · urządzenie …%2$s</string>
+    <string name="agent_not_paired">Nie sparowano.</string>
+    <string name="agent_grant_on">WŁĄCZONE do %1$s · %2$s · nasłuch na %3$s</string>
+    <string name="agent_grant_off_error">WYŁĄCZONE · %1$s</string>
+    <string name="agent_grant_off">WYŁĄCZONE</string>
+    <string name="agent_no_activity">Brak aktywności agenta.</string>
+    <string name="agent_channel_desc">Widoczne podczas dostępu Hermes i dla notatek.</string>
+    <string name="agent_nav_suggest">Hermes sugeruje: otwórz %1$s</string>
+    <string name="agent_nav_tap">Dotknij, aby otworzyć NOOP.</string>
+    <string name="agent_note_footer">Od Hermes przez NOOP. To nie porada medyczna.</string>
+    <string name="agent_fgs_until">Hermes ma dostęp do NOOP do %1$s</string>
+    <string name="agent_starting">Uruchamianie…</string>
+    <string name="agent_fgs_detail">%1$s · tylko tailnet · wywołania zapisane</string>
+    <string name="agent_stop_now">Zatrzymaj teraz</string>
+    <string name="agent_summaries">podsumowania</string>
+    <string name="agent_daily_detail">dane dzienne</string>
+    <string name="agent_safe_actions">bezpieczne akcje</string>
+    <string name="agent_error_foreground">Android odmówił uruchomienia usługi.</string>
+    <string name="agent_error_tailnet">Tailscale nie jest połączony na tym telefonie.</string>
+    <string name="agent_error_pair_first">Najpierw sparuj z brokerem.</string>
+    <string name="agent_error_bind">Nie można nasłuchiwać w tailnet (%1$s).</string>
+    <string name="agent_special_use">Lokalny dostęp Tailscale za zgodą właściciela, ograniczony czasowo.</string>
+</resources>
