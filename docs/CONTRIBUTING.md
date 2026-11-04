@@ -104,9 +104,9 @@ still the best way to avoid wasted work — it's just not an enforced gate.
 
 The codebase is split into reusable, cross-platform Swift packages plus a thin platform-specific app
 layer. The **macOS app is the reference implementation**; **Android ships as a full app** under
-`android/`, and **iOS was folded into `main` in v1.94** and is a **build-from-source-only target**
-(`NOOPiOS` / `NOOPiOSWidgets`) — no App Store/TestFlight, to keep the project anonymous (see
-[`IOS.md`](IOS.md)). All reuse the same packages where they can.
+`android/`, and **iOS was folded into `main` in v1.94** (`NOOPiOS` / `NOOPiOSWidgets`). iOS ships
+as an unsigned sideloadable `.ipa` or can be built from source; it has no App Store/TestFlight
+release (see [`IOS.md`](IOS.md)). All reuse the same packages where they can.
 
 ```
 Strand/
@@ -735,13 +735,13 @@ Contributions toward these are welcome — open an issue to coordinate first.
   on-device, and imports WHOOP / Apple Health / Health Connect. Pre-built APKs are in
   [Releases](https://github.com/ryanbr/noop/releases). Continued real-hardware testing across more devices is always welcome
   (an emulator can't reach a physical strap).
-- **iOS (build-from-source target on `main`).** iOS was folded into `main` in v1.94 as a first-class
-  build-from-source target — the `NOOPiOS` and `NOOPiOSWidgets` schemes (app target plus widgets, a
+- **iOS (sideload or build from source).** iOS was folded into `main` in v1.94 as a first-class
+  build target — the `NOOPiOS` and `NOOPiOSWidgets` schemes (app target plus widgets, a
   Live Activity, and HealthKit), built against current code in Xcode, with CI compiling both macOS and
-  iOS on every change. It is **build-it-yourself only, intentionally not shipped:** iOS has no
-  anonymous distribution path (the App Store and TestFlight both require a real Apple Developer
-  identity), which is at odds with NOOP staying anonymous, so there are no pre-built downloads. Every
-  package declares `.iOS(.v16)` and guards UI-framework code with `#if canImport(UIKit)/AppKit`, so
+  iOS on every change. An unsigned `.ipa` is available from [Releases](https://github.com/ryanbr/noop/releases)
+  for users to sign and sideload with AltStore/SideStore; building from source remains supported.
+  There is no App Store or TestFlight distribution. Every package declares `.iOS(.v16)` and guards
+  UI-framework code with `#if canImport(UIKit)/AppKit`, so
   the shared core and analytics run unmodified — results match macOS. It is newer and less
   battle-tested than macOS/Android (live BLE on a real iPhone isn't fully validated yet), so
   on-hardware testing is especially welcome; [`IOS.md`](IOS.md) is the detailed guide.

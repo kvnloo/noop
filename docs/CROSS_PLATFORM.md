@@ -14,7 +14,7 @@ to add a feature that should land on more than one of them** — so a new capabi
 | Client | Language / UI | Code home | Shares with |
 |---|---|---|---|
 | **macOS** | Swift + SwiftUI/AppKit | `Strand/` (app) + `Packages/` | the reference implementation; shares the 5 Swift packages with iOS |
-| **iOS** | Swift + SwiftUI/UIKit/WidgetKit/HealthKit | `StrandiOS/` + most of `Strand/` + `Packages/` | **shares almost everything with macOS** at the source level (folded in v1.94, build-from-source) |
+| **iOS** | Swift + SwiftUI/UIKit/WidgetKit/HealthKit | `StrandiOS/` + most of `Strand/` + `Packages/` | **shares almost everything with macOS** at the source level (folded in v1.94; unsigned sideloadable `.ipa` or build from source) |
 | **Android** | Kotlin + Jetpack Compose | `android/` | a **hand-ported parity twin** of the Swift logic — no shared binary, mirrored value-for-value |
 
 ## Two sharing models, by language boundary
