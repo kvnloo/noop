@@ -66,6 +66,11 @@
          channel a typed question uses). Requested at runtime, only when the user taps the mic
          button in the Coach composer. No audio leaves the device. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Experimental breath camera (Settings, default off): front camera frames are reduced to one
+         motion number on-device and never stored or sent. Requested only when the user starts it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- K14: haptic feedback (vibration) when a Coach reply arrives. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

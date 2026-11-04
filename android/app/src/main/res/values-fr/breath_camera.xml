@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="l10n_breath_camera_title">Caméra respiration · Expérimental</string>
+    <string name="l10n_breath_camera_privacy">Utilise la caméra frontale pour suivre ta poitrine et tes épaules. Les images sont traitées sur ce téléphone et ne sont jamais enregistrées ni envoyées.</string>
+    <string name="l10n_breath_camera_start">Observer ma respiration</string>
+    <string name="l10n_breath_camera_stop">Arrêter la caméra</string>
+    <string name="l10n_breath_camera_on">Caméra active · sur ce téléphone uniquement</string>
+    <string name="l10n_breath_camera_framing">Pose le téléphone à hauteur de poitrine, tête et épaules dans le cadre, puis reste immobile.</string>
+    <string name="l10n_breath_camera_permission_needed">Cette expérience a besoin de l’autorisation caméra.</string>
+    <string name="l10n_breath_camera_failed">La caméra n’a pas pu démarrer.</string>
+    <string name="l10n_breath_camera_phase_in">Inspiration</string>
+    <string name="l10n_breath_camera_phase_out">Expiration</string>
+    <string name="l10n_breath_camera_phase_hold_full">Rétention, poumons pleins</string>
+    <string name="l10n_breath_camera_phase_hold_empty">Rétention, poumons vides</string>
+    <string name="l10n_breath_camera_phase_unknown">Recherche de ta respiration…</string>
+    <string name="l10n_breath_camera_rate">Environ %1$s respirations par minute</string>
+    <string name="l10n_breath_camera_heart_swing">Variation du rythme cardiaque par respiration : environ %1$s bpm</string>
+    <string name="l10n_breath_camera_in_step">Ton rythme cardiaque monte et descend au rythme de ta respiration.</string>
+    <string name="l10n_breath_camera_lag">Ton rythme cardiaque suit ta respiration avec environ %1$s s de décalage.</string>
+    <string name="l10n_breath_camera_follow_guide">Tes respirations s’écartent du guide. Essaie de suivre l’anneau.</string>
+    <string name="l10n_breath_camera_pace_adapting">Le guide teste %1$s respirations par minute</string>
+    <string name="l10n_breath_camera_pace_settled">Ton rythme le plus fort de cette séance : %1$s respirations par minute</string>
+    <string name="l10n_breath_camera_estimate_note">Estimations à partir de la vidéo et du timing de la bague. Pas une mesure médicale.</string>
+    <string name="l10n_breath_camera_setting">Caméra respiration (expérimental)</string>
+    <string name="l10n_breath_camera_setting_adapt">Laisser ma respiration ajuster le rythme du guide (expérimental)</string>
+</resources>
