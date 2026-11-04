@@ -571,6 +571,8 @@ public final class BLEManager: NSObject, ObservableObject {
     public let state: LiveState
     private let router: FrameRouter
     private var collector: Collector?
+    /// Reuse the bootstrapped store to rehydrate the battery slope after each reconnect.
+    private var batterySeedStore: WhoopStore?
     /// #716: stored on bootstrap so the scan callback can fix the seeded "WHOOP" model label.
     /// #1303: fired after the strap's history has been re-pointed onto its stable `whoop-<serial>` id.
     /// The live persist paths are already re-pointed inline by then; this exists so the OBSERVABLE spine
@@ -1275,7 +1277,15 @@ public final class BLEManager: NSObject, ObservableObject {
     /// The strap family the user chose to pair. Drives which service we scan for
     /// and which service we discover after connecting. Hydrated from the persisted
     /// pick so restoration/reconnect after a relaunch target the right strap.
-    private var selectedModel: WhoopModel = .persisted
+    private var selectedModel: WhoopModel = .persisted {
+        didSet { updateBatteryRatedHours() }
+    }
+
+    /// One family-to-rated-life mapping for selection, scan fallback and BLE restoration.
+    private func updateBatteryRatedHours() {
+        state.batteryRatedHours = selectedModel.deviceFamily == .whoop5
+            ? BatteryEstimator.ratedLifeHoursWhoop5 : BatteryEstimator.ratedLifeHoursWhoop4
+    }
     private var lastStandardHRLogAt: Date?
     /// Counts unreadable standard heart-rate samples in a row, so a run of them clears the shown heart rate.
     private var heartRateReadability = LiveHeartRateReadability()
@@ -1364,6 +1374,8 @@ public final class BLEManager: NSObject, ObservableObject {
         // before any BLE data arrives.
         self.collector = nil
         super.init()
+        // Stored-property observers do not run during initialization.
+        updateBatteryRatedHours()
         // Deliberately NOT seeded from the global key here. It belongs to whichever strap synced last,
         // which on a two-strap install is not the one the screens are scoped to — the misattribution this
         // whole change removes. `seedLastSyncFromActiveStrap` fills it from the ACTIVE strap once the
@@ -1471,6 +1483,7 @@ public final class BLEManager: NSObject, ObservableObject {
                 self.deviceId = activeId
             }
         }
+        batterySeedStore = store
         // Restore the ECG latch for THIS device now that `deviceId` has settled for the launch. Done
         // here rather than at init because the id is not known that early, and the latch is per device.
         // Read-only: nothing is sent to the strap, matching the rule that these opcodes are never
@@ -1551,33 +1564,38 @@ public final class BLEManager: NSObject, ObservableObject {
             }
         }
 
-        // Battery "~X days left" seed (#7): `LiveState.batterySamples` is fed ONLY by live BLE events, so
-        // after a reconnect the runtime estimate restarted from an empty buffer and ignored the discharge
-        // history already on disk (Android seeds from its persisted battery table over a 14-day window;
-        // iOS/macOS did not = divergence). Read the persisted SoC series for the active device over the last
-        // 14 days and seed the live buffer once the store is up. The setter de-dupes against any points
-        // already banked from live events this session, so a seed that races the first live reading is safe.
-        // nil-SoC rows are dropped here (the buffer is non-optional %); a read failure is non-fatal, the
-        // estimate just cold-starts as before.
-        let seedNow = Int(Date().timeIntervalSince1970)
-        let fourteenDays = 14 * 24 * 3600
-        if let rows = try? await store.batterySamples(
-            deviceId: deviceId, from: seedNow - fourteenDays, to: seedNow, limit: 2000) {
-            let seed = rows.compactMap { row -> (ts: Int, soc: Double)? in
-                guard let soc = row.soc else { return nil }
-                return (ts: row.ts, soc: soc)
-            }
-            state.seedBatterySamples(seed)
-        }
+        // Seed once after bootstrap; each later didConnect reuses this same store read.
+        await seedBatterySamplesFromStore(store)
     }
 
-    /// Designated initializer for testing and preview use: accepts a pre-built Collector.
+    /// Read the active strap's recent SoC history without making a BLE request. The device-id
+    /// snapshot avoids mixing straps if identity changes while the async query is in flight;
+    /// reconnect-only calls must also still own a live link when the read finishes.
+    func seedBatterySamplesFromStore(_ store: WhoopStore,
+                                     now: Int = Int(Date().timeIntervalSince1970),
+                                     connectedOnly: Bool = false) async {
+        let readDeviceId = deviceId
+        let fourteenDays = 14 * 24 * 3600
+        guard let rows = try? await store.batterySamples(
+            deviceId: readDeviceId, from: now - fourteenDays, to: now, limit: 2000) else { return }
+        guard deviceId == readDeviceId, (!connectedOnly || state.connected) else { return }
+        let seed = rows.compactMap { row -> (ts: Int, soc: Double)? in
+            guard let soc = row.soc else { return nil }
+            return (ts: row.ts, soc: soc)
+        }
+        // LiveState de-duplicates timestamps, so a repeated seed is idempotent.
+        state.seedBatterySamples(seed)
+    }
+
+        /// Designated initializer for testing and preview use: accepts a pre-built Collector.
     init(state: LiveState, deviceId: String = "my-whoop", collector: Collector?) {
         self.state = state
         self.deviceId = deviceId
         self.router = FrameRouter(state: state)
         self.collector = collector
         super.init()
+        // Stored-property observers do not run during initialization.
+        updateBatteryRatedHours()
         // Deliberately NOT seeded from the global key here. It belongs to whichever strap synced last,
         // which on a two-strap install is not the one the screens are scoped to — the misattribution this
         // whole change removes. `seedLastSyncFromActiveStrap` fills it from the ACTIVE strap once the
@@ -1657,11 +1675,6 @@ public final class BLEManager: NSObject, ObservableObject {
         // latency. A plain Date() assignment, no behaviour change; only read behind the .connection gate.
         connectAttemptStartedAt = Date()
         selectedModel = model
-        // Battery "~X days left" fallback (#713): a 5/MG runs far longer than a 4.0, so point the estimator's
-        // rated-life fallback at the connected family. The Today badge reads state.batteryEstimate (which uses
-        // state.batteryRatedHours); without this it always assumed WHOOP 4.0 (108h).
-        state.batteryRatedHours = model.deviceFamily == .whoop5
-            ? BatteryEstimator.ratedLifeHoursWhoop5 : BatteryEstimator.ratedLifeHoursWhoop4
         // Frame the inbound stream for the chosen family (WHOOP 4.0 CRC8 vs WHOOP 5.0 CRC16/puffin)
         // and tell the router which decoder to use. Fresh per connection so no stale bytes carry over.
         reassembler = Reassembler(family: model.deviceFamily)
@@ -6002,6 +6015,13 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // (the Sync Strap shortcut, a state-restoration relaunch) reconnects by identifier, not by scan.
         UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: Self.lastConnectedPeripheralKey)
         state.connected = true
+        // Disconnect clears the live discharge buffer. Restore the persisted slope on every
+        // reconnect (bootstrapStore itself runs only once per process).
+        if let store = batterySeedStore {
+            Task { @MainActor [weak self] in
+                await self?.seedBatterySamplesFromStore(store, connectedOnly: true)
+            }
+        }
         // A connect succeeded → clear the stale-bond re-pair guide UNLESS we are in a known bond-loop
         // (#617). In that loop the strap "connects" every ~3 s before timing out again, so clearing here
         // wiped the guide on EVERY cycle: it flashed for ~1 s and vanished, so the user could never read it
