@@ -12,7 +12,8 @@ import org.junit.Test
  * Twin of the Swift StepsEstimateEngineTraceTests: the Steps test mode's two pure traces. Proves the
  * trace can never diverge from the production numbers - the 5/MG raw-counter trace's scaledSteps equals
  * AnalyticsEngine.analyzeDay(...).daily.steps EXACTLY (same wrap-aware sum, same maxStepDelta gate, same
- * ticks-per-step scaling), and the WHOOP-4 calibration trace reuses StepsEstimateEngine.calibrate verbatim.
+ * activity-class, rate and boundary guards, ticks-per-step scaling), and the WHOOP-4 calibration
+ * trace reuses StepsEstimateEngine.calibrate verbatim.
  * No em-dashes. Pure-JVM, no Robolectric / Mockito.
  */
 class StepsEstimateEngineTraceTest {
@@ -21,8 +22,8 @@ class StepsEstimateEngineTraceTest {
     private val dayUtc = "2026-01-02"
     private val noonUtc = 1_767_355_200L
 
-    private fun step(tsOffsetSec: Long, counter: Int) =
-        StepSample(deviceId = "my-whoop", ts = noonUtc + tsOffsetSec, counter = counter)
+    private fun step(tsOffsetSec: Long, counter: Int, activityClass: Int? = null) =
+        StepSample(deviceId = "my-whoop", ts = noonUtc + tsOffsetSec, counter = counter, activityClass = activityClass)
 
     // MARK: 5/MG raw-counter trace
 
@@ -61,6 +62,27 @@ class StepsEstimateEngineTraceTest {
         )
         assertTrue(lines.any { it.contains("stepsRaw deltas kept=2 dropped=1") })
         assertTrue(lines.first { it.startsWith("stepsRaw total ") }.contains("scaledSteps=$production"))
+    }
+
+    @Test fun rawTraceUsesProductionClassAndRateGates() {
+        // Still +2, impossible 1-second +7, reboot +581, and unknown-class +14 are dropped.
+        // Walk +3, run +7 across two seconds, and walk +5 survive: raw 15; /2 = 7.5 -> 8.
+        val samples = listOf(
+            step(0, 100, 0), step(1, 102, 0), step(2, 105, 1), step(3, 112, 1),
+            step(5, 119, 2), step(10, 700, 1), step(15, 714), step(20, 719, 1),
+        )
+        val scaledProfile = UserProfile(stepTicksPerStep = 2.0)
+        val production = AnalyticsEngine.analyzeDay(day = dayUtc, steps = samples, profile = scaledProfile).daily.steps
+        assertEquals(8, production)
+        val lines = StepsEstimateEngineTrace.rawCounterTrace(
+            daySteps = samples, dayKey = dayUtc, tzOffsetSeconds = 0L, ticksPerStep = scaledProfile.stepTicksPerStep,
+        )
+        assertTrue(lines.any {
+            it.contains("stepsRaw deltas kept=3 dropped=4 (boundary=1 rate=1 class=2; zero ignored)")
+        })
+        val total = lines.first { it.startsWith("stepsRaw total ") }
+        assertTrue(total, total.contains("rawTicks=15"))
+        assertTrue(total, total.contains("scaledSteps=$production"))
     }
 
     @Test fun ticksPerStepScalingMatchesAnalyzeDay() {

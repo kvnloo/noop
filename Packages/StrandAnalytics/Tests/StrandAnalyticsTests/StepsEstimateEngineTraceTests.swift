@@ -5,7 +5,8 @@ import WhoopProtocol
 /// The Steps test mode's two pure traces. Pins the lines a fixture produces AND proves the trace can never
 /// diverge from the production numbers: the 5/MG raw-counter trace's scaledSteps equals
 /// AnalyticsEngine.analyzeDay(...).daily.steps EXACTLY (same wrap-aware sum, same maxStepDelta gate, same
-/// ticks-per-step scaling), and the WHOOP-4 calibration trace reuses StepsEstimateEngine.calibrate verbatim.
+/// activity-class, rate and boundary guards, ticks-per-step scaling), and the WHOOP-4 calibration
+/// trace reuses StepsEstimateEngine.calibrate verbatim.
 /// Twin of the Android StepsEstimateEngineTraceTest. No em-dashes.
 final class StepsEstimateEngineTraceTests: XCTestCase {
 
@@ -15,8 +16,8 @@ final class StepsEstimateEngineTraceTests: XCTestCase {
     private let dayUtc = "2026-01-02"
     private let noonUtc = 1_767_355_200
 
-    private func step(_ tsOffsetSec: Int, _ counter: Int) -> StepSample {
-        StepSample(ts: noonUtc + tsOffsetSec, counter: counter)
+    private func step(_ tsOffsetSec: Int, _ counter: Int, _ activityClass: Int? = nil) -> StepSample {
+        StepSample(ts: noonUtc + tsOffsetSec, counter: counter, activityClass: activityClass)
     }
 
     // MARK: - 5/MG raw-counter trace
@@ -57,6 +58,26 @@ final class StepsEstimateEngineTraceTests: XCTestCase {
             daySteps: samples, dayKey: dayUtc, tzOffsetSeconds: 0, ticksPerStep: profile.stepTicksPerStep)
         XCTAssertTrue(lines.contains { $0.contains("stepsRaw deltas kept=2 dropped=1") })
         XCTAssertTrue(lines.first { $0.hasPrefix("stepsRaw total ") }!.contains("scaledSteps=\(production!)"))
+    }
+
+    func testRawTraceUsesProductionClassAndRateGates() {
+        // Still +2, impossible 1-second +7, reboot +581, and unknown-class +14 are dropped.
+        // Walk +3, run +7 across two seconds, and walk +5 survive: raw 15; /2 = 7.5 -> 8.
+        let samples = [
+            step(0, 100, 0), step(1, 102, 0), step(2, 105, 1), step(3, 112, 1),
+            step(5, 119, 2), step(10, 700, 1), step(15, 714), step(20, 719, 1),
+        ]
+        let scaledProfile = UserProfile(stepTicksPerStep: 2.0)
+        let production = AnalyticsEngine.analyzeDay(day: dayUtc, steps: samples, profile: scaledProfile).daily.steps
+        XCTAssertEqual(production, 8)
+        let lines = StepsEstimateEngine.rawCounterTrace(
+            daySteps: samples, dayKey: dayUtc, tzOffsetSeconds: 0, ticksPerStep: scaledProfile.stepTicksPerStep)
+        XCTAssertTrue(lines.contains {
+            $0.contains("stepsRaw deltas kept=3 dropped=4 (boundary=1 rate=1 class=2; zero ignored)")
+        })
+        let total = lines.first { $0.hasPrefix("stepsRaw total ") }!
+        XCTAssertTrue(total.contains("rawTicks=15"))
+        XCTAssertTrue(total.contains("scaledSteps=\(production!)"))
     }
 
     func testTicksPerStepScalingMatchesAnalyzeDay() {

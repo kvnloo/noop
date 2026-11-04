@@ -87,9 +87,9 @@ object StepsEstimateEngineTrace {
     /**
      * The WHOOP 5/MG raw-counter trace for one day. Recomputes the SAME wrap-aware sum [AnalyticsEngine.analyzeDay]
      * runs over the cumulative step_motion_counter series: the time-ordered records filtered to the LOCAL day,
-     * each consecutive (cur - prev) and 0xFFFF increment, the dropped deltas (>= maxStepDelta), and the
-     * ticksPerStep scaling. Reports the counter series length, kept/dropped delta counts, raw tick total and
-     * scaled steps - the SAME value the daily steps_est carries. Mirrors the Swift StepsEstimateEngine.rawCounterTrace.
+     * each consecutive (cur - prev) and 0xFFFF increment, the production activity-class / rate / boundary
+     * gates, and the ticksPerStep scaling. Reports the counter series length, rejected-delta reasons, raw
+     * tick total and scaled steps - the SAME value DailyMetric.steps carries. Mirrors the Swift trace.
      */
     fun rawCounterTrace(
         daySteps: List<StepSample>,
@@ -97,9 +97,6 @@ object StepsEstimateEngineTrace {
         tzOffsetSeconds: Long,
         ticksPerStep: Double,
     ): List<String> {
-        // The SAME maxStepDelta gate AnalyticsEngine.analyzeDay uses for the daily steps total.
-        val maxStepDelta = 512
-
         // The SAME filter + sort: keep only this LOCAL day's samples, time-ordered.
         val sorted = daySteps
             .filter { AnalyticsEngine.dayString(it.ts, tzOffsetSeconds) == dayKey }
@@ -133,23 +130,31 @@ object StepsEstimateEngineTrace {
             return lines
         }
 
-        // Walk the wrap-aware deltas exactly as the production sum does.
+        // Reuse the production class/rate guards: the trace must not count ticks discarded by scoring.
+        val hasActivityClasses = StepsCounter.hasActivityClasses(sorted)
         var rawTotal = 0
         var keptDeltas = 0
-        var droppedDeltas = 0
+        var droppedBoundary = 0
+        var droppedRate = 0
+        var droppedClass = 0
         var minDelta = Int.MAX_VALUE
         var maxDelta = Int.MIN_VALUE
         for (i in 1 until sorted.size) {
             val delta = (sorted[i].counter - sorted[i - 1].counter) and 0xFFFF // wrap-aware u16 increment
-            if (delta in 1 until maxStepDelta) {
-                rawTotal += delta
-                keptDeltas += 1
-                minDelta = minOf(minDelta, delta)
-                maxDelta = maxOf(maxDelta, delta)
-            } else if (delta >= maxStepDelta) {
-                droppedDeltas += 1 // a sync-gap / reboot boundary, not real steps (>= 512)
+            if (delta == 0) continue
+            when {
+                delta >= StepsCounter.MAX_STEP_DELTA -> droppedBoundary++
+                !StepsCounter.isPlausibleDelta(sorted[i - 1].ts, sorted[i].ts, delta) -> droppedRate++
+                !StepsCounter.shouldCountDelta(sorted[i].activityClass, hasActivityClasses) -> droppedClass++
+                else -> {
+                    rawTotal += delta
+                    keptDeltas++
+                    minDelta = minOf(minDelta, delta)
+                    maxDelta = maxOf(maxDelta, delta)
+                }
             }
         }
+        val droppedDeltas = droppedBoundary + droppedRate + droppedClass
 
         val firstCounter = sorted.first().counter
         val lastCounter = sorted.last().counter
@@ -159,7 +164,7 @@ object StepsEstimateEngineTrace {
         )
         lines.add(
             "stepsRaw deltas kept=$keptDeltas dropped=$droppedDeltas " +
-                "(dropped = delta>=$maxStepDelta, a sync-gap/reboot boundary)",
+                "(boundary=$droppedBoundary rate=$droppedRate class=$droppedClass; zero ignored)",
         )
         if (keptDeltas > 0) {
             lines.add(
