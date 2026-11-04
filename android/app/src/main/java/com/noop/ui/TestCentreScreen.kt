@@ -51,6 +51,8 @@ import com.noop.ble.LiveState
 import com.noop.ble.PuffinExperiment
 import com.noop.ble.WhoopBleClient
 import com.noop.ble.WhoopModel
+import com.noop.oura.OuraCommands
+import com.noop.oura.OuraFeatureStatus
 import com.noop.data.DailyMetric
 import com.noop.data.GravitySample
 import com.noop.data.HrSample
@@ -226,6 +228,8 @@ fun TestCentreScreen(vm: AppViewModel, onOpenGroundTruthCollector: () -> Unit = 
 
         // --- Section 2: Diagnostic tools ---
         DiagnosticToolsCard(vm)
+        // Oura-only experiments live together, as on Apple. No other screen can write a mode.
+        OuraCard(vm)
 
         SettingsSectionTC(
             icon = Icons.AutoMirrored.Filled.DirectionsWalk,
@@ -816,14 +820,9 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
     // non-Polar user never sees Polar debug. Loaded once from the registry.
     var polarIdentity by remember { mutableStateOf<String?>(null) }
     var polarDebugLogging by remember { mutableStateOf(NoopPrefs.polarDebugLogging(context)) }
-    // #1284 residual 3: the experimental Oura onset-keying toggle, shown only when an Oura ring is paired.
-    var ouraPaired by remember { mutableStateOf(false) }
-    var ouraOnsetKeying by remember { mutableStateOf(NoopPrefs.ouraOnsetKeying(context)) }
-    var ouraNotifyMaskFull by remember { mutableStateOf(NoopPrefs.ouraNotifyMaskFull(context)) }
     LaunchedEffect(Unit) {
         val paired = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
         polarIdentity = PolarModel.debugIdentification(paired.firstOrNull { PolarModel.isPolar(it.model) }?.model)
-        ouraPaired = paired.any { it.brand.equals("Oura", ignoreCase = true) }
     }
     var detailedCapture by remember { mutableStateOf(NoopPrefs.detailedCapture(context)) }
     var captureShareBusy by remember { mutableStateOf(false) }
@@ -899,26 +898,6 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
                         "so a Polar bug report shows the model NOOP resolved your strap to.",
                     checked = polarDebugLogging,
                     onCheckedChange = { polarDebugLogging = it; vm.setPolarDebugLogging(it) },
-                )
-            }
-            // #1284 residual 3: experimental Oura 0x49-onset keying, only when an Oura ring is paired.
-            if (ouraPaired) {
-                ToggleRowTC(
-                    title = "Oura onset keying (experimental)",
-                    description = "Keys each Oura sleep night on its stable 0x49 onset and suppresses " +
-                        "duplicate re-serves at the source, instead of the shipped end-anchored persist " +
-                        "(#1284). Off by default — a hardware-validation toggle. Watch the strap log for " +
-                        "'onset-key(#1284)' lines.",
-                    checked = ouraOnsetKeying,
-                    onCheckedChange = { ouraOnsetKeying = it; vm.setOuraOnsetKeying(it) },
-                )
-                // Packed-notification A/B (OURA_PROTOCOL.md s2.3). Takes effect at the NEXT connect only;
-                // nothing is written until then and nothing persists on the ring.
-                ToggleRowTC(
-                    title = stringResource(R.string.oura_notify_mask_full_title),
-                    description = stringResource(R.string.oura_notify_mask_full_desc),
-                    checked = ouraNotifyMaskFull,
-                    onCheckedChange = { ouraNotifyMaskFull = it; vm.setOuraNotifyMaskFull(it) },
                 )
             }
             // #1121 Detailed capture: an adb-like rolling on-device log, no computer needed. Off by default.
@@ -1179,6 +1158,184 @@ private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
             // The toggle's OWN effect, shown in place: when on, the live Plews/Altini reading. Nothing renders
             // when off, so the flag off is zero behaviour change and feeds no downstream gate.
             if (hrvReadiness) HrvReadinessReadoutTC(recentDays)
+        }
+    }
+}
+
+/**
+ * The Android twin of the Apple Test Centre OURA section (#2105 / #2119).
+ * No command is sent by showing this card or by an ordinary toggle recomposition:
+ * the ONLY feature-mode write is behind the per-feature confirmation below.
+ */
+private data class PendingOuraFeatureWrite(val feature: Int, val mode: Int)
+
+@Composable
+private fun OuraCard(vm: AppViewModel) {
+    val context = LocalContext.current
+    var ouraPaired by remember { mutableStateOf(false) }
+    var onsetKeying by remember { mutableStateOf(NoopPrefs.ouraOnsetKeying(context)) }
+    var notifyMaskFull by remember { mutableStateOf(NoopPrefs.ouraNotifyMaskFull(context)) }
+    var pending by remember { mutableStateOf<PendingOuraFeatureWrite?>(null) }
+    var notWritten by remember { mutableStateOf(false) }
+    val featureStatuses by vm.ouraFeatureStatuses.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        ouraPaired = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
+            .any { it.brand.equals("Oura", ignoreCase = true) }
+    }
+    if (!ouraPaired) return
+
+    SettingsSectionTC(
+        icon = Icons.Filled.Science,
+        title = stringResource(R.string.oura_test_section_title),
+        blurb = stringResource(R.string.oura_test_section_desc),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ToggleRowTC(
+                title = stringResource(R.string.oura_onset_title),
+                description = stringResource(R.string.oura_onset_desc),
+                checked = onsetKeying,
+                onCheckedChange = { onsetKeying = it; vm.setOuraOnsetKeying(it) },
+            )
+            ToggleRowTC(
+                title = stringResource(R.string.oura_notify_mask_full_title),
+                description = stringResource(R.string.oura_notify_mask_full_desc),
+                checked = notifyMaskFull,
+                onCheckedChange = { notifyMaskFull = it; vm.setOuraNotifyMaskFull(it) },
+            )
+            Text(
+                stringResource(R.string.oura_feature_title),
+                style = NoopType.subhead,
+                color = Palette.textPrimary,
+            )
+            Text(
+                stringResource(R.string.oura_feature_desc),
+                style = NoopType.footnote,
+                color = Palette.textTertiary,
+            )
+            val request: (Int, Int) -> Unit = { feature, mode ->
+                pending = PendingOuraFeatureWrite(feature, mode)
+            }
+            OuraFeatureModeRow(
+                stringResource(R.string.oura_feature_spo2), OuraCommands.featureSpO2,
+                featureStatuses[OuraCommands.featureSpO2], request,
+            )
+            OuraFeatureModeRow(
+                stringResource(R.string.oura_feature_real_steps), OuraCommands.featureRealSteps,
+                featureStatuses[OuraCommands.featureRealSteps], request,
+            )
+            OuraFeatureModeRow(
+                stringResource(R.string.oura_feature_exercise_hr), OuraCommands.featureExerciseHR,
+                featureStatuses[OuraCommands.featureExerciseHR], request,
+            )
+            OuraFeatureModeRow(
+                stringResource(R.string.oura_feature_cva_ppg), OuraCommands.featureCvaPpg,
+                featureStatuses[OuraCommands.featureCvaPpg], request,
+            )
+        }
+    }
+
+    pending?.let { choice ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            containerColor = Palette.surfaceOverlay,
+            title = {
+                Text(stringResource(R.string.oura_feature_write_title),
+                    style = NoopType.title2, color = Palette.textPrimary)
+            },
+            text = {
+                val frame = OuraCommands.setFeatureMode(choice.feature, choice.mode)
+                    .bytes.joinToString("") { "%02x".format(it) }
+                Text(stringResource(R.string.oura_feature_write_confirm, frame),
+                    style = NoopType.body, color = Palette.textSecondary)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    if (!vm.writeActiveOuraFeatureMode(choice.feature, choice.mode)) {
+                        notWritten = true
+                    }
+                }) {
+                    Text(stringResource(R.string.oura_feature_write),
+                        style = NoopType.body, color = Palette.statusWarning)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) {
+                    Text(stringResource(android.R.string.cancel),
+                        style = NoopType.body, color = Palette.textSecondary)
+                }
+            },
+        )
+    }
+    if (notWritten) {
+        AlertDialog(
+            onDismissRequest = { notWritten = false },
+            containerColor = Palette.surfaceOverlay,
+            title = {
+                Text(stringResource(R.string.oura_feature_not_written_title),
+                    style = NoopType.title2, color = Palette.textPrimary)
+            },
+            text = {
+                Text(stringResource(R.string.oura_feature_not_written_desc),
+                    style = NoopType.body, color = Palette.textSecondary)
+            },
+            confirmButton = {
+                TextButton(onClick = { notWritten = false }) {
+                    Text(stringResource(android.R.string.ok),
+                        style = NoopType.body, color = Palette.accent)
+                }
+            },
+        )
+    }
+}
+
+/** Mode is the on/off verdict; status is just a transient sampling qualifier.
+ * status=0 is normal even while a feature is in automatic mode. */
+@Composable
+private fun ouraFeatureReadbackLabel(st: OuraFeatureStatus?): String {
+    val mode = when (st?.mode) {
+        0 -> stringResource(R.string.oura_feature_off)
+        1 -> stringResource(R.string.oura_feature_automatic)
+        2 -> stringResource(R.string.oura_feature_requested)
+        3 -> stringResource(R.string.oura_feature_connected_live)
+        else -> stringResource(R.string.oura_feature_unknown)
+    }
+    val qualifier = when (st?.status) {
+        1 -> stringResource(R.string.oura_feature_active)
+        2 -> stringResource(R.string.oura_feature_searching)
+        3 -> stringResource(R.string.oura_feature_no_ppg)
+        4 -> stringResource(R.string.oura_feature_cold)
+        else -> null
+    }
+    return if (qualifier == null) mode
+    else stringResource(R.string.oura_feature_status_format, mode, qualifier)
+}
+
+@Composable
+private fun OuraFeatureModeRow(
+    label: String,
+    feature: Int,
+    status: OuraFeatureStatus?,
+    onRequest: (Int, Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = NoopType.body, color = Palette.textPrimary)
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                ouraFeatureReadbackLabel(status),
+                modifier = Modifier.weight(1f),
+                style = NoopType.footnote,
+                color = if (status?.mode == 1) Palette.statusPositive else Palette.textTertiary,
+            )
+            TextButton(onClick = { onRequest(feature, 1) }) {
+                Text(stringResource(R.string.oura_feature_enable),
+                    style = NoopType.body, color = Palette.accent)
+            }
+            TextButton(onClick = { onRequest(feature, 0) }) {
+                Text(stringResource(R.string.oura_feature_disable),
+                    style = NoopType.body, color = Palette.accent)
+            }
         }
     }
 }
