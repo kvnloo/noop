@@ -8326,7 +8326,12 @@ class WhoopBleClient(
                     // exposure there is a diagnostic asserting something the strap never said: a real
                     // violation of "a diagnostic may only assert what it can attribute", but a reading,
                     // not a data path. Hardening them is a scope decision, not this change's.
-                    if (frame.size > cmdOff && (frame[cmdOff].toInt() and 0xFF) == CommandNumber.GET_DATA_RANGE.rawValue) {
+                    // #2736: a 0x28 or EVENT (0x30) frame can carry opcode 0x22 at cmdOff and
+                    // spoof a plausible banked timestamp. Only actual command replies reach this
+                    // diagnostic; CRC-invalid command replies still get the raw-frame dump below.
+                    if (com.noop.protocol.DataRange.matchesReplyEnvelope(
+                            frame, cmdOff, CommandNumber.GET_DATA_RANGE.rawValue,
+                        )) {
                         // #451: dump raw GET_DATA_RANGE response bytes unconditionally (even if decode returns
                         // null) so a stale/wrong-epoch "newest" can be told apart from a frame-alignment bug in
                         // dataRangeNewestUnix straight from a normal strap-log export. Mirrors the Swift line.

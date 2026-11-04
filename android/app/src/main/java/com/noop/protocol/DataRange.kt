@@ -98,6 +98,20 @@ object DataRange {
         return behind
     }
 
+
+    /**
+     * Only the command-response envelope may provide the GET_DATA_RANGE frontier.
+     * WHOOP 4 uses type @4 / command @6; WHOOP 5/MG uses type @8 / command @10.
+     * #2736: an EVENT (0x30) or other type (0x28) can carry opcode 0x22 at the
+     * apparent command offset, followed by plausible Unix bytes. These are not
+     * range replies. Integrity remains the separate acceptsReply verdict gate.
+     */
+    fun matchesReplyEnvelope(frame: ByteArray, cmdOff: Int, opcode: Int): Boolean {
+        if (cmdOff < 2 || cmdOff >= frame.size) return false
+        return (frame[cmdOff - 2].toInt() and 0xFF) == 0x24 &&
+            (frame[cmdOff].toInt() and 0xFF) == opcode
+    }
+
     /**
      * The BLE seam's decision on a GET_DATA_RANGE COMMAND_RESPONSE: is this a reply to [opcode], and may
      * it move state? A reply is accepted only on the verifier's FULL verdict.
@@ -113,8 +127,7 @@ object DataRange {
      * restated here: the command table lives with the caller. Mirrors Swift `DataRange.acceptsReply`.
      */
     fun acceptsReply(frame: ByteArray, cmdOff: Int, opcode: Int, verdictOk: () -> Boolean): Boolean {
-        if (cmdOff < 0 || cmdOff >= frame.size) return false
-        if ((frame[cmdOff].toInt() and 0xFF) != opcode) return false
+        if (!matchesReplyEnvelope(frame, cmdOff, opcode)) return false
         return verdictOk()
     }
 

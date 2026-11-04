@@ -26,7 +26,8 @@ final class DataRangeTests: XCTestCase {
     }
 
     func testReadsRealWhoop4NewestAtByteOffset8() {
-        // Three real captured frames → their true newest (offset-8 u32), all 2026-07-11 ~16:00.
+        // Three real 0x30 EVENT frames carry plausible Unix bytes at offset 8; these are NOT
+        // GET_DATA_RANGE responses. This test covers the scanner; the reply gate rejects them.
         let expected: [(String, Int)] = [
             ("aa100057305d22009968526a083900001d2e2263", 1_783_785_625), // 16:00:25
             ("aa10005730612200a268526ab0290000e87d155d", 1_783_785_634), // 16:00:34
@@ -226,4 +227,49 @@ final class DataRangeTests: XCTestCase {
         XCTAssertTrue(parseFrame(other, family: .whoop4).ok)
         XCTAssertFalse(DataRange.acceptsReply(other, cmdOff: 6, opcode: getDataRangeOpcode, verdictOK: true))
     }
+
+    /// #2736: both frames appeared as GET_DATA_RANGE in the reporter's log, even
+    /// though their inner packet types are 0x28 and EVENT (0x30), not 0x24.
+    /// Their plausible u32 timestamps must not become the stored-history frontier.
+    func testNonResponseFrameCannotMasqueradeAsDataRangeReply() {
+        let captured: [(String, UInt8, Int)] = [
+            ("aa1800ff2802227bc76a00443c0000000000000000000101fe48aadd",
+             0x28, 1_791_458_082), // 2026-10-08 11:14:42 UTC
+            ("aa100057307a2200437bc76af866000014a043a1",
+             0x30, 1_791_458_115), // 2026-10-08 11:15:15 UTC
+        ]
+        for (raw, frameType, apparentUnix) in captured {
+            let frame = hex(raw)
+            XCTAssertEqual(frame[4], frameType)
+            XCTAssertEqual(frame[6], getDataRangeOpcode)
+            // The pre-existing all-offset byte scanner finds a plausible number;
+            // the envelope guard, not the numeric range, must reject it.
+            XCTAssertEqual(DataRange.newestUnix(from: frame, wallNowUnix: 1_791_458_140,
+                                                  futureSkewSeconds: skew48h), apparentUnix)
+            XCTAssertFalse(DataRange.matchesReplyEnvelope(frame, cmdOff: 6, opcode: getDataRangeOpcode))
+            XCTAssertFalse(DataRange.acceptsReply(frame, cmdOff: 6, opcode: getDataRangeOpcode,
+                                                  verdictOK: true))
+        }
+    }
+
+    func testEnvelopeRecognizesRealRepliesOnBothFamilies() {
+        // Real WHOOP 4.0 type-0x24 reply with cmd=0x22, 83 pages behind (#791).
+        let whoop4 = hex("aa4c00a7247e220a01010000000050070100a307010050070100000000000000020035030000" +
+                         "c2fc13008046394b00000000bbe1636aa02d0000bbe1636aa02d0000c6e4636ac07c000000000447ea04")
+        // Real WHOOP 5/MG PENDING type-0x24 command response (#78).
+        let whoop5 = hex("aa010c000100271124e8220402000000c391bc3d")
+        XCTAssertEqual(whoop4[4], 0x24)
+        XCTAssertEqual(whoop5[8], 0x24)
+        XCTAssertTrue(DataRange.matchesReplyEnvelope(whoop4, cmdOff: 6, opcode: getDataRangeOpcode))
+        XCTAssertTrue(DataRange.matchesReplyEnvelope(whoop5, cmdOff: 10, opcode: getDataRangeOpcode))
+        XCTAssertTrue(DataRange.acceptsReply(whoop4, cmdOff: 6, opcode: getDataRangeOpcode,
+                                             verdictOK: true))
+        XCTAssertFalse(DataRange.matchesReplyEnvelope(whoop4, cmdOff: 1, opcode: getDataRangeOpcode))
+        var badChecksum = whoop4
+        badChecksum[3] ^= 0xFF
+        XCTAssertTrue(DataRange.matchesReplyEnvelope(badChecksum, cmdOff: 6, opcode: getDataRangeOpcode))
+        XCTAssertFalse(DataRange.acceptsReply(badChecksum, cmdOff: 6, opcode: getDataRangeOpcode,
+                                              verdictOK: parseFrame(badChecksum, family: .whoop4).ok))
+    }
+
 }
