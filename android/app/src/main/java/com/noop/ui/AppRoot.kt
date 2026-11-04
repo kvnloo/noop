@@ -216,6 +216,10 @@ internal enum class Destination(
     }
 }
 
+/** Fail closed: no unrelated or stale notification may navigate to an arbitrary page. */
+internal fun coachNotificationDestination(route: String?, coachEnabled: Boolean): String? =
+    Destination.Coach.route.takeIf { coachEnabled && route == it }
+
 /** More-page groups, mirroring the iOS More tab exactly: Insights · Body · Data · App. `defaultExpanded`
  *  mirrors the iOS S2 default: Insights + Body open at rest, Data + App collapsed to just their header. */
 // [header] is the STABLE persistence key (stored in SharedPreferences and kept byte-identical to iOS's
@@ -507,12 +511,27 @@ object BottomBarStyleStore {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(viewModel: AppViewModel = viewModel()) {
+fun AppRoot(
+    viewModel: AppViewModel = viewModel(),
+    notificationRoute: String? = null,
+    onNotificationRouteHandled: () -> Unit = {},
+) {
     val nav = rememberNavController()
 
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val current = Destination.forRoute(currentRoute)
+    // NavHost is composed before this effect runs. Only a real brief tap routes here;
+    // a normal launcher or another notification still restores the existing screen.
+    LaunchedEffect(notificationRoute) {
+        if (notificationRoute != null) {
+            val target = coachNotificationDestination(notificationRoute, BottomBarStyleStore.coachEnabled)
+            if (target != null && nav.currentDestination?.route != target) {
+                nav.navigateTopLevel(target)
+            }
+            onNotificationRouteHandled()
+        }
+    }
     var showQuickActions by remember { mutableStateOf(false) }
     // The Updates inbox sheet (opened by the Today header bell). The store is a process singleton so
     // the Today cards and the import path post to the same inbox this sheet renders.

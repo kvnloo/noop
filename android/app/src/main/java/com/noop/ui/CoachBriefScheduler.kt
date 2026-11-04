@@ -198,7 +198,7 @@ object CoachBriefScheduler {
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
-                        context, 5, appLaunchIntent(context),
+                        context, 5, coachBriefLaunchIntent(context),
                         android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
                     ),
                 )
@@ -221,7 +221,7 @@ object CoachBriefScheduler {
                 .setContentText(context.getString(R.string.coach_brief_unavailable_body))
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
-                        context, 6, appLaunchIntent(context),
+                        context, 6, coachBriefLaunchIntent(context),
                         android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
                     ),
                 )

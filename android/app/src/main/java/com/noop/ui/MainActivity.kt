@@ -58,6 +58,27 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  */
 class MainActivity : ComponentActivity() {
 
+    // A notification tap is a one-shot request, not the app's saved navigation state.
+    // Snapshot state reaches Compose whether Android cold-starts us or calls onNewIntent.
+    private var pendingNotificationRoute by mutableStateOf<String?>(null)
+
+    private fun captureNotificationRoute(from: Intent?) {
+        val route = from?.getStringExtra(EXTRA_NOTIFICATION_ROUTE)
+        from?.removeExtra(EXTRA_NOTIFICATION_ROUTE) // never replay on Activity recreation
+        if (route == Destination.Coach.route) pendingNotificationRoute = route
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureNotificationRoute(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_PENDING_NOTIFICATION_ROUTE, pendingNotificationRoute)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppLanguagePrefs.wrap(newBase))
     }
@@ -70,6 +91,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingNotificationRoute = savedInstanceState?.getString(STATE_PENDING_NOTIFICATION_ROUTE)
+        captureNotificationRoute(intent)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         // NOTE: `crash` stays RAW here on purpose. acknowledge() fingerprints what it is given, and
         // pendingCrash() fingerprints the stored file — hand it redacted text and the two hashes never
@@ -153,7 +176,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NoopTheme {
-                NoopRoot()
+                NoopRoot(
+                    notificationRoute = pendingNotificationRoute,
+                    onNotificationRouteHandled = { pendingNotificationRoute = null },
+                )
             }
         }
     }
@@ -226,6 +252,14 @@ internal fun appLaunchIntent(context: Context): Intent =
                     Intent.FLAG_ACTIVITY_CLEAR_TOP,
             )
         }
+
+/** Internal route request carried only by Coach morning-brief notifications. */
+internal const val EXTRA_NOTIFICATION_ROUTE = "com.noop.ui.NOTIFICATION_ROUTE"
+private const val STATE_PENDING_NOTIFICATION_ROUTE = "pendingNotificationRoute"
+
+/** Keep the existing launcher flags; only Coach brief taps request the Coach destination. */
+internal fun coachBriefLaunchIntent(context: Context): Intent =
+    appLaunchIntent(context).putExtra(EXTRA_NOTIFICATION_ROUTE, Destination.Coach.route)
 
 // MARK: - First-run / changelog gating (mirrors macOS ContentView.swift)
 //
@@ -1578,7 +1612,10 @@ object NoopPrefs {
  * state on each transition.
  */
 @Composable
-fun NoopRoot() {
+fun NoopRoot(
+    notificationRoute: String? = null,
+    onNotificationRouteHandled: () -> Unit = {},
+) {
     val context = LocalContext.current
     val prefs = remember { NoopPrefs.of(context) }
     val appViewModel: AppViewModel = viewModel()
@@ -1665,7 +1702,11 @@ fun NoopRoot() {
 
     // Existing, onboarded user: render the app, and if they've updated since last launch
     // (stored version behind current), show "What's New" once over the top.
-    AppRoot(viewModel = appViewModel)
+    AppRoot(
+        viewModel = appViewModel,
+        notificationRoute = notificationRoute,
+        onNotificationRouteHandled = onNotificationRouteHandled,
+    )
 
     if (lastSeenChangelog != AppChangelog.CURRENT_VERSION) {
         Dialog(
