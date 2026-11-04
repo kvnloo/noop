@@ -1,6 +1,7 @@
 import XCTest
 import SQLite3
 import ZIPFoundation
+import WhoopStore
 @testable import Strand
 
 /// Real file-I/O tests for the Backup & Sync restore path - not string logic (must-fix #5).
@@ -58,6 +59,129 @@ final class BackupSyncRoundTripTests: XCTestCase {
         }
         XCTAssertEqual(try deviceRows(in: liveDB), ["my-whoop", "watch"],
                        "Restored DB should hold exactly the backed-up rows")
+    }
+
+    // MARK: - Deleted-sleep suppression (#2720)
+
+    func testDeletedSleepMarkersAndVisibilitySurviveFreshRestore() throws {
+        let sourceDB = tmp.appendingPathComponent("deleted-source.sqlite")
+        try makeNoopDatabase(at: sourceDB, deviceRows: ["my-whoop"])
+        let sourceDefaults = try freshDefaults()
+        let first = "1700000000:1700028800"  // 28,800 s = 8 h
+        let second = "1700086400:1700115200"
+        sourceDefaults.set([first, second], forKey: Repository.dismissedSleepDefaultsKey)
+        sourceDefaults.set([second], forKey: "sleep.dismissedSessions.hiddenFromList")
+
+        let backup = tmp.appendingPathComponent("deleted.noopbak")
+        try DataBackup.writeBackupForTesting(databaseAt: sourceDB, to: backup,
+                                             deletedSleepDefaults: sourceDefaults)
+        let archive = try XCTUnwrap(Archive(url: backup, accessMode: .read))
+        XCTAssertTrue(archive.contains { $0.path == "sleep-deletions.json" })
+        XCTAssertFalse(archive.contains { $0.path == "settings.json" },
+                       "Deletion metadata must not depend on whitelisted profile settings")
+
+        let targetDefaults = try freshDefaults()
+        let restoredDB = tmp.appendingPathComponent("deleted-restored.sqlite")
+        guard case .imported = DataBackup.restore(from: backup, toDatabaseAt: restoredDB.path,
+                                                  settingsDefaults: targetDefaults) else {
+            return XCTFail("Fresh restore of a valid deletion snapshot must succeed")
+        }
+        XCTAssertEqual(try deviceRows(in: restoredDB), ["my-whoop"])
+        XCTAssertEqual(targetDefaults.stringArray(forKey: Repository.dismissedSleepDefaultsKey),
+                       [first, second])
+        XCTAssertEqual(targetDefaults.stringArray(forKey: "sleep.dismissedSessions.hiddenFromList"),
+                       [second])
+        let windows = DismissedSleepSpans.windows(
+            from: targetDefaults.stringArray(forKey: Repository.dismissedSleepDefaultsKey) ?? [])
+        XCTAssertTrue(DismissedSleepSpans.isSuppressed(sessionStart: 1_700_010_000,
+                                                       sessionEnd: 1_700_013_600, windows: windows))
+        XCTAssertFalse(DismissedSleepSpans.isSuppressed(sessionStart: 1_700_200_000,
+                                                        sessionEnd: 1_700_203_600, windows: windows))
+    }
+
+    func testExplicitEmptyDeletionSnapshotClearsExistingSuppression() throws {
+        let sourceDB = tmp.appendingPathComponent("empty-source.sqlite")
+        try makeNoopDatabase(at: sourceDB, deviceRows: ["replacement"])
+        let backup = tmp.appendingPathComponent("empty-deletions.noopbak")
+        try DataBackup.writeBackupForTesting(databaseAt: sourceDB, to: backup,
+                                             deletedSleepDefaults: freshDefaults())
+        let target = try freshDefaults()
+        target.set(["1700000000:1700028800"], forKey: Repository.dismissedSleepDefaultsKey)
+        target.set(["1700000000:1700028800"], forKey: "sleep.dismissedSessions.hiddenFromList")
+        let restored = tmp.appendingPathComponent("empty-target.sqlite")
+        guard case .imported = DataBackup.restore(from: backup, toDatabaseAt: restored.path,
+                                                  settingsDefaults: target) else {
+            return XCTFail("Explicitly empty deletion snapshot must restore")
+        }
+        XCTAssertEqual(try deviceRows(in: restored), ["replacement"])
+        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), [])
+        XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions.hiddenFromList"), [])
+    }
+
+    func testLegacyBackupWithoutDeletionMetadataDoesNotClearExistingSuppression() throws {
+        let sourceDB = tmp.appendingPathComponent("old-source.sqlite")
+        try makeNoopDatabase(at: sourceDB, deviceRows: ["older"])
+        let backup = tmp.appendingPathComponent("old-format.noopbak")
+        try DataBackup.writeBackupForTesting(databaseAt: sourceDB, to: backup)
+        let target = try freshDefaults()
+        let existing = ["1700000000:1700028800"]
+        target.set(existing, forKey: Repository.dismissedSleepDefaultsKey)
+        let restored = tmp.appendingPathComponent("old-target.sqlite")
+        guard case .imported = DataBackup.restore(from: backup, toDatabaseAt: restored.path,
+                                                  settingsDefaults: target) else {
+            return XCTFail("Older .noopbak must remain compatible")
+        }
+        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), existing)
+        XCTAssertNil(target.object(forKey: "sleep.dismissedSessions.hiddenFromList"))
+        XCTAssertEqual(try deviceRows(in: restored), ["older"])
+    }
+
+    func testMalformedDeletionMetadataRejectsRestoreBeforeDatabaseSwap() throws {
+        let sourceDB = tmp.appendingPathComponent("malformed-source.sqlite")
+        try makeNoopDatabase(at: sourceDB, deviceRows: ["replacement"])
+        let invalid = tmp.appendingPathComponent("malformed.json")
+        try Data(#"{"version":1,"scope":"global","spans":["bad"],"hiddenFromList":[]}"#.utf8)
+            .write(to: invalid)
+        let backup = tmp.appendingPathComponent("malformed.noopbak")
+        let archive = try XCTUnwrap(Archive(url: backup, accessMode: .create))
+        try archive.addEntry(with: "noop-backup.sqlite", fileURL: sourceDB)
+        try archive.addEntry(with: "sleep-deletions.json", fileURL: invalid)
+
+        let live = tmp.appendingPathComponent("malformed-target.sqlite")
+        try makeNoopDatabase(at: live, deviceRows: ["original"])
+        let originalBytes = try Data(contentsOf: live)
+        let target = try freshDefaults()
+        let existing = ["1700000000:1700028800"]
+        target.set(existing, forKey: Repository.dismissedSleepDefaultsKey)
+        guard case .failure = DataBackup.restore(from: backup, toDatabaseAt: live.path,
+                                                 settingsDefaults: target) else {
+            return XCTFail("Invalid suppression metadata must block a DB swap")
+        }
+        XCTAssertEqual(try Data(contentsOf: live), originalBytes)
+        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), existing)
+    }
+
+    func testOversizedDeletionMetadataRejectsWithoutOversizeOverride() throws {
+        let sourceDB = tmp.appendingPathComponent("large-source.sqlite")
+        try makeNoopDatabase(at: sourceDB, deviceRows: ["replacement"])
+        let oversized = tmp.appendingPathComponent("oversized.json")
+        try Data(repeating: 0x20, count: 131_073).write(to: oversized)
+        let backup = tmp.appendingPathComponent("oversized.noopbak")
+        let archive = try XCTUnwrap(Archive(url: backup, accessMode: .create))
+        try archive.addEntry(with: "noop-backup.sqlite", fileURL: sourceDB)
+        try archive.addEntry(with: "sleep-deletions.json", fileURL: oversized)
+        let live = tmp.appendingPathComponent("large-target.sqlite")
+        try makeNoopDatabase(at: live, deviceRows: ["original"])
+        let bytes = try Data(contentsOf: live)
+        let target = try freshDefaults()
+        target.set(["1700000000:1700028800"], forKey: Repository.dismissedSleepDefaultsKey)
+        guard case .failure = DataBackup.restore(from: backup, toDatabaseAt: live.path,
+                                                 settingsDefaults: target, allowOversize: true) else {
+            return XCTFail("Metadata size limit may not be overridden")
+        }
+        XCTAssertEqual(try Data(contentsOf: live), bytes)
+        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey),
+                       ["1700000000:1700028800"])
     }
 
     // MARK: - Settings round trip (#1000: restore brings back weight/height/settings)
