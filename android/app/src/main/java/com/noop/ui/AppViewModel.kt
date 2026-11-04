@@ -33,6 +33,7 @@ import com.noop.location.GpsSession
 import kotlinx.coroutines.Job
 import com.noop.ble.HrBroadcaster
 import com.noop.ble.LiveState
+import com.noop.ble.pendingDoubleTaps
 import com.noop.ble.PuffinExperiment
 import com.noop.ble.WhoopConnectionService
 import com.noop.ble.WhoopModel
@@ -669,13 +670,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** What a strap double-tap triggers. */
     val doubleTapAction: StateFlow<DoubleTapAction> = _doubleTapAction.asStateFlow()
 
-    /** Last strap [LiveState.lastEvent] the double-tap dispatch acted on, so a single physical tap fires
-     *  exactly once: a DOUBLE_TAP event lingers in lastEvent (it's the most-recent event) and the
-     *  collector re-runs on every LiveState emission, so we only dispatch on a FRESH transition into a
-     *  DOUBLE_TAP event. Mirrors the iOS AppModel debounce (lastDoubleTapAt). Seeded with whatever event
-     *  is already current so a ViewModel recreated right after a double-tap (e.g. a screen rotation, the
-     *  process-owned BLE client keeps the old lastEvent) treats it as already-handled, not a fresh tap. */
-    private var lastDispatchedEvent: String? = ble.state.value.lastEvent
+    /** An occurrence cursor, not lastEvent text (every physical tap has the same event name).
+     *  Seed from the process-owned BLE client so ViewModel recreation cannot replay older gestures. */
+    private var lastDispatchedDoubleTapSeq: Long = ble.state.value.doubleTapSeq
 
     // PHONE smart alarm (#207) — distinct from the strap-firmware buzz alarm above. The state lives in
     // its own [SmartAlarmStore]; the GUARANTEED wake is an exact OS alarm via [SmartAlarmScheduler],
@@ -3110,22 +3107,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun testDoubleTapAction() = runDoubleTapAction(_doubleTapAction.value)
 
     /**
-     * Dispatch the double-tap action when the strap reports a FRESH double-tap. The BLE client already
-     * surfaces the gesture as [LiveState.lastEvent] = "DOUBLE_TAP(14)" (WhoopBleClient onInbound) — it
-     * does NOT change the decode; this just consumes the event it already publishes. Debounced on the
-     * event identity: [lastEvent] keeps its last value across many LiveState emissions, so without the
-     * [lastDispatchedEvent] guard a single tap would fire on every subsequent emission. Mirrors the iOS
-     * AppModel.handleDoubleTap (which debounces on a 1.2s window over the same onDoubleTap closure).
+     * Consume the BLE client's accepted double-tap sequence, not the last EVENT name: two
+     * genuine taps both say "DOUBLE_TAP(14)". Count the delta because StateFlow may conflate
+     * rapid emissions; never repeat an action for an unchanged snapshot.
      */
     private fun dispatchDoubleTap(state: LiveState) {
-        val ev = state.lastEvent
-        if (ev == lastDispatchedEvent) return       // not a fresh event since we last looked
-        lastDispatchedEvent = ev
-        if (ev == null || !ev.startsWith("DOUBLE_TAP")) return
+        val pending = pendingDoubleTaps(lastDispatchedDoubleTapSeq, state.doubleTapSeq)
+        lastDispatchedDoubleTapSeq = state.doubleTapSeq
+        if (pending == 0L) return
         val action = _doubleTapAction.value
         if (action == DoubleTapAction.NONE) return
-        ble.externalLog("Double-tap -> ${action.label}")
-        runDoubleTapAction(action)
+        for (ignored in 0L until pending) {
+            ble.externalLog("Double-tap -> ${action.label}")
+            runDoubleTapAction(action)
+        }
     }
 
     /** Execute one double-tap action using the primitives that already exist on Android. In-app side
