@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_connect_writer_apps">Schreibende Apps (keine Uhrenmodelle)</string>
+    <string name="health_connect_writer_more">+%1$d</string>
+</resources>
