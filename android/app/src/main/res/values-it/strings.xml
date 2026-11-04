@@ -2832,4 +2832,6 @@
     <string name="oura_z0live_notification_channel">Gesti Oura</string>
     <string name="oura_z0live_notification_title">Gesto Oura rilevato</string>
     <string name="oura_z0live_notification_body">Tocca per aprire i comandi z0live; il microfono non viene attivato automaticamente.</string>
+    <string name="oura_standby_channel">Gestione dei gesti dell’anello</string>
+    <string name="oura_standby_notification">Rilevamento dei tocchi sull’anello. La registrazione vocale sospende le azioni della chiamata per un massimo di 10 minuti.</string>
 </resources>

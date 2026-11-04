@@ -13,9 +13,10 @@ import java.io.Writer
  * One CSV per capture. Times are the phone's monotonic clock (`elapsedRealtime`, ms) at arrival.
  *   `# noop-oura-acm v2 label=<label> gen=<generation>`
  *   `f,<ms>,<raw hex of the whole 0x33 frame>,<x1>,<y1>,<z1>[,<x2>,<y2>,<z2>]` (no axes = codec rejected it)
+ *   `s,<sample ms>,<phone elapsed ms>,<x>,<y>,<z>` exact ordered detector inputs and label clock mapping
  *   `m,<ms>,<label>`   a ground-truth mark (the user pressed MARK / volume-down)
  *   `g,<ms>,<gesture>` what the current detector emitted
- *   `b,<ms>,<peak>,<quiet level>,<impacts>,<first spacing ms or -1>,<duration ms>,<verdict>,<gesture or ->`
+ *   `b,<ms>,<peak>,<quiet level>,<impacts>,<first spacing ms or -1>,<duration ms>,<verdict>,<gesture or ->,<stillness>,<last impact ms or -1>`
  *      one detector burst ([OuraTapDetector.Burst]); `<ms>` is the detector's sample clock
  *   `k,<ms>,<start|end|abort>,<block index>,<block id>,<kind>,<taps>,<intensity>,<reps>,<period ms>,<duration ms>`
  *      a guided-recording block boundary ([OuraGuidedPlan]); `start` is when the first cue fires
@@ -25,7 +26,7 @@ import java.io.Writer
  * Thread-safe: frames arrive on the GATT binder thread, marks on main.
  */
 class OuraAcmRecorder(private val out: Writer, label: String, generation: String) {
-    var frames = 0
+    @Volatile var frames = 0
         private set
     var undecoded = 0
         private set
@@ -49,6 +50,12 @@ class OuraAcmRecorder(private val out: Writer, label: String, generation: String
         out.write(sb.append('\n').toString())
     }
 
+    /** Exact detector input clock, plus phone monotonic time for voice-label alignment. */
+    @Synchronized
+    fun sample(sampleMs: Long, elapsedMs: Long, x: Int, y: Int, z: Int) {
+        if (!closed) out.write("s,$sampleMs,$elapsedMs,$x,$y,$z\n")
+    }
+
     @Synchronized
     fun mark(elapsedMs: Long, label: String) {
         if (closed) return
@@ -66,7 +73,7 @@ class OuraAcmRecorder(private val out: Writer, label: String, generation: String
     fun burst(b: OuraTapDetector.Burst) {
         if (closed) return
         out.write("b,${b.atMs},${b.peak},${b.quietLevel},${b.impacts},${b.firstSpacingMs},${b.durationMs}," +
-            "${b.verdict.name},${b.gesture?.name ?: "-"}\n")
+            "${b.verdict.name},${b.gesture?.name ?: "-"},${b.stillness},${b.lastImpactMs}\n")
     }
 
     @Synchronized

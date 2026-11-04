@@ -2880,4 +2880,6 @@
     <string name="oura_z0live_notification_channel">Gesty Oura</string>
     <string name="oura_z0live_notification_title">Wykryto gest Oura</string>
     <string name="oura_z0live_notification_body">Dotknij, aby otworzyć sterowanie z0live; mikrofon nie włączy się automatycznie.</string>
+    <string name="oura_standby_channel">Czuwanie gestów pierścienia</string>
+    <string name="oura_standby_notification">Nasłuchiwanie stuknięć w pierścień. Nagrywanie głosowe wstrzymuje działania połączenia na maksymalnie 10 minut.</string>
 </resources>

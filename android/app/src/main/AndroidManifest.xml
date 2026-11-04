@@ -45,6 +45,7 @@
 
     <!-- Keep the BLE link alive while collecting/offloading in the background. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
         tools:targetApi="34" />
@@ -245,6 +246,9 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <service android:name="com.noop.ble.gesture.OuraGestureRecordingService"
+            android:exported="false" android:foregroundServiceType="connectedDevice" />
 
         <!-- Keeps the WHOOP connection alive while the app is backgrounded or closed. Not exported;
              started/stopped only from within the app, gated by the "Keep connected in the

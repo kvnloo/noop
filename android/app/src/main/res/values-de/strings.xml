@@ -2877,4 +2877,6 @@
     <string name="oura_z0live_notification_channel">Oura-Gesten</string>
     <string name="oura_z0live_notification_title">Oura-Geste erkannt</string>
     <string name="oura_z0live_notification_body">Tippe, um die z0live-Steuerung zu öffnen; das Mikrofon wird nicht automatisch aktiviert.</string>
+    <string name="oura_standby_channel">Ring-Gestenbereitschaft</string>
+    <string name="oura_standby_notification">Wartet auf Ring-Tipps. Sprachaufnahmen unterdrücken Anrufaktionen für bis zu 10 Minuten.</string>
 </resources>

@@ -96,6 +96,18 @@ class OuraTapDetectorTest {
         }
     }
 
+    @Test fun quintupleAndQuadrupleNeverBecomeCallActionsAtMeasuredCadence() {
+        for (n in listOf(4, 5)) {
+            val f = Fixture()
+            f.step(50)
+            repeat(n) { f.tap(700); f.step(10) }
+            f.step(50)
+            assertTrue("$n taps emitted ${f.gestures}", f.gestures.none {
+                it == OuraTapDetector.Gesture.DOUBLE_TAP || it == OuraTapDetector.Gesture.TRIPLE_TAP
+            })
+        }
+    }
+
     @Test fun aSingleTapOrTwoTapsTooFarApartAreNotGestures() {
         val single = Fixture().apply { step(50); tap(1500); step(60) }
         assertEquals(none, single.gestures)

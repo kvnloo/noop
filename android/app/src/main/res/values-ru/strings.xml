@@ -2759,4 +2759,6 @@
     <string name="oura_z0live_notification_channel">Жесты Oura</string>
     <string name="oura_z0live_notification_title">Обнаружен жест Oura</string>
     <string name="oura_z0live_notification_body">Нажмите, чтобы открыть управление z0live; микрофон не включается автоматически.</string>
+    <string name="oura_standby_channel">Ожидание жестов кольца</string>
+    <string name="oura_standby_notification">Распознавание касаний кольца. Голосовая запись отключает действия вызова на срок до 10 минут.</string>
 </resources>

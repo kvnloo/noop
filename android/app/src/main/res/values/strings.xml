@@ -2893,4 +2893,6 @@
     <string name="oura_z0live_notification_channel">Oura gestures</string>
     <string name="oura_z0live_notification_title">Oura gesture detected</string>
     <string name="oura_z0live_notification_body">Tap to open z0live controls; microphone is not started automatically.</string>
+    <string name="oura_standby_channel">Ring gesture standby</string>
+    <string name="oura_standby_notification">Listening for ring taps. Voice recording suppresses call actions for up to 10 minutes.</string>
 </resources>

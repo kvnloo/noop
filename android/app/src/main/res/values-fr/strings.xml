@@ -2863,4 +2863,6 @@
     <string name="oura_z0live_notification_channel">Gestes Oura</string>
     <string name="oura_z0live_notification_title">Geste Oura détecté</string>
     <string name="oura_z0live_notification_body">Appuyez pour ouvrir les commandes z0live ; le microphone ne démarre pas automatiquement.</string>
+    <string name="oura_standby_channel">Veille des gestes de la bague</string>
+    <string name="oura_standby_notification">Détection des taps de la bague. L’enregistrement vocal suspend les actions d’appel pendant 10 minutes au maximum.</string>
 </resources>

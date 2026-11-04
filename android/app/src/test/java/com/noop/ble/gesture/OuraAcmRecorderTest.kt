@@ -17,6 +17,7 @@ class OuraAcmRecorderTest {
             0x8c.toByte(), 0x01, 0xfe.toByte(), 0x00, 0x94.toByte(), 0x00, 0xdf.toByte(), 0xfc.toByte())
         rec.frame(1000, wire, OuraAcmCodec.decode(wire))
         rec.frame(1040, byteArrayOf(0x33, 0x01, 0x00), emptyList())
+        rec.sample(1080, 1078, 1, 2, 3)
         rec.mark(1500, "normal")
         rec.gesture(1600, "DOUBLE_TAP")
         rec.burst(OuraTapDetector.Burst(1200, 812, 150, 2, 200, 300, OuraTapDetector.Verdict.GESTURE,
@@ -27,9 +28,10 @@ class OuraAcmRecorderTest {
             "# noop-oura-acm v2 label=normal gen=OuraRing4\n" +
                 "f,1000,330e324e5e0299028c01fe009400dffc,606,665,396,254,148,-801\n" +
                 "f,1040,330100\n" +
+                "s,1080,1078,1,2,3\n" +
                 "m,1500,normal\n" +
                 "g,1600,DOUBLE_TAP\n" +
-                "b,1200,812,150,2,200,300,GESTURE,DOUBLE_TAP\n",
+                "b,1200,812,150,2,200,300,GESTURE,DOUBLE_TAP,0,-1\n",
             w.toString(),
         )
         assertEquals(2, rec.frames)

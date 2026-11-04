@@ -51,6 +51,8 @@ class OuraTapDetector(
     private val stillnessSamples: Int = 25,
     /** 0 turns the stillness gate off. */
     private val maxStillness: Int = 60,
+    /** Experimental motion exception; 0 retains the strict gate for comparison. */
+    private val movingPeakMultiplier: Int = 0,
     /**
      * Diagnostic only; never changes a decision. Called once per closed burst whose peak reached half of
      * [minPeak], so a missed tap can be explained from the log (too weak, one impact, too long, ...).
@@ -79,6 +81,7 @@ class OuraTapDetector(
         val verdict: Verdict,
         val gesture: Gesture?,
         val stillness: Int = 0,
+        val lastImpactMs: Long = -1,
     )
 
     private val history = IntArray(floorWindow)
@@ -99,6 +102,7 @@ class OuraTapDetector(
     private var magnitudeCount = 0
     private var magnitudeNext = 0
     private var stillness = 0
+    private var lastImpactMs = -1L
 
     private var hasPrevious = false
     private var px = 0
@@ -222,6 +226,7 @@ class OuraTapDetector(
 
     private fun close(atMs: Long): Gesture? {
         inBurst = false
+        lastImpactMs = -1
         quiet = below
         val length = burstLength - minOf(below, burstLength)
         if (length <= 0) return null
@@ -230,7 +235,8 @@ class OuraTapDetector(
         val durationMs = length.toLong() * NOMINAL_SAMPLE_MS
         if (tooLong || length > maxBurstSamples) return report(atMs, peak, 0, -1, durationMs, Verdict.TOO_LONG, null)
         if (peak < minPeak) return report(atMs, peak, 0, -1, durationMs, Verdict.TOO_WEAK, null)
-        if (maxStillness > 0 && stillness > maxStillness) {
+        if (maxStillness > 0 && stillness > maxStillness &&
+            (movingPeakMultiplier == 0 || peak < maxOf(900, quietLevel * movingPeakMultiplier))) {
             return report(atMs, peak, 0, -1, durationMs, Verdict.MOVING, null)
         }
 
@@ -249,6 +255,7 @@ class OuraTapDetector(
                 impactAt[count++] = i
             }
         }
+        if (count > 0) lastImpactMs = atMs - (below + length - 1 - impactAt[count - 1]) * NOMINAL_SAMPLE_MS
         val firstSpacing = if (count >= 2) (impactAt[1] - impactAt[0]).toLong() * NOMINAL_SAMPLE_MS else -1L
         if (count < 2 || count > MAX_IMPACTS) {
             return report(atMs, peak, count, firstSpacing, durationMs, Verdict.IMPACT_COUNT, null)
@@ -273,7 +280,7 @@ class OuraTapDetector(
     ): Gesture? {
         val obs = observer
         if (obs != null && peak * 2 >= minPeak) {
-            obs(Burst(atMs, peak, quietLevel, impacts, firstSpacingMs, durationMs, verdict, gesture, stillness))
+            obs(Burst(atMs, peak, quietLevel, impacts, firstSpacingMs, durationMs, verdict, gesture, stillness, lastImpactMs))
         }
         return gesture
     }

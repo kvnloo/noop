@@ -26,6 +26,8 @@ class OuraGestureStandby private constructor(private val app: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
     private val broker by lazy { OuraGestureBroker(app) }
+    private val recording by lazy { OuraVoiceRecording.get(app) }
+    private var pollInFlight = false
     private var started = false
     private var screenHold = false
     private var ownsCapture = false
@@ -60,6 +62,10 @@ class OuraGestureStandby private constructor(private val app: Context) {
     fun startIfEnabled() {
         if (!enabled || started) return
         started = true
+        runCatching {
+            androidx.core.content.ContextCompat.startForegroundService(app,
+                android.content.Intent(app, OuraGestureRecordingService::class.java))
+        }.onFailure { log("Oura: standby foreground admission refused; open setup to enable") }
         log("Oura: always-listen on - starting the ring source and gesture standby")
         coordinator.start()
         main.removeCallbacks(tick)
@@ -75,6 +81,8 @@ class OuraGestureStandby private constructor(private val app: Context) {
             startIfEnabled()
         } else {
             started = false
+            recording.finish("standby_off")
+            app.stopService(android.content.Intent(app, OuraGestureRecordingService::class.java))
             main.removeCallbacks(tick)
             if (ownsCapture) coordinator.stopActiveOuraGestureCapture()
             ownsCapture = false
@@ -86,6 +94,7 @@ class OuraGestureStandby private constructor(private val app: Context) {
     /** The setup screen arms its own capture (debug/guided recording): stand aside until it lets go. */
     fun holdForScreen(hold: Boolean) {
         if (screenHold == hold) return
+        if (hold) recording.finish("screen_takeover")
         screenHold = hold
         if (hold && ownsCapture) {
             coordinator.stopActiveOuraGestureCapture()
@@ -121,16 +130,28 @@ class OuraGestureStandby private constructor(private val app: Context) {
             }
             OuraGestureStandbyPolicy.Action.IDLE -> Unit
         }
-        if (enabled && !screenHold && broker.configured) {
+        if (enabled && !screenHold && broker.configured && !pollInFlight) {
+            pollInFlight = true
             io.execute {
                 if (SystemClock.elapsedRealtime() - leaseAtMs >= LEASE_RENEW_MS || leaseAtMs == 0L) {
                     leaseAtMs = if (runCatching { broker.claim(LEASE_SECONDS) }.isSuccess) SystemClock.elapsedRealtime() else 0L
+                }
+                val sent = SystemClock.elapsedRealtime()
+                val response = runCatching { broker.recordingCommands() }.getOrNull()
+                val received = SystemClock.elapsedRealtime()
+                main.post {
+                    pollInFlight = false
+                    if (response != null) {
+                        val report = recording.sync(response, sent, received, enabled && !screenHold && listening && OuraGestureRecordingService.running)
+                        if (report != null) io.execute { runCatching { broker.recordingReport(report) } }
+                    }
                 }
             }
         }
     }
 
     private fun onGesture(gesture: OuraTapDetector.Gesture) {
+        if (recording.active) return
         val name = when (gesture) {
             OuraTapDetector.Gesture.DOUBLE_TAP -> "double_tap"
             OuraTapDetector.Gesture.TRIPLE_TAP -> "triple_tap"
@@ -160,7 +181,7 @@ class OuraGestureStandby private constructor(private val app: Context) {
         private const val PREFS = "oura_gesture_standby"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_CALIBRATED = "calibrated"
-        private const val TICK_MS = 10_000L
+        private const val TICK_MS = 1_000L
         /** The broker caps a lease at 300 s; renew at well under half of that. */
         private const val LEASE_SECONDS = 300
         private const val LEASE_RENEW_MS = 120_000L

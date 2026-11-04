@@ -697,10 +697,13 @@ class OuraLiveSource(
             for (axis in axes) {
                 val stamp = maxOf(SystemClock.elapsedRealtime(), lastTapSampleMs + 20)
                 lastTapSampleMs = stamp
+                acmRecorder?.sample(stamp, SystemClock.elapsedRealtime(), axis.x, axis.y, axis.z)
                 val gesture = tapDetector.sample(stamp, axis.x, axis.y, axis.z)
                 if (gesture != null && epoch == tapEpoch) {
                     acmGestures++
-                    tapSink?.invoke(gesture)
+                    val recording = com.noop.ble.gesture.OuraVoiceRecording.get(appContext)
+                    recording.decision(stamp, gesture)
+                    if (!recording.active) tapSink?.invoke(gesture)
                 }
             }
         }

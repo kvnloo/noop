@@ -14,7 +14,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Downstream-only, explicit one-way gesture export to the owner's paired broker. No BLE changes. */
+/** Explicit opt-in gesture export and bounded diagnostic controls from the owner's paired broker. No raw ACM export. */
 class OuraGestureBroker(context: Context) {
     private val file = java.io.File(context.noBackupFilesDir, "oura-gesture-broker")
     private var device: String? = null
@@ -86,6 +86,9 @@ class OuraGestureBroker(context: Context) {
         device = null
         request("/v1/gesture/listener", JSONObject().put("source_device", id).put("enabled", false).put("ttl_seconds", 1))
     }
+    fun recordingCommands(): JSONObject = request("/v1/gesture/commands")
+    fun recordingReport(report: JSONObject) { request("/v1/gesture/recording-report", report) }
+
     fun send(gesture: String): Boolean {
         require(gesture == "double_tap" || gesture == "triple_tap")
         val id = checkNotNull(device)

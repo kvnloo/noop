@@ -2834,4 +2834,6 @@
     <string name="oura_z0live_notification_channel">Oura 手势</string>
     <string name="oura_z0live_notification_title">检测到 Oura 手势</string>
     <string name="oura_z0live_notification_body">点按以打开 z0live 控件；麦克风不会自动启动。</string>
+    <string name="oura_standby_channel">戒指手势待命</string>
+    <string name="oura_standby_notification">正在检测戒指轻敲。语音录制期间将暂停通话手势操作，最长 10 分钟。</string>
 </resources>
