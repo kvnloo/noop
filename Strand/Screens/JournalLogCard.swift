@@ -42,6 +42,9 @@ struct JournalLogCard: View {
     @State private var customDraft = ""
     @State private var customIsNumeric = false
     @State private var customGroup: JournalGroup = .other
+    @State private var habitComposerExpanded = false
+    @State private var habitCue = ""
+    @State private var habitAction = ""
     /// Edit mode: swaps the answer controls for rename/group/convert/remove and reveals hidden items.
     @State private var editing = false
     /// Collapsed groups (persisted per group).
@@ -125,6 +128,10 @@ struct JournalLogCard: View {
                         groupBlock(group)
                     }
 
+                    if !editing {
+                        Divider().overlay(StrandPalette.hairline)
+                        twoMinuteHabitComposer
+                    }
                     Divider().overlay(StrandPalette.hairline)
                     addRow
                 }
@@ -311,6 +318,63 @@ struct JournalLogCard: View {
         }
         .padding(NoopMetrics.space4)
         .frame(minWidth: 320)
+    }
+
+    // MARK: - Two-minute habit (same canonical Journal question as Android)
+
+    private var twoMinuteHabitComposer: some View {
+        // Resolve String Catalog entries outside Text(...). The i18n audit treats
+        // nested table-name literals inside Text as untranslated UI copy.
+        let description = String(localized: "Choose a cue and a tiny action. Save as a Journal question, then mark Yes or No yourself.", table: "HabitStacking")
+        let addLabel = String(localized: "Add to Journal", table: "HabitStacking")
+        let existingLabel = String(localized: "Already in your Journal", table: "HabitStacking")
+        let title = String(localized: "Two-minute habit", table: "HabitStacking")
+        let proposal = twoMinuteHabitQuestion(habitCue, habitAction)
+        // Include hidden questions: addCustom would reject the duplicate, so the
+        // composer must not imply success for a previously hidden custom item.
+        let exists = proposal.map { question in
+            catalog.resolvedItems(imported: importedQuestions, includeHidden: true)
+                .contains { JournalCatalogStore.norm($0.canonical) == JournalCatalogStore.norm(question) }
+        } ?? false
+
+        return DisclosureGroup(isExpanded: $habitComposerExpanded) {
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                Text(verbatim: description)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField(String(localized: "After this cue", table: "HabitStacking"), text: $habitCue)
+                    .textFieldStyle(.roundedBorder)
+                TextField(String(localized: "Do this small action", table: "HabitStacking"), text: $habitAction)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button {
+                        guard let question = proposal, !exists else { return }
+                        // Adds metadata only. Explicit Journal taps own Yes/No.
+                        catalog.addCustom(question, kind: .bool, group: .behaviour)
+                        var collapsed = collapsedGroups
+                        collapsed.remove(JournalGroup.behaviour.rawValue)
+                        collapsedGroupsRaw = collapsed.sorted().joined(separator: ",")
+                        habitCue = ""
+                        habitAction = ""
+                    } label: {
+                        Text(verbatim: addLabel)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(proposal == nil || exists)
+                    if exists {
+                        Text(verbatim: existingLabel)
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
+                }
+            }
+            .padding(.top, NoopMetrics.gap)
+        } label: {
+            Text(verbatim: title)
+                .font(StrandFont.body)
+                .foregroundStyle(StrandPalette.textPrimary)
+        }
     }
 
     // MARK: - Add row
