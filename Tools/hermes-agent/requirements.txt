@@ -1,0 +1,7 @@
+# Hermes-side NOOP agent client (runs on the Hermes host, never in the app).
+#   uv venv --python 3.12 /mnt/zer0models/venvs/noop-agent-pii
+#   uv pip install --python /mnt/zer0models/venvs/noop-agent-pii/bin/python -r requirements.txt
+mcp>=1.2,<2
+presidio-analyzer>=2.2,<3
+presidio-anonymizer>=2.2,<3
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
