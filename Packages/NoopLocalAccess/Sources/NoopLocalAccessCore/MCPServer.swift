@@ -227,6 +227,16 @@ public func toolsList() -> JSONValue {
                     "days": integerProperty("Trailing days to include, default 90, max 4000."),
                 ]
             ),
+            tool(
+                name: "sleep_stages",
+                title: "Sleep Stages",
+                description: "Return a bounded sleep hypnogram from stored sleepSession.stagesJSON. sleep_summary stays summary-only (hasStages). Segment arrays keep timing; minute aggregates do not invent a timeline.",
+                properties: [
+                    "days": integerProperty("Trailing days to include, default 30, max 4000."),
+                    "limit": integerProperty("Maximum returned sessions as a suffix, default 14, max 60."),
+                    "max_points": integerProperty("Maximum stage segments per session, default 200, max 2000."),
+                ]
+            ),
         ]),
     ])
 }
