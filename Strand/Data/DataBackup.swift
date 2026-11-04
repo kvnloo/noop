@@ -41,6 +41,7 @@ enum DataBackup {
     /// whitelist. Android already stores its device-scoped dismissals in the backed-up Room DB.
     private struct DeletedSleepBackup: Codable {
         static let entryName = "sleep-deletions.json"
+        private static let dismissedKey = "sleep.dismissedSessions" // Repository.dismissedSleepDefaultsKey
         private static let hiddenKey = "sleep.dismissedSessions.hiddenFromList"
 
         let version: Int
@@ -60,7 +61,7 @@ enum DataBackup {
         }
 
         static func snapshot(from defaults: UserDefaults) throws -> Data {
-            let spans = defaults.stringArray(forKey: Repository.dismissedSleepDefaultsKey) ?? []
+            let spans = defaults.stringArray(forKey: Self.dismissedKey) ?? []
             let hidden = defaults.stringArray(forKey: hiddenKey) ?? []
             guard validTokens(spans), validTokens(hidden) else {
                 throw CocoaError(.fileReadCorruptFile)
@@ -86,7 +87,7 @@ enum DataBackup {
 
         func apply(to defaults: UserDefaults) {
             // A present but empty snapshot clears old markers; an absent entry does nothing.
-            defaults.set(spans, forKey: Repository.dismissedSleepDefaultsKey)
+            defaults.set(spans, forKey: Self.dismissedKey)
             defaults.set(hiddenFromList, forKey: Self.hiddenKey)
         }
     }

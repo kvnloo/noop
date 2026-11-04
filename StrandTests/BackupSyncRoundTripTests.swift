@@ -69,7 +69,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
         let sourceDefaults = try freshDefaults()
         let first = "1700000000:1700028800"  // 28,800 s = 8 h
         let second = "1700086400:1700115200"
-        sourceDefaults.set([first, second], forKey: Repository.dismissedSleepDefaultsKey)
+        sourceDefaults.set([first, second], forKey: "sleep.dismissedSessions")
         sourceDefaults.set([second], forKey: "sleep.dismissedSessions.hiddenFromList")
 
         let backup = tmp.appendingPathComponent("deleted.noopbak")
@@ -87,12 +87,12 @@ final class BackupSyncRoundTripTests: XCTestCase {
             return XCTFail("Fresh restore of a valid deletion snapshot must succeed")
         }
         XCTAssertEqual(try deviceRows(in: restoredDB), ["my-whoop"])
-        XCTAssertEqual(targetDefaults.stringArray(forKey: Repository.dismissedSleepDefaultsKey),
+        XCTAssertEqual(targetDefaults.stringArray(forKey: "sleep.dismissedSessions"),
                        [first, second])
         XCTAssertEqual(targetDefaults.stringArray(forKey: "sleep.dismissedSessions.hiddenFromList"),
                        [second])
         let windows = DismissedSleepSpans.windows(
-            from: targetDefaults.stringArray(forKey: Repository.dismissedSleepDefaultsKey) ?? [])
+            from: targetDefaults.stringArray(forKey: "sleep.dismissedSessions") ?? [])
         XCTAssertTrue(DismissedSleepSpans.isSuppressed(sessionStart: 1_700_010_000,
                                                        sessionEnd: 1_700_013_600, windows: windows))
         XCTAssertFalse(DismissedSleepSpans.isSuppressed(sessionStart: 1_700_200_000,
@@ -106,7 +106,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
         try DataBackup.writeBackupForTesting(databaseAt: sourceDB, to: backup,
                                              deletedSleepDefaults: freshDefaults())
         let target = try freshDefaults()
-        target.set(["1700000000:1700028800"], forKey: Repository.dismissedSleepDefaultsKey)
+        target.set(["1700000000:1700028800"], forKey: "sleep.dismissedSessions")
         target.set(["1700000000:1700028800"], forKey: "sleep.dismissedSessions.hiddenFromList")
         let restored = tmp.appendingPathComponent("empty-target.sqlite")
         guard case .imported = DataBackup.restore(from: backup, toDatabaseAt: restored.path,
@@ -114,7 +114,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
             return XCTFail("Explicitly empty deletion snapshot must restore")
         }
         XCTAssertEqual(try deviceRows(in: restored), ["replacement"])
-        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), [])
+        XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions"), [])
         XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions.hiddenFromList"), [])
     }
 
@@ -125,13 +125,13 @@ final class BackupSyncRoundTripTests: XCTestCase {
         try DataBackup.writeBackupForTesting(databaseAt: sourceDB, to: backup)
         let target = try freshDefaults()
         let existing = ["1700000000:1700028800"]
-        target.set(existing, forKey: Repository.dismissedSleepDefaultsKey)
+        target.set(existing, forKey: "sleep.dismissedSessions")
         let restored = tmp.appendingPathComponent("old-target.sqlite")
         guard case .imported = DataBackup.restore(from: backup, toDatabaseAt: restored.path,
                                                   settingsDefaults: target) else {
             return XCTFail("Older .noopbak must remain compatible")
         }
-        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), existing)
+        XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions"), existing)
         XCTAssertNil(target.object(forKey: "sleep.dismissedSessions.hiddenFromList"))
         XCTAssertEqual(try deviceRows(in: restored), ["older"])
     }
@@ -152,13 +152,13 @@ final class BackupSyncRoundTripTests: XCTestCase {
         let originalBytes = try Data(contentsOf: live)
         let target = try freshDefaults()
         let existing = ["1700000000:1700028800"]
-        target.set(existing, forKey: Repository.dismissedSleepDefaultsKey)
+        target.set(existing, forKey: "sleep.dismissedSessions")
         guard case .failure = DataBackup.restore(from: backup, toDatabaseAt: live.path,
                                                  settingsDefaults: target) else {
             return XCTFail("Invalid suppression metadata must block a DB swap")
         }
         XCTAssertEqual(try Data(contentsOf: live), originalBytes)
-        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey), existing)
+        XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions"), existing)
     }
 
     func testOversizedDeletionMetadataRejectsWithoutOversizeOverride() throws {
@@ -174,13 +174,13 @@ final class BackupSyncRoundTripTests: XCTestCase {
         try makeNoopDatabase(at: live, deviceRows: ["original"])
         let bytes = try Data(contentsOf: live)
         let target = try freshDefaults()
-        target.set(["1700000000:1700028800"], forKey: Repository.dismissedSleepDefaultsKey)
+        target.set(["1700000000:1700028800"], forKey: "sleep.dismissedSessions")
         guard case .failure = DataBackup.restore(from: backup, toDatabaseAt: live.path,
                                                  settingsDefaults: target, allowOversize: true) else {
             return XCTFail("Metadata size limit may not be overridden")
         }
         XCTAssertEqual(try Data(contentsOf: live), bytes)
-        XCTAssertEqual(target.stringArray(forKey: Repository.dismissedSleepDefaultsKey),
+        XCTAssertEqual(target.stringArray(forKey: "sleep.dismissedSessions"),
                        ["1700000000:1700028800"])
     }
 
