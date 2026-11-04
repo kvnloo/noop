@@ -1,12 +1,19 @@
 package com.noop.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
@@ -21,34 +28,80 @@ fun blePermissions(): Array<String> =
     else
         arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
 
+/** Decision for a user-initiated scan, in the order Android requires. */
+internal enum class BleScanAction {
+    REQUEST_PERMISSION, REQUEST_ENABLE, START_SCAN, UNAVAILABLE,
+}
+
+internal fun bleScanAction(
+    permissionsGranted: Boolean,
+    hasAdapter: Boolean,
+    bluetoothEnabled: Boolean,
+): BleScanAction = when {
+    !permissionsGranted -> BleScanAction.REQUEST_PERMISSION
+    !hasAdapter -> BleScanAction.UNAVAILABLE
+    !bluetoothEnabled -> BleScanAction.REQUEST_ENABLE
+    else -> BleScanAction.START_SCAN
+}
+
+/** The Bluetooth enable result is consent, not proof of a ready radio on its own. */
+internal fun shouldResumeBleScan(accepted: Boolean, bluetoothEnabled: Boolean): Boolean =
+    accepted && bluetoothEnabled
+
 /**
- * Returns a callback that starts a scan, first requesting the runtime Bluetooth permission if it
- * isn't already granted. This is the single source of truth for "tap a button → scan" across the
- * app (Live, Settings, onboarding), so no screen can forget the gate.
+ * Requests runtime BLE permissions, then the Android system Bluetooth-enable prompt if necessary,
+ * before invoking [onGranted]. A denial/cancel never starts a scan; a later tap can retry.
  *
- * Why this exists (issue #1): a button that calls `vm.connect()` directly silently no-ops on
- * Android 12+ when the permission was denied or revoked — `startScan()` throws SecurityException,
- * the BLE layer swallows it into a status note, and no prompt is ever shown. The user taps and
- * nothing happens (the exact Pixel 9 report). Requesting the permission *before* connecting fixes
- * that. On grant the launcher calls [onGranted]; on denial, connect() still surfaces the explanatory
- * status note rather than failing silently.
- *
- * This belongs in the Compose layer, not the ViewModel: only an Activity-scoped launcher can raise
- * the system permission dialog. The ViewModel has no launcher and would just re-introduce the
- * silent no-op.
+ * Keep this at the Compose boundary so every caller (including the Add Device wizard) can use the
+ * ActivityResult launchers. The BLE client and ViewModel must not switch the radio on themselves.
  */
+@SuppressLint("MissingPermission")
 @Composable
 fun rememberRequestScan(onGranted: () -> Unit): () -> Unit {
     val context = LocalContext.current
     val perms = remember { blePermissions() }
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { onGranted() }
-    return {
-        val granted = perms.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    val onReady = rememberUpdatedState(onGranted)
+    val adapter = remember(context) {
+        (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+    }
+    fun radioEnabled(): Boolean = try {
+        adapter?.isEnabled == true
+    } catch (_: SecurityException) {
+        false
+    }
+
+    val enableBluetooth = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (shouldResumeBleScan(result.resultCode == Activity.RESULT_OK, radioEnabled())) {
+            onReady.value()
         }
-        if (granted) onGranted() else launcher.launch(perms)
+    }
+
+    fun proceedAfterPermissions() {
+        when (bleScanAction(permissionsGranted = true, hasAdapter = adapter != null,
+                bluetoothEnabled = radioEnabled())) {
+            BleScanAction.START_SCAN -> onReady.value()
+            BleScanAction.REQUEST_ENABLE ->
+                enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            BleScanAction.UNAVAILABLE, BleScanAction.REQUEST_PERMISSION -> Unit
+        }
+    }
+
+    val requestPermissions = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        if (perms.all { results[it] == true }) proceedAfterPermissions()
+    }
+
+    return {
+        if (perms.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }) {
+            proceedAfterPermissions()
+        } else {
+            requestPermissions.launch(perms)
+        }
     }
 }
 
