@@ -2781,7 +2781,7 @@
     <string name="l10n_live_screen_connected_waiting_for_live_heart_rate_01d216bb">Connesso, in attesa della frequenza cardiaca in tempo reale.</string>
     <string name="l10n_live_screen_live_heart_rate_is_flowing_from_f7f6c4fe">La frequenza cardiaca in tempo reale arriva dall\'anello.</string>
     <string name="l10n_live_screen_reconnect_drops_the_current_link_if_afc27801">Riconnetti interrompe il collegamento attuale, se presente, e si ricollega all\'anello. Per abbinare o cambiare fascia, apri Dispositivi.</string>
-    <string name="l10n_settings_screen_ring_gauges_on_today_7a532de2">Indicatori ad anello in Oggi</string>
+    <string name="l10n_settings_screen_ring_gauges_on_today_7a532de2">Indicatori ad anello in tutte le pagine</string>
     <string name="l10n_settings_screen_off_returns_the_liquid_vessels_6bb9236e">Disattivato ripristina i contenitori liquidi.</string>
     <string name="l10n_sleep_screen_low_confidence_99d4ceae">Bassa affidabilità</string>
     <string name="l10n_sleep_screen_this_night_scored_high_efficiency_but_a11d90eb">Questa notte ha ottenuto un\'alta efficienza ma pochissimo sonno profondo o REM, più probabilmente un errore di stima delle fasi che una reale carenza di recupero. I totali sono mantenuti così come sono; leggi la suddivisione con cautela.</string>
