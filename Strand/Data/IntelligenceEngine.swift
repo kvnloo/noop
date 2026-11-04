@@ -2487,13 +2487,43 @@ final class IntelligenceEngine: ObservableObject {
         // already scored this pass (`dailies`) or owned by a WHOOP/Apple import. The window matches the
         // computed reconcile below, so the fold's rows survive the stale-row eviction.
         var importScoredDays = Set(dailies.map { $0.day }).union(importedWhoopDays).union(appleHealthDays)
+        // No version marker exists on legacy Charge. A null re-score may erase only an old
+        // computed cell whose *persisted* provenance names this exact daily-aggregate source.
+        // A cached strap score with pruned raw input or unknown source must survive this replay.
+        let cachedComputed: [DailyMetric]
+        do {
+            cachedComputed = try await store.dailyMetrics(deviceId: computedId,
+                                                         from: oldestDay, to: newestDay)
+        } catch {
+            diagnosticSink?("re-score: stored Charge read failed; history repair remains pending", nil)
+            return
+        }
+        let cachedByDay = Dictionary(cachedComputed.map { ($0.day, $0) },
+                                     uniquingKeysWith: { a, _ in a })
+        var pendingImportClears: [(day: String, source: String, row: DailyMetric)] = []
         for source in Repository.wearableImportSources {
-            let rows = ((try? await store.dailyMetrics(deviceId: source, from: oldestDay, to: newestDay)) ?? [])
-                .sorted { $0.day < $1.day }
+            let rows: [DailyMetric]
+            do {
+                rows = try await store.dailyMetrics(deviceId: source, from: oldestDay, to: newestDay)
+                    .sorted { $0.day < $1.day }
+            } catch {
+                diagnosticSink?("re-score: wearable daily read failed; history repair remains pending", nil)
+                return
+            }
             guard !rows.isEmpty else { continue }
             let byDay = Dictionary(rows.map { ($0.day, $0) }, uniquingKeysWith: { a, _ in a })
             for w in Self.watchRecoveries(appleRows: rows, strapRecoveryDays: importScoredDays) {
-                guard let recovery = w.recovery, let row = byDay[w.day] else { continue }
+                guard let row = byDay[w.day] else { continue }
+                guard let recovery = w.recovery else {
+                    if cachedByDay[w.day]?.recovery != nil {
+                        let oldSource = try? await store.scoreInputSource(
+                            deviceId: computedId, day: w.day, key: "recovery")
+                        if oldSource == source {
+                            pendingImportClears.append((day: w.day, source: source, row: row))
+                        }
+                    }
+                    continue
+                }
                 let scored = row.with(recovery: recovery, skinTempDevC: row.skinTempDevC,
                                       skinTempC: row.skinTempC)
                 dailies.append(scored)
@@ -2506,6 +2536,16 @@ final class IntelligenceEngine: ObservableObject {
                                     sleepMin: scored.totalSleepMin, hrv: scored.avgHrv, rhr: scored.restingHr,
                                     source: .computed, confidence: w.confidence))
             }
+        }
+
+        // Only clear stale source-attributed Charge after other imports had the chance to score.
+        // The per-day preserve-history transaction keeps unrelated cached-only strap days intact.
+        for item in pendingImportClears where !importScoredDays.contains(item.day) {
+            let row = item.row
+            dailies.append(row.with(recovery: nil, skinTempDevC: row.skinTempDevC,
+                                    skinTempC: row.skinTempC))
+            importScoredDays.insert(item.day)
+            resolvedScoreOwnerByDay[item.day] = item.source
         }
 
         // Apply the exact snapshot only after current-score traces and derived series were produced from the
