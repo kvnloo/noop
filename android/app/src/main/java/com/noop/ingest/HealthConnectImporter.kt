@@ -914,7 +914,8 @@ object HealthConnectImporter {
      * REPLACES the whole row, so a fresh steps-only row would null every other column.
      *
      * Returns the live sum, or the stored count when today read zero, or null when Health Connect
-     * is unavailable / steps aren't granted / there's nothing at all. Never throws.
+     * is unavailable / steps aren't granted / there's nothing at all. Ordinary read and storage
+     * failures fall back; coroutine cancellation propagates to the caller.
      */
     suspend fun refreshTodaySteps(context: Context, repo: WhoopRepository): Int? {
         if (sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) return null
@@ -923,6 +924,7 @@ object HealthConnectImporter {
         val granted = try {
             client.permissionController.getGrantedPermissions()
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             return null
         }
         if (HealthPermission.getReadPermission(StepsRecord::class) !in granted) return null
@@ -962,6 +964,7 @@ object HealthConnectImporter {
         val existing = try {
             repo.appleDaily(HC_DEVICE, dayKey, dayKey).firstOrNull()
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             null
         }
         // Zero is indistinguishable from "no data yet today" — never overwrite a stored count with it.
@@ -973,6 +976,7 @@ object HealthConnectImporter {
             if (existing == null) repo.upsertDevice(HC_DEVICE, name = "Health Connect")
             repo.upsertAppleDaily(listOf(updated))
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             return existing?.steps
         }
         return sum.toInt()
@@ -1017,6 +1021,7 @@ object HealthConnectImporter {
                 pageToken = response.pageToken
             } while (pageToken != null)
         } catch (e: Exception) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             // One record type failing (e.g. a device/SDK validation quirk like "count must not be less
             // than 1" seen on some Health Connect builds) must NOT abort the whole import — log it and
             // keep whatever was read, so every other data type still comes in (issue #34). The reads
