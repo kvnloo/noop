@@ -29,4 +29,30 @@ class HealthConnectSelfWriteSkipTest {
         assertFalse(HealthConnectImporter.isSelfWritten("", self))
         assertFalse(HealthConnectImporter.isSelfWritten(self, ""))
     }
+
+    @Test fun installedPackageVariantIsMatchedExactly() {
+        // Release, debug, and demo are different Health Connect writer identities.
+        // Match the package of the CURRENT installed app, not a release-id prefix.
+        val installedDebug = "com.noop.whoop.debug"
+        assertTrue(HealthConnectImporter.isSelfWritten(installedDebug, installedDebug))
+
+        for (otherWriter in listOf(
+            "com.noop.whoop",
+            "com.noop.whoop.demo",
+            "com.noop.whoop.debug.extra",
+            "COM.NOOP.WHOOP.DEBUG",
+            "com.noop.whoop.debug ",
+        )) {
+            assertFalse(
+                "Must retain records from a different writer: $otherWriter",
+                HealthConnectImporter.isSelfWritten(otherWriter, installedDebug),
+            )
+        }
+    }
+
+    @Test fun blankInstalledAndBlankOriginAreNotTreatedAsSelfWrites() {
+        // Negative control: HealthConnectImporter.kt:1137 guards equality with selfPackage.isNotEmpty().
+        // Without that guard, "" == "" would skip an unknown-origin record.
+        assertFalse(HealthConnectImporter.isSelfWritten("", ""))
+    }
 }
