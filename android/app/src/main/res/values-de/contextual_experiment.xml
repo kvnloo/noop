@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Experimental Android focus UI: isolated strings, with no change to legacy screens. -->
+    <string name="contextual_status_connected">Verbunden</string>
+    <string name="contextual_status_searching">Suche läuft</string>
+    <string name="contextual_status_offline">Offline</string>
+    <string name="contextual_charge_day">Ladung · %1$s</string>
+    <string name="contextual_no_charge_day">Ladung nicht verfügbar · %1$s</string>
+    <string name="contextual_no_score">Noch kein Wert erfasst</string>
+    <string name="contextual_heart_rate">Herzfrequenz</string>
+    <string name="contextual_effort">Anstrengung</string>
+    <string name="contextual_in_context">IM KONTEXT</string>
+    <string name="contextual_dismiss">Hinweis schließen</string>
+    <string name="contextual_breathe_wake_day_hint">Für eine Abendroutine wähle im Tagebuch Morgen, damit der Eintrag zum nächsten Morgen gehört.</string>
+    <string name="contextual_journal">Tagebuch</string>
+    <string name="contextual_full_dashboard">Vollständige Übersicht</string>
+    <string name="contextual_return_focus">Zurück zur Fokusansicht</string>
+    <string name="contextual_active_title">Sitzung läuft</string>
+    <string name="contextual_active_detail">Deine laufende Sitzung kann fortgesetzt werden.</string>
+    <string name="contextual_resume">Fortsetzen</string>
+    <string name="contextual_scanning_title">Strap wird gesucht</string>
+    <string name="contextual_scanning_detail">Verbindung wird aufgebaut.</string>
+    <string name="contextual_offline_title">Strap nicht verbunden</string>
+    <string name="contextual_offline_detail">Öffne Geräte, um die Verbindung zu prüfen.</string>
+    <string name="contextual_waiting_title">Wert wird erwartet</string>
+    <string name="contextual_waiting_detail">Schlaf- und Erholungsdaten erscheinen nach der Verarbeitung.</string>
+    <string name="contextual_review_title">Deine Werte sind bereit</string>
+    <string name="contextual_review_detail">Vergleiche deine letzten Tage.</string>
+</resources>

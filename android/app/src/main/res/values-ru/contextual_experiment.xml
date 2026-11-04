@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fork-only Android contextual home: translated for the existing shipped locale. -->
+    <string name="contextual_status_connected">Подключено</string>
+    <string name="contextual_status_searching">Поиск</string>
+    <string name="contextual_status_offline">Нет подключения</string>
+    <string name="contextual_charge_day">Заряд · %1$s</string>
+    <string name="contextual_no_charge_day">Заряд недоступен · %1$s</string>
+    <string name="contextual_no_score">Оценка пока не записана</string>
+    <string name="contextual_heart_rate">Пульс</string>
+    <string name="contextual_effort">Нагрузка</string>
+    <string name="contextual_in_context">ПО СИТУАЦИИ</string>
+    <string name="contextual_dismiss">Скрыть подсказку</string>
+    <string name="contextual_breathe_wake_day_hint">Если это часть вечернего распорядка, выберите «Завтра» в дневнике, чтобы отнести запись к следующему утру.</string>
+    <string name="contextual_journal">Дневник</string>
+    <string name="contextual_full_dashboard">Полная панель</string>
+    <string name="contextual_return_focus">Вернуться к простому виду</string>
+    <string name="contextual_active_title">Сеанс продолжается</string>
+    <string name="contextual_active_detail">Вы можете возобновить текущий сеанс.</string>
+    <string name="contextual_resume">Возобновить</string>
+    <string name="contextual_scanning_title">Поиск браслета</string>
+    <string name="contextual_scanning_detail">Идёт подключение.</string>
+    <string name="contextual_offline_title">Браслет не подключён</string>
+    <string name="contextual_offline_detail">Откройте «Устройства», чтобы проверить подключение.</string>
+    <string name="contextual_waiting_title">Ожидание оценки</string>
+    <string name="contextual_waiting_detail">Данные о сне и восстановлении появятся после обработки.</string>
+    <string name="contextual_review_title">Данные готовы</string>
+    <string name="contextual_review_detail">Сравните показатели за последние дни.</string>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Experimental Android focus UI: isolated strings, with no change to legacy screens. -->
+    <string name="contextual_status_connected">Conectado</string>
+    <string name="contextual_status_searching">Buscando</string>
+    <string name="contextual_status_offline">Sin conexión</string>
+    <string name="contextual_charge_day">Carga · %1$s</string>
+    <string name="contextual_no_charge_day">Carga no disponible · %1$s</string>
+    <string name="contextual_no_score">Aún no hay puntuación</string>
+    <string name="contextual_heart_rate">Frecuencia cardíaca</string>
+    <string name="contextual_effort">Esfuerzo</string>
+    <string name="contextual_in_context">EN CONTEXTO</string>
+    <string name="contextual_dismiss">Descartar sugerencia</string>
+    <string name="contextual_breathe_wake_day_hint">Si forma parte de tu rutina nocturna, elige Mañana en el diario para vincularla a la mañana siguiente.</string>
+    <string name="contextual_journal">Diario</string>
+    <string name="contextual_full_dashboard">Panel completo</string>
+    <string name="contextual_return_focus">Volver a vista simple</string>
+    <string name="contextual_active_title">Sesión en curso</string>
+    <string name="contextual_active_detail">Puedes reanudar tu sesión activa.</string>
+    <string name="contextual_resume">Reanudar</string>
+    <string name="contextual_scanning_title">Buscando la pulsera</string>
+    <string name="contextual_scanning_detail">Conectando.</string>
+    <string name="contextual_offline_title">Pulsera desconectada</string>
+    <string name="contextual_offline_detail">Abre Dispositivos para revisar la conexión.</string>
+    <string name="contextual_waiting_title">Esperando puntuación</string>
+    <string name="contextual_waiting_detail">Los datos de sueño y recuperación aparecerán tras procesarse.</string>
+    <string name="contextual_review_title">Tus datos están listos</string>
+    <string name="contextual_review_detail">Compara tus últimos días.</string>
+</resources>

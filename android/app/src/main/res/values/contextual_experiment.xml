@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Experimental Android focus UI: isolated strings, with no change to legacy screens. -->
+    <string name="contextual_status_connected">Connected</string>
+    <string name="contextual_status_searching">Searching</string>
+    <string name="contextual_status_offline">Offline</string>
+    <string name="contextual_charge_day">Charge · %1$s</string>
+    <string name="contextual_no_charge_day">Charge unavailable · %1$s</string>
+    <string name="contextual_no_score">No score recorded yet</string>
+    <string name="contextual_heart_rate">Heart rate</string>
+    <string name="contextual_effort">Effort</string>
+    <string name="contextual_in_context">IN CONTEXT</string>
+    <string name="contextual_dismiss">Dismiss this suggestion</string>
+    <string name="contextual_breathe_wake_day_hint">If this was part of your evening routine, choose Tomorrow in Journal to align with next-morning outcomes.</string>
+    <string name="contextual_journal">Journal</string>
+    <string name="contextual_full_dashboard">Full dashboard</string>
+    <string name="contextual_return_focus">Return to focus</string>
+    <string name="contextual_active_title">Session in progress</string>
+    <string name="contextual_active_detail">Your active session is ready to resume.</string>
+    <string name="contextual_resume">Resume</string>
+    <string name="contextual_scanning_title">Finding your strap</string>
+    <string name="contextual_scanning_detail">Connection is in progress.</string>
+    <string name="contextual_offline_title">Strap offline</string>
+    <string name="contextual_offline_detail">Open devices to check your connection.</string>
+    <string name="contextual_waiting_title">Awaiting a score</string>
+    <string name="contextual_waiting_detail">Sleep and recovery data will appear after processing.</string>
+    <string name="contextual_review_title">Your readings are ready</string>
+    <string name="contextual_review_detail">See how your recent days compare.</string>
+</resources>
