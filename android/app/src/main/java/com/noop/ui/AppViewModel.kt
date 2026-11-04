@@ -1561,6 +1561,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _activeWorkout = MutableStateFlow<ActiveWorkout?>(null)
     val activeWorkout: StateFlow<ActiveWorkout?> = _activeWorkout.asStateFlow()
+
+    // Initialized before the rehydration init block: restoring a workout immediately acquires
+    // its own HR lease, and Kotlin field initialization must not reset the count afterward.
+    private var realtimeWanters = 0
+    private val workoutRealtimeLease = WorkoutRealtimeLease(
+        onBegin = { requestRealtimeHr() },
+        onEnd = { releaseRealtimeHr() },
+    )
     private val _lastWorkout = MutableStateFlow<WorkoutRow?>(null)
     val lastWorkout: StateFlow<WorkoutRow?> = _lastWorkout.asStateFlow()
 
@@ -1612,6 +1620,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _lastWorkout.value = null
         val startMs = System.currentTimeMillis()
         _activeWorkout.value = ActiveWorkout(startMs = startMs, sport = sport, gpsEnabled = gpsEnabled)
+        // Recording owns an HR request independently of the overlay. Dismissing the workout
+        // screen must not disarm a 5/MG while this session is still collecting samples.
+        workoutRealtimeLease.begin()
         buzz(1, HapticPrefs.WORKOUT)
         // Workouts & GPS test mode (Test Centre): one session-start line tagged .workouts. Zero-cost when off.
         emitWorkoutsTrace {
@@ -1682,6 +1693,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             track = s.track, distanceM = s.distanceM, paceSecPerKm = s.paceSecPerKm,
             pausedAtMs = s.pausedAtMs, pausedDurationMs = s.pausedDurationMs,
         )
+        workoutRealtimeLease.begin()
         observeGpsSession()
     }
 
@@ -1702,6 +1714,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             samples = snap.samples, avgHr = snap.avgHr, peakHr = snap.peakHr, liveStrain = snap.liveStrain,
             pausedAtMs = snap.pausedAtMs, pausedDurationMs = snap.pausedDurationMs,
         )
+        workoutRealtimeLease.begin()
     }
 
     fun toggleWorkoutPause() {
@@ -1722,6 +1735,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun discardWorkout() {
         val w = _activeWorkout.value ?: return
         _activeWorkout.value = null
+        workoutRealtimeLease.end()
         gpsJob?.cancel(); gpsJob = null
         activeWorkoutStore.clear()
         if (w.gpsEnabled) {
@@ -1737,6 +1751,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun endWorkout() {
         val w = _activeWorkout.value ?: return
         _activeWorkout.value = null
+        workoutRealtimeLease.end()
         gpsJob?.cancel(); gpsJob = null
         // Drop the durable non-GPS snapshot the instant the session ends — whether it saves below or is
         // discarded as too-short — so a relaunch never rehydrates an already-finished session (#529).
@@ -2678,14 +2693,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** How many screens currently want the live HR stream (Live, Health Monitor, …). The stream stays
-     *  on while ANY of them is visible, so navigating between them doesn't stop it (issue #18: leaving
-     *  Live sent TOGGLE_REALTIME_HR=0, leaving Health Monitor with a frozen value). */
-    private var realtimeWanters = 0
+    /** Screen owners plus the in-flight workout each hold one HR request. A screen closing
+     *  cannot stop the stream while another screen or the recording still needs it. */
 
-    /** A screen that shows live HR appeared. Arms the realtime stream on the 0→1 transition, and
-     *  blanks the stale smoothing window so a resume shows "—" until a fresh sample lands (#46).
-     *  Guarded on 0→1 so a second concurrent HR screen doesn't re-clear an already-live window. */
+    /** A screen or recording acquired HR. Arms the stream on the 0→1 transition and clears
+     *  stale smoothing only on that edge, never when another owner arrives (#46). */
     fun requestRealtimeHr() {
         if (realtimeWanters++ == 0) {
             resetSmoothing()
@@ -2693,7 +2705,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A live-HR screen went away. Stops the realtime stream only when the last one leaves. */
+    /** An HR owner departed. Only the final screen/recording release stops the stream. */
     fun releaseRealtimeHr() {
         realtimeWanters = (realtimeWanters - 1).coerceAtLeast(0)
         if (realtimeWanters == 0) ble.stopRealtime()
