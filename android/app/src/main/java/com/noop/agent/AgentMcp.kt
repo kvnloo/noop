@@ -12,8 +12,13 @@ interface AgentActions {
     fun showCoachNote(title: String, body: String): JSONObject
 }
 
-/** Facts about the caller the HTTP layer has already verified. */
-data class AgentCaller(val peer: String, val deviceShort: String)
+/**
+ * Facts about the caller the HTTP layer has already verified. [tokenScopes] is set for z0bridge tokens:
+ * a tool then needs its scope in both the owner's on-phone grant and the token.
+ */
+data class AgentCaller(val peer: String, val deviceShort: String, val tokenScopes: Set<AgentScope>? = null, val via: String = "z0live") {
+    fun allows(grant: AgentGrant, scope: AgentScope): Boolean = grant.allows(scope) && (tokenScopes == null || scope in tokenScopes)
+}
 
 /**
  * MCP (JSON-RPC 2.0) handler for the phone's tool surface. Pure: transport, auth and Android live
@@ -60,7 +65,7 @@ class AgentMcp(
         val name = params.optString("name")
         val args = params.optJSONObject("arguments") ?: JSONObject()
         val g = grant()
-        val audited = mapOf("peer" to caller.peer, "device" to caller.deviceShort, "args" to JSONArray(args.keys().asSequence().toList().sorted()))
+        val audited = mapOf("peer" to caller.peer, "device" to caller.deviceShort, "via" to caller.via, "args" to JSONArray(args.keys().asSequence().toList().sorted()))
         if (g == null || !g.active(nowMs())) {
             audit.record("read", name, "refused_no_grant", audited)
             return toolResult(id, JSONObject().put("error", "no_grant").put("message", "The owner has not granted access right now."), true)
@@ -68,8 +73,9 @@ class AgentMcp(
         return try {
             val tool = TOOLS[name] ?: throw AgentToolError("unknown tool", "unknown_tool")
             if (!g.allows(tool.scope)) throw AgentToolError("this grant does not include ${tool.scope.wire}", "scope_required")
+            if (!caller.allows(g, tool.scope)) throw AgentToolError("your z0bridge token does not carry ${tool.scope.wire}; ask the owner to grant it in z0bridge", "token_scope_required")
             val detail = args.optString("granularity") in DETAIL_GRANULARITY
-            if (detail && !g.allows(AgentScope.READ_DETAIL)) throw AgentToolError("per-day values need the read_detail scope; ask the owner or use the summary", "scope_required")
+            if (detail && !caller.allows(g, AgentScope.READ_DETAIL)) throw AgentToolError("per-day values need the read_detail scope; ask the owner or use the summary", "scope_required")
             val days = { default: Int -> AgentPolicy.clampDays(args.opt("days").takeUnless { it == JSONObject.NULL }, default, if (detail) AgentPolicy.MAX_DETAIL_DAYS else AgentPolicy.MAX_SUMMARY_DAYS) }
             val payload = when (name) {
                 "health_snapshot" -> reader.healthSnapshot(days(7), detail)

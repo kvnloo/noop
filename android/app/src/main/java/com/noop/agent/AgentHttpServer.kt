@@ -100,7 +100,7 @@ class AgentHttpServer(
                 if (request.method != "POST") throw HttpError(405, "method not allowed")
                 val type = request.headers["content-type"].orEmpty().substringBefore(';').trim().lowercase()
                 if (type != "application/json") throw HttpError(415, "content-type must be application/json")
-                val reply = mcp.handle(request.body, AgentCaller(peer, auth.deviceShort)) ?: return Response(202, "")
+                val reply = mcp.handle(request.body, AgentCaller(peer, auth.deviceShort, auth.tokenScopes, auth.via)) ?: return Response(202, "")
                 return Response(200, reply)
             }
         }
