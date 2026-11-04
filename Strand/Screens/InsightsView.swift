@@ -29,7 +29,7 @@ import WhoopStore
 /// `.task(id:)` key for the Insights journal load: the data-refresh sequence plus today's day-key, so the
 /// load re-runs both on a data change and on a calendar-day rollover (#860 item 4).
 /// Only explicitly answered Journal "No" days with finite outcome measurements
-/// can form an experiment baseline. Never-answered days are unknown (#322/#1768).
+/// can form an experiment baseline. Never-answered days are unknown (ryanbr/noop#1768; earlier #682).
 /// ISO yyyy-MM-dd day keys sort chronologically.
 func experimentExplicitNoBaselineDays(
     outcomeDays: [String: Double], explicitNoDays: Set<String>,
