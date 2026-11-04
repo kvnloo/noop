@@ -18,6 +18,26 @@ import com.noop.analytics.AutoWorkoutDetector
 object AutoWorkoutPrefs {
     private const val FILE = "noop_auto_workout_prefs"
     private const val KEY_DISMISSED = "workouts.autoDetectDismissed"
+    // Same UserDefaults keys as Apple. Kept separate from the historical dismissal tokens.
+    private const val KEY_MIN_AVERAGE_BPM = "workouts.autoDetectMinimumAverageBpm"
+    private const val KEY_MAX_DURATION_MIN = "workouts.autoDetectMaximumDurationMin"
+
+    /** Zero disables an additional presentation filter, preserving the published detector. */
+    fun minimumAverageBpm(ctx: Context): Int = prefs(ctx).getInt(KEY_MIN_AVERAGE_BPM, 0)
+        .let { if (it in 80..160 && it % 10 == 0) it else 0 }
+
+    fun maximumDurationMin(ctx: Context): Int = prefs(ctx).getInt(KEY_MAX_DURATION_MIN, 0)
+        .let { if (it in listOf(30, 60, 120, 240)) it else 0 }
+
+    fun setMinimumAverageBpm(ctx: Context, value: Int) {
+        val safe = if (value in 80..160 && value % 10 == 0) value else 0
+        prefs(ctx).edit().putInt(KEY_MIN_AVERAGE_BPM, safe).apply()
+    }
+
+    fun setMaximumDurationMin(ctx: Context, value: Int) {
+        val safe = if (value in listOf(30, 60, 120, 240)) value else 0
+        prefs(ctx).edit().putInt(KEY_MAX_DURATION_MIN, safe).apply()
+    }
 
     /**
      * Hard cap on the dismissed-span set — a backstop so it can't grow without bound even in

@@ -724,6 +724,8 @@ fun SettingsScreen(
     var rhythmEnabled by remember { mutableStateOf(RhythmConsent.isEnabled(context)) }
     var coachSignals by remember { mutableStateOf(NoopPrefs.coachSignals(context)) }
     var autoDetectWorkouts by remember { mutableStateOf(NoopPrefs.autoDetectWorkouts(context)) }
+    var autoDetectMinAverageBpm by remember { mutableStateOf(AutoWorkoutPrefs.minimumAverageBpm(context)) }
+    var autoDetectMaxDurationMin by remember { mutableStateOf(AutoWorkoutPrefs.maximumDurationMin(context)) }
     var journalReminder by remember { mutableStateOf(NoopPrefs.journalReminderEnabled(context)) }
     // Keep the screen on during a manual workout recording (#703), default OFF. The live-workout
     // screen reads this same "workoutKeepScreenOn" key. String shared verbatim with the iOS/Mac twin
@@ -3380,6 +3382,56 @@ fun SettingsScreen(
                         NoopPrefs.setAutoDetectWorkouts(context, it)
                     },
                 )
+                if (autoDetectWorkouts) {
+                    SettingsRowDivider()
+                    SettingsFormRow(label = uiString(R.string.auto_workout_minimum_average_hr)) {
+                        StepperField(
+                            value = if (autoDetectMinAverageBpm == 0) uiString(R.string.auto_workout_no_limit)
+                                    else autoDetectMinAverageBpm.toString(),
+                            unit = if (autoDetectMinAverageBpm == 0) null else "bpm",
+                            accessibility = uiString(R.string.auto_workout_minimum_average_hr) + ": " +
+                                if (autoDetectMinAverageBpm == 0) uiString(R.string.auto_workout_no_limit)
+                                else autoDetectMinAverageBpm.toString() + " bpm",
+                            onMinus = {
+                                autoDetectMinAverageBpm = if (autoDetectMinAverageBpm <= 80) 0
+                                    else autoDetectMinAverageBpm - 10
+                                AutoWorkoutPrefs.setMinimumAverageBpm(context, autoDetectMinAverageBpm)
+                            },
+                            onPlus = {
+                                autoDetectMinAverageBpm = if (autoDetectMinAverageBpm == 0) 80
+                                    else (autoDetectMinAverageBpm + 10).coerceAtMost(160)
+                                AutoWorkoutPrefs.setMinimumAverageBpm(context, autoDetectMinAverageBpm)
+                            },
+                        )
+                    }
+                    SettingsRowDivider()
+                    SettingsFormRow(label = uiString(R.string.auto_workout_maximum_suggestion_length)) {
+                        val choices = listOf(0, 30, 60, 120, 240)
+                        StepperField(
+                            value = if (autoDetectMaxDurationMin == 0) uiString(R.string.auto_workout_no_limit)
+                                    else autoDetectMaxDurationMin.toString(),
+                            unit = if (autoDetectMaxDurationMin == 0) null else "min",
+                            accessibility = uiString(R.string.auto_workout_maximum_suggestion_length) + ": " +
+                                if (autoDetectMaxDurationMin == 0) uiString(R.string.auto_workout_no_limit)
+                                else autoDetectMaxDurationMin.toString() + " min",
+                            onMinus = {
+                                val index = choices.indexOf(autoDetectMaxDurationMin).coerceAtLeast(0)
+                                autoDetectMaxDurationMin = choices[(index - 1).coerceAtLeast(0)]
+                                AutoWorkoutPrefs.setMaximumDurationMin(context, autoDetectMaxDurationMin)
+                            },
+                            onPlus = {
+                                val index = choices.indexOf(autoDetectMaxDurationMin).coerceAtLeast(0)
+                                autoDetectMaxDurationMin = choices[(index + 1).coerceAtMost(choices.lastIndex)]
+                                AutoWorkoutPrefs.setMaximumDurationMin(context, autoDetectMaxDurationMin)
+                            },
+                        )
+                    }
+                    Text(
+                        uiString(R.string.auto_workout_limits_note),
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                    )
+                }
                 SettingsRowDivider()
                 SettingsToggleRow(
                     title = uiString(R.string.l10n_journal_reminder_journal_reminder_0fdc0d9c),

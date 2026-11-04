@@ -3276,8 +3276,13 @@ final class Repository: ObservableObject {
                                                     motion: nil, savedSpans: savedSpans,
                                                     minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
         }
+        // An explicit device-local preference only filters which candidates reach the Today card.
+        // The published 12-minute detector and Test Centre's shadow comparisons remain untouched.
         return Self.selectAutoDetectCandidate(
-            candidates,
+            AutoWorkoutDetector.filterSuggestions(
+                candidates,
+                minimumAverageBPM: UserDefaults.standard.integer(forKey: "workouts.autoDetectMinimumAverageBpm"),
+                maximumDurationMin: UserDefaults.standard.integer(forKey: "workouts.autoDetectMaximumDurationMin")),
             autoDismissedTokens: autoDetectDismissedSpans,
             detectedDismissedTokens: dismissedDetectedSpans)
     }

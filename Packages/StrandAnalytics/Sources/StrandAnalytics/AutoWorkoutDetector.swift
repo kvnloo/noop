@@ -230,6 +230,22 @@ public enum AutoWorkoutDetector {
         return results
     }
 
+    /// Apply opt-in presentation limits to detected suggestions, without changing the detection
+    /// thresholds, scoring, shadow comparison or stored workouts. Zero means no extra limit.
+    /// Values outside the Settings presets fail open to the unchanged published policy.
+    /// Keep the presets and inclusive comparisons identical to the Kotlin twin.
+    public static func filterSuggestions(_ candidates: [DetectedWorkout],
+                                         minimumAverageBPM: Int = 0,
+                                         maximumDurationMin: Int = 0) -> [DetectedWorkout] {
+        let floor = (minimumAverageBPM >= 80 && minimumAverageBPM <= 160
+                     && minimumAverageBPM % 10 == 0) ? minimumAverageBPM : 0
+        let ceiling = [30, 60, 120, 240].contains(maximumDurationMin) ? maximumDurationMin : 0
+        return candidates.filter { candidate in
+            (floor == 0 || candidate.avgBpm >= floor)
+                && (ceiling == 0 || candidate.durationMin <= ceiling)
+        }
+    }
+
     /// Two closed [aStart, aEnd] / [bStart, bEnd] intervals overlap (touching endpoints count).
     /// Mirrors the Kotlin `overlaps`.
     static func overlaps(_ aStart: Int, _ aEnd: Int, _ bStart: Int, _ bEnd: Int) -> Bool {

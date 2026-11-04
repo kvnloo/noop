@@ -162,4 +162,22 @@ final class AutoWorkoutDetectorTests: XCTestCase {
         XCTAssertEqual(AutoWorkoutDetector.detect(
             hr: exact, restingBpm: 60, minimumSustainedMinutes: 15.0).count, 1)
     }
+    func testOptInSuggestionLimitsFilterAfterDetectionWithoutChangingDefault() {
+        let weak = DetectedWorkout(startSec: 0, endSec: 600, avgBpm: 78, peakBpm: 98, durationMin: 10)
+        let medium = DetectedWorkout(startSec: 1_000, endSec: 2_800, avgBpm: 100, peakBpm: 130, durationMin: 30)
+        let long = DetectedWorkout(startSec: 3_000, endSec: 17_400, avgBpm: 140, peakBpm: 165, durationMin: 240)
+        let tooLong = DetectedWorkout(startSec: 18_000, endSec: 32_460, avgBpm: 150, peakBpm: 170, durationMin: 241)
+        let all = [weak, medium, long, tooLong]
+
+        XCTAssertEqual(AutoWorkoutDetector.filterSuggestions(all), all)
+        XCTAssertEqual(AutoWorkoutDetector.filterSuggestions(
+            all, minimumAverageBPM: 100, maximumDurationMin: 240), [medium, long])
+        XCTAssertEqual(AutoWorkoutDetector.filterSuggestions(
+            all, minimumAverageBPM: 100, maximumDurationMin: 30), [medium])
+        XCTAssertEqual(AutoWorkoutDetector.filterSuggestions(
+            all, minimumAverageBPM: 110, maximumDurationMin: 30), [])
+        // Invalid stored values cannot silently create a new, unvalidated detector policy.
+        XCTAssertEqual(AutoWorkoutDetector.filterSuggestions(
+            all, minimumAverageBPM: 79, maximumDurationMin: 31), all)
+    }
 }

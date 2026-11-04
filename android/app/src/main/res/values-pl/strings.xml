@@ -2876,4 +2876,8 @@
     <string name="raw_diag_ecg_probe_running">Na tym pasku może nadal trwać zapis. Werdykt trafia do strap log.</string>
     <string name="today_customize_live_session_availability">Pojawia się dzisiaj, gdy sesje na żywo są włączone w Ustawieniach lub trwa sesja.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Dziś po swojemu, tętno dostępne dla każdej aplikacji i język włoski</string>
+    <string name="auto_workout_minimum_average_hr">Minimalne średnie tętno</string>
+    <string name="auto_workout_maximum_suggestion_length">Maksymalny czas sugestii</string>
+    <string name="auto_workout_no_limit">Bez limitu</string>
+    <string name="auto_workout_limits_note">Te limity tylko ukrywają sugestie; zapisane treningi i wyniki pozostają bez zmian.</string>
 </resources>
