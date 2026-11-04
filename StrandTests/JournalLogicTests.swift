@@ -223,6 +223,116 @@ final class JournalLogicTests: XCTestCase {
     }
 
     @MainActor
+    func testLegacyCustomSetterDeduplicatesAliasesAndPreservesCanonicalOnReload() {
+        let defaults = isolatedDefaults()
+        let store = JournalCatalogStore(defaults: defaults)
+        store.customQuestions = [
+            "Did you take a short walk?",
+            "  did you take  A SHORT walk?  ",
+            "Did you read after dinner?",
+            "DID YOU READ AFTER DINNER?",
+        ]
+        XCTAssertEqual(store.customQuestions,
+                       ["Did you take a short walk?", "Did you read after dinner?"])
+        XCTAssertEqual(store.items.filter { $0.custom }.count, 2)
+
+        // A settings/backup-driven reload must not resurrect duplicate entries.
+        let reloaded = JournalCatalogStore(defaults: defaults)
+        XCTAssertEqual(reloaded.customQuestions,
+                       ["Did you take a short walk?", "Did you read after dinner?"])
+        reloaded.customQuestions = ["DID YOU READ AFTER DINNER?", "did you read after dinner?"]
+        XCTAssertEqual(reloaded.customQuestions, ["Did you read after dinner?"])
+        XCTAssertEqual(reloaded.items.filter { $0.custom }.count, 1)
+    }
+
+    @MainActor
+    func testLegacyCustomSetterRepairsPreviouslyPersistedAliasesWithoutLosingMetadata() throws {
+        let defaults = isolatedDefaults()
+        let store = JournalCatalogStore(defaults: defaults)
+        let canonical = "Did you take a short walk?"
+        let survivor = JournalCatalogItem(
+            canonical: canonical, displayName: "Evening walk", kind: .bool,
+            group: .lifestyle, sortIndex: 4, hidden: false, custom: true)
+        let duplicate = JournalCatalogItem(
+            canonical: "  DID YOU TAKE  A SHORT WALK? ", displayName: "Duplicate",
+            kind: .numeric(unitLabel: "steps"), group: .other,
+            sortIndex: 5, hidden: false, custom: true)
+        let blank = JournalCatalogItem(
+            canonical: "   ", displayName: nil, kind: .bool,
+            group: .other, sortIndex: 6, hidden: false, custom: true)
+
+        // Simulate an older v2 catalog already containing aliases from a
+        // faulty legacy restore. Updating legacy custom questions must heal
+        // the duplicates, preserving the first stored item's identity/edits.
+        store.items = [survivor, duplicate, blank]
+        store.customQuestions = [canonical, " did you take  A short walk?", "  "]
+        XCTAssertEqual(store.items, [survivor])
+        XCTAssertEqual(store.customQuestions, [canonical])
+
+        let reloaded = JournalCatalogStore(defaults: defaults)
+        XCTAssertEqual(reloaded.items, [survivor])
+        XCTAssertEqual(reloaded.displayName(for: canonical), "Evening walk")
+    }
+
+    func testUnicodeJournalIdentityMatchesKotlinWhitespaceContract() {
+        // Mirrors JournalLogTest.kt exactly. None of these assertions changes
+        // the actual saved question, only its comparison/deduplication key.
+        let cases: [(String, String)] = [
+            ("  Brush\u{001C} teeth.  ", "brush teeth."),
+            ("\u{001D}brush\u{001F}teeth", "brush teeth"),
+            (" brush\u{0085}teeth ", "brush\u{0085}teeth"),
+            (" brush\u{200B}teeth ", "brush\u{200B}teeth"),
+            (" brush\u{2007}teeth ", "brush teeth"),
+            (" brush\u{00A0}teeth ", "brush teeth"),
+            (" \u{FEFF}brush ", "\u{FEFF}brush"),
+            ("BRUSH\u{202F} Teeth", "brush teeth"),
+        ]
+        for (input, expected) in cases {
+            XCTAssertEqual(Array(JournalCatalogStore.norm(input).utf8), Array(expected.utf8))
+        }
+        XCTAssertEqual(JournalCatalogStore.norm("\u{001F}"), "")
+        XCTAssertNotEqual(JournalCatalogStore.norm("brush\u{200B}teeth"),
+                          JournalCatalogStore.norm("brush teeth"))
+    }
+
+    @MainActor
+    func testLegacyCustomQuestionTrimmingMatchesKotlinAtUnicodeBoundaries() {
+        // Foundation treats U+0085 as whitespace, Kotlin does not; Kotlin
+        // treats U+001C...U+001F as whitespace, Foundation does not.
+        let onlyWhitespace = "\u{001C}\u{001F}\u{00A0}"
+        let opaque = "\u{0085}Evening wind-down?\u{200B}"
+        XCTAssertEqual(JournalCatalogStore.trimJournalCanonical(onlyWhitespace), "")
+        XCTAssertEqual(JournalCatalogStore.trimJournalCanonical(opaque), opaque)
+        XCTAssertEqual(JournalCatalogStore.trimJournalCanonical(
+            "\u{001C}Small walk?\u{2007}"), "Small walk?")
+
+        let defaults = isolatedDefaults()
+        let store = JournalCatalogStore(defaults: defaults)
+        store.customQuestions = [
+            onlyWhitespace,
+            "\u{001C}Small walk?\u{2007}",
+            opaque,
+            "\u{001F} SMALL walk? \u{00A0}",
+        ]
+        XCTAssertEqual(store.customQuestions, ["Small walk?", opaque])
+        XCTAssertEqual(JournalCatalogStore(defaults: defaults).customQuestions,
+                       ["Small walk?", opaque])
+
+        // Both the initial legacy migration and direct custom addition must
+        // reject semantically empty keys and preserve Kotlin-opaque scalars.
+        let legacy = JournalCatalogStore.migrateLegacy(
+            custom: [onlyWhitespace, "\u{001C}Small walk?\u{2007}", opaque],
+            hidden: ["\u{001F}"])
+        XCTAssertEqual(legacy.filter { $0.custom }.map(\.canonical),
+                       ["Small walk?", opaque])
+        store.addCustom(onlyWhitespace)
+        XCTAssertEqual(store.customQuestions.count, 2)
+        let second = JournalCatalogStore(defaults: isolatedDefaults())
+        second.addCustom(opaque)
+        XCTAssertEqual(second.customQuestions, [opaque])
+    }
+
+    @MainActor
     func testAddCustomNumericItem() {
         let store = makeCatalog()
         store.items = []
