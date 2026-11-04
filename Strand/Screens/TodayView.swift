@@ -2761,7 +2761,7 @@ struct TodayView: View {
             let est = stepsEstByDay[selectedDayKey].map { intString(Double($0)) }
             return real ?? est ?? "—"
         case .calories:
-            return withUnit(caloriesValue(appleDays.last))
+            return withUnit(caloriesValue())
         case .stress:
             #if DEBUG
             // DEBUG promo harness: pin the Stress card (0–3) to the active frame's value. No-op otherwise.
@@ -4137,7 +4137,7 @@ struct TodayView: View {
         case .calories:
             StatTile(
                 label: "Calories",
-                value: caloriesValue(aLatest),
+                value: caloriesValue(),
                 caption: String(localized: "active"),
                 accent: StrandPalette.metricAmber,
                 sparkline: sparks["active_kcal"],
@@ -4687,7 +4687,8 @@ struct TodayView: View {
         async let respRateSpark      = sparkValuesExplore("resp_rate", source: "my-whoop", window: 14)
         async let stepsAppleSpark    = sparkValues("steps", source: "apple-health", window: 14)
         async let weightSpark        = sparkValues("weight", source: "apple-health", window: 90)
-        async let activeKcalSpark    = sparkValues("active_kcal", source: "apple-health", window: 14)
+        // #1149: read the strap's daily HR energy too; Apple Health takes precedence below.
+        async let strapKcalSeriesA   = repo.exploreSeries(key: "active_kcal", source: "my-whoop")
 
         sparks["recovery"]        = await recoverySpark
         sparks["strain"]          = await strainSpark
@@ -4706,7 +4707,6 @@ struct TodayView: View {
         let strapSteps = repo.days.suffix(14).compactMap { $0.steps.map(Double.init) }
         if !strapSteps.isEmpty { sparks["steps"] = strapSteps }
         sparks["weight"]      = await weightSpark
-        sparks["active_kcal"] = await activeKcalSpark
 
         // Steps ESTIMATE per day (WHOOP 4.0 motion → calibrated steps), the Mi-Band series, workout +
         // Apple-daily rows, and the three "your cards" series, all history-wide (none depends on the
@@ -4743,6 +4743,14 @@ struct TodayView: View {
 
         workouts = await workoutsA
         appleDays = await appleDaysA
+        // Both Calories surfaces use the same imported-first day resolution. Build the trend
+        // from those same days so a BLE-only WHOOP 4.0 is not blank when Apple Health is absent.
+        let importedKcal: [(day: String, value: Double)] = appleDays.compactMap { row in
+            guard let kcal = row.activeKcal, kcal > 0 else { return nil }
+            return (day: row.day, value: kcal)
+        }
+        let kcalSeries = Self.resolvedCalories(strap: await strapKcalSeriesA, imported: importedKcal)
+        sparks["active_kcal"] = trailingWindow(kcalSeries, days: 14).map { $0.value }
         // Mi Band (Mi Fitness import), distinct days across its representative metric keys.
         let xSteps = await xStepsA
         let xSleep = await xSleepA
@@ -5372,10 +5380,34 @@ struct TodayView: View {
         }
     }
 
-    /// Active calories (Apple) for the latest day, falling back to the sparkline tail.
-    private func caloriesValue(_ a: AppleDaily?) -> String {
-        if let kcal = a?.activeKcal { return intString(kcal) }
-        return latestString("active_kcal", decimals: 0)
+    /// The selected day's calories, imported first and then estimated from strap HR.
+    /// Never carry an earlier Apple Health total or a sparkline tail onto another day (#1149).
+    private func caloriesValue() -> String {
+        let appleKcal = appleDays.last(where: { $0.day == selectedDayKey })?.activeKcal
+        let strapKcal = displayDay?.activeKcalEst
+        return Self.chooseCalories(imported: appleKcal, computed: strapKcal).map(intString) ?? "—"
+    }
+
+    /// Same-day imported energy wins; a missing/nonpositive import must not mask an HR estimate.
+    static func chooseCalories(imported: Double?, computed: Double?) -> Double? {
+        if let imported, imported > 0 { return imported }
+        return computed
+    }
+
+    /// Imported-first daily union for the Calories trend (same precedence as the tile).
+    /// The day keys remain distinct; no carry, double-count or invented value.
+    static func resolvedCalories(
+        strap: [(day: String, value: Double)],
+        imported: [(day: String, value: Double)]
+    ) -> [(day: String, value: Double)] {
+        var byDay = Dictionary(strap.map { ($0.day, $0.value) },
+                               uniquingKeysWith: { _, last in last })
+        for point in imported {
+            byDay[point.day] = chooseCalories(imported: point.value, computed: byDay[point.day])
+        }
+        return byDay.keys.sorted().compactMap { day in
+            byDay[day].map { (day: day, value: $0) }
+        }
     }
 
     private func workoutDuration(_ w: WorkoutRow) -> String {
