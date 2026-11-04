@@ -215,6 +215,6 @@ internal suspend fun WhoopRepository.replaceComputedScoreWindow(
     dailyMetrics = window.dailies,
     metricPoints = window.metricRows,
     provenance = window.provenance,
-    replaceMetricKeys = listOf(DayCycleIntelligenceIntegration.ONSET_KEY),
+    replaceMetricKeys = listOf(DayCycleIntelligenceIntegration.ONSET_KEY, "active_kcal_est"),
     replaceMetricSourceIds = window.markerSourceIds,
 )

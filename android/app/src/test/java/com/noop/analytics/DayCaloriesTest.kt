@@ -305,4 +305,29 @@ class DayCaloriesTest {
         assertEquals("the tie resolves to the lower reading, so no active energy is credited",
             0.0, forward.activeKcal, 1e-12)
     }
+    /** #2608: the active-labelled card must never consume resting-plus-active total. */
+    @Test
+    fun analyzedDayKeepsTotalButExposesActivityOnly() {
+        val day = "2026-09-29"
+        val start = AnalyticsEngine.dayStartUtcSeconds(day)
+        val hr = (0 until 600).map {
+            com.noop.data.HrSample(deviceId = "test", ts = start + it.toLong(), bpm = 130)
+        }
+        val profile = UserProfile(weightKg = 80.0, heightCm = 180.0, age = 35.0, sex = "male")
+        val result = AnalyticsEngine.analyzeDay(
+            day = day, dayHr = hr, profile = profile, maxHROverride = 185.0,
+        )
+        val active = result.activeEnergyKcal!!
+        val total = result.daily.activeKcalEst!!
+        assertTrue(active > 0.0)
+        assertTrue("total includes resting metabolism", total > active)
+        val split = Calories.estimateDayEnergy(hr, profile, hrmax = 185.0, restingHR = null)
+        assertEquals(split.activeKcal, active, 1e-9)
+        assertEquals(split.totalKcal, total, 1e-9)
+
+        val missing = AnalyticsEngine.analyzeDay(day = day, profile = profile)
+        org.junit.Assert.assertNull(missing.activeEnergyKcal)
+        org.junit.Assert.assertNull(missing.daily.activeKcalEst)
+    }
+
 }

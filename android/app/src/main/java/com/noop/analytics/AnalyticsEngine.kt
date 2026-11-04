@@ -984,16 +984,14 @@ object AnalyticsEngine {
         // night-window hr for pure-function callers that don't supply dayHr. Strain keeps the full
         // window (bounded log).
         val dayHrFiltered = (dayHr ?: hr).filter { tsInDay(it.ts) }
-        val activeKcalEst: Double? = if (dayHrFiltered.isEmpty()) {
-            null
-        } else {
-            Calories.estimateDayCalories(
-                hrSamples = dayHrFiltered,
-                profile = profile,
-                hrmax = effMaxHR,
-                restingHR = restingHRDaily?.toDouble(),
-            )
-        }
+        // DailyMetric.activeKcalEst is TOTAL kcal; active energy needs its own series.
+        val dayEnergy = if (dayHrFiltered.isEmpty()) null else Calories.estimateDayEnergy(
+            hrSamples = dayHrFiltered,
+            profile = profile,
+            hrmax = effMaxHR,
+            restingHR = restingHRDaily?.toDouble(),
+        )
+        val activeKcalEst = dayEnergy?.totalKcal
 
         // ── Assemble DailyMetric ──────────────────────────────────────────────
         // deviceId is stamped by the caller (IntelligenceEngine persists under
@@ -1098,6 +1096,7 @@ object AnalyticsEngine {
             gravitySparse = gravitySparse,
             detectionFunnel = detectionFunnel,
             mainNightBlocks = mainGroup.map { SleepStageTotals.NightBlock(it.start, it.end) },
+            activeEnergyKcal = dayEnergy?.activeKcal,
         )
     }
 
