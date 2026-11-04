@@ -43,6 +43,61 @@ final class JournalLogicTests: XCTestCase {
         XCTAssertEqual(merged.map(\.day), ["2026-06-09", "2026-06-09", "2026-06-10"])
     }
 
+    func testClearNativeNoRevealsImportedYesAndLeavesUnansweredDayBoundaries() async throws {
+        // Matched with JournalClearImportedRoomTest: a native No masks an imported Yes only
+        // while that native row exists. Adjacent unlogged dates must never become No.
+        let store = try await WhoopStore.inMemory()
+        let question = "Did you view a screen in bed?"
+        let otherQuestion = "Did you read before bed?"
+        let importedSource = "my-whoop"
+        let nativeSource = "noop-journal"
+        let day = "2026-06-09"
+        let from = "2026-06-08"
+        let to = "2026-06-10"
+
+        try await store.upsertJournal([
+            e(day, question, true),
+            e("2026-06-11", question, true), // Outside the queried window.
+        ], deviceId: importedSource)
+        try await store.upsertJournal([
+            e(day, question, false),
+            e(day, otherQuestion, true),     // Clearing one answer must not clear the other.
+            e("2026-06-07", question, false), // Outside the queried window.
+        ], deviceId: nativeSource)
+
+        func visible() async throws -> [JournalEntry] {
+            let imported = try await store.journalEntries(deviceId: importedSource, from: from, to: to)
+            let native = try await store.journalEntries(deviceId: nativeSource, from: from, to: to)
+            return Repository.mergeJournal(imported: imported, native: native)
+        }
+
+        let before = try await visible()
+        let beforeQuestion = Dictionary(uniqueKeysWithValues:
+            before.filter { $0.question == question }.map { ($0.day, $0.answeredYes) })
+        XCTAssertEqual(beforeQuestion, [day: false], "explicit native No overrides imported Yes")
+        XCTAssertNil(beforeQuestion[from], "June 8 was never answered")
+        XCTAssertNil(beforeQuestion[to], "June 10 was never answered")
+        XCTAssertTrue(before.contains { $0.day == day && $0.question == otherQuestion && $0.answeredYes })
+
+        let removed = try await store.deleteJournal(deviceId: nativeSource, day: day, question: question)
+        XCTAssertEqual(removed, 1)
+
+        let after = try await visible()
+        let afterQuestion = Dictionary(uniqueKeysWithValues:
+            after.filter { $0.question == question }.map { ($0.day, $0.answeredYes) })
+        XCTAssertEqual(afterQuestion, [day: true], "clear reveals the persisted imported Yes")
+        XCTAssertNil(afterQuestion[from], "clearing cannot invent an answer on June 8")
+        XCTAssertNil(afterQuestion[to], "clearing cannot invent an answer on June 10")
+        XCTAssertTrue(after.contains { $0.day == day && $0.question == otherQuestion && $0.answeredYes })
+
+        let imported = try await store.journalEntries(deviceId: importedSource, from: from, to: to)
+        XCTAssertEqual(imported.map(\.answeredYes), [true], "the imported source is untouched")
+        let native = try await store.journalEntries(deviceId: nativeSource, from: from, to: to)
+        XCTAssertEqual(native.map(\.question), [otherQuestion], "only one native natural key was deleted")
+        let secondClear = try await store.deleteJournal(deviceId: nativeSource, day: day, question: question)
+        XCTAssertEqual(secondClear, 0, "repeated clear remains a no-op")
+    }
+
     @MainActor
     func testCatalogAdoptsImportedCasing() {
         let cat = makeCatalog().resolvedItems(imported: ["DID YOU DRINK ANY ALCOHOL?"]).map(\.canonical)
