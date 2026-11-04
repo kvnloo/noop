@@ -1,0 +1,29 @@
+<resources>
+    <string name="oura_broker_pair_hint">Private z0live pairing link for NOOP</string>
+    <string name="oura_broker_pair">Pair gesture broker (opt-in)</string>
+    <string name="oura_broker_paired">Broker enabled. Arm the ring to send gestures, never raw motion. Enable Standby in Lawnchair first.</string>
+    <string name="oura_broker_forget">Forget broker / export OFF</string>
+    <string name="oura_broker_failed">Broker unavailable or refused. No local microphone was started. Check pairing, listener ownership and network.</string>
+    <string name="oura_broker_sent">Gesture accepted by broker; check target voice status.</string>
+    <string name="oura_broker_expired">Capture expired. Ring OFF requested and broker lease released.</string>
+    <string name="oura_gesture_map">Ring gestures: double tap with no call = start a call. Double tap during a call = mute or unmute. Triple tap = end the call.</string>
+    <string name="oura_standby_toggle_on">Always listen: ON</string>
+    <string name="oura_standby_toggle_off">Always listen: OFF</string>
+    <string name="oura_standby_explain">Always listen keeps the ring motion stream on in the background (screen off, phone in a pocket, any app) and sends taps to z0live without this screen. It costs extra ring and phone battery.</string>
+    <string name="oura_standby_status_listening">Listening for ring taps in the background.</string>
+    <string name="oura_standby_status_waiting">Always listen is on; waiting for the ring to connect.</string>
+    <string name="oura_standby_status_off">Not listening in the background.</string>
+    <string name="oura_standby_needs_background">Turn on Background connection in NOOP Settings so listening survives the screen turning off.</string>
+    <string name="oura_standby_screen_busy">Always listen is on, so taps already reach z0live from anywhere. Turn it off to use the 2-minute arm.</string>
+    <string name="oura_guided_title">Guided recording (debug)</string>
+    <string name="oura_guided_explain">About 3.5 minutes of spoken and beeped prompts: double and triple taps at three strengths, quadruple and quintuple taps, rapid doubles, single taps and thumb scrolls on the ring, with exact timing for tuning tap detection. Put the phone down and tap or swipe once per beep. Taps are not sent to z0live while recording. Files stay on this phone. Pause any time; it resumes at the block you stopped in. Skip moves past a block you do not want to record.</string>
+    <string name="oura_guided_start">Start guided recording</string>
+    <string name="oura_guided_resume">Resume guided recording at block %1$d of %2$d</string>
+    <string name="oura_guided_pause">Pause and save (resume later)</string>
+    <string name="oura_guided_restart">Restart guided recording from block 1</string>
+    <string name="oura_guided_done">Guided recording complete. Thank you.</string>
+    <string name="oura_guided_no_ring">Could not start: NOOP has no live, authenticated Oura ring right now.</string>
+    <string name="oura_guided_skip">Skip block</string>
+    <string name="oura_route_broker">Paired with the z0live broker: ring taps go there, from any screen while Always listen is on. Double tap with no call starts one (the broker opens z0live itself when nothing is awake), double tap in a call mutes, triple tap ends it.</string>
+    <string name="oura_route_unpaired">Not paired with the z0live broker: ring taps can only open the z0live controls on this screen. Paste NOOP\'s pairing link below.</string>
+</resources>
