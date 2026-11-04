@@ -87,6 +87,33 @@ class HealthExportPlanTest {
     private fun input(start: Long, end: Long, json: String? = null) =
         HealthExportPlan.SleepInput(keyStartTs = start, startTs = start, endTs = end, stagesJSON = json)
 
+    @Test fun sleepHrWindows_computedNightRetainsFullResolution() {
+        // A completed computed "-noop" night with edited onset 102 is supplied by the
+        // repository's merged sleep view. With a raw-only read there are no windows,
+        // so the same 1 Hz input would export only its first point at 30 s cadence.
+        val night = HealthExportPlan.SleepInput(keyStartTs = 95, startTs = 102, endTs = 106, stagesJSON = null)
+        val windows = HealthExportPlan.finalizedSleepWindows(listOf(night), nowSec = 110)
+        assertEquals(listOf(HealthExportPlan.Window(102, 106)), windows)
+
+        val samples = (100L..110L).map { hr(it, 70) }
+        val plan = HealthExportPlan.heartRate(samples, windows, frontierSec = 99, decimateSec = 30)
+        assertEquals(listOf(100L, 102L, 103L, 104L, 105L, 106L),
+            plan.chunks.flatMap { it.points }.map { it.tsSec })
+        assertEquals(110L, plan.newFrontierSec)
+    }
+
+    @Test fun sleepHrWindows_excludesOpenInvertedAndZeroLengthSessions() {
+        val sessions = listOf(
+            input(100, 300),
+            input(200, 400), // unfinished at now=350
+            input(330, 330), // zero length
+            input(340, 310), // inverted
+            HealthExportPlan.SleepInput(keyStartTs = 301, startTs = 310, endTs = 350, stagesJSON = null),
+        )
+        assertEquals(listOf(HealthExportPlan.Window(100, 300), HealthExportPlan.Window(310, 350)),
+            HealthExportPlan.finalizedSleepWindows(sessions, nowSec = 350))
+    }
+
     @Test fun sleep_excludesUnfinalizedSessions() {
         val sessions = listOf(input(100, 900))
         val out = HealthExportPlan.sleepSessions(sessions, nowSec = 500L, offsetSec = 0L) // ends in the future
