@@ -1,0 +1,4 @@
+switchesWithin2min,fragmentationRate,sustainedDwell,resumptionLatency,selfRatedFlow,taskOutcome
+1,0.25,1200,300,4,4
+0,0.10,2400,150,5,5
+,,1800,,3,

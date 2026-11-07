@@ -1,0 +1,5 @@
+condition,window,coverage_pct,censored_count,total_count
+shield,pre-10m,95,1,20
+shield,post-2m,90,2,20
+control,pre-10m,95,1,20
+control,post-2m,85,3,20
