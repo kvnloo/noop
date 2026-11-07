@@ -53,11 +53,11 @@ If the study **cannot** be run (no physical device, no consent, AW export unavai
 ## 3. No Flow Score — Explicit Statement & Offsetting Measure
 
 > **We do not ship, compute, or validate a "flow score."**
->
+
 > All metrics reported are **behavioral proxies** derived from low-content ActivityWatch telemetry and content-free Loop reminder observations:
 > - `switchesWithin2min`, `fragmentationRate`, `sustainedDwell`, `resumptionLatency` — event-based, observable, censored when telemetry missing
 > - `selfRatedFlow`, `taskOutcome` — optional, sparse, self-reported, **not** combined into an index
->
+
 > **No aggregation, weighting, normalization, or thresholding** across these fields produces a single "flow score." Any dashboard or summary showing a composite number is explicitly out of scope for this exploration and would require a separate validation study (clinical/causal, not observational).
 
 ### Offsetting Measure We DO Report
@@ -104,7 +104,20 @@ Each fixture contains 3 rows: (happy path, failure mode A, failure mode B) per t
 
 ---
 
-## 6. Cheapest Observation That Would Change Next Build Decision
+## 6. Reconciliation with Upstream Slices
+
+| Reference | Reconciliation |
+|-----------|----------------|
+| **noop#76** (PR #176) | Experiment contract provides the prospective framework; this slice operationalizes its instrument fields and adds the falsification plan |
+| **noop#77** (PR #177) | `measurement_kind` (5th-day question) is the branch point: this slice uses `behavioral-proxy` kind; `self-rated-flow` and `task-outcome` kinds are downstream |
+| **noop#70** | Integration inventory documents the ADB debug path (valid) and aw-sync push-only block (stop condition); no new transport added here |
+| **noop#94** (RFC) | Rules 1–3 satisfied: one at a time (chain position 3), bounded (0 min/day, opt-in, stop rule), ends with receipt |
+| **uhabits#3** | Provides reminder observation fields + debug ADB lease; release builds inert; content-free timestamps only |
+| **activitywatch#2** | Provides context summary + outcome proxies; offline join; censorship rules; no raw titles; DST-safe |
+
+---
+
+## 7. Cheapest Observation That Would Change Next Build Decision
 
 > **If F1 is observed (primary endpoint null/harm in a within-person A/B with adequate coverage), we stop building the distraction shield and reallocate to the next exploration (#84).**
 
