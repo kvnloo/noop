@@ -1,0 +1,212 @@
+{
+  "schema": "noop.intervention_recipe_backlog.v0",
+  "synthetic": true,
+  "note": "Synthetic registry rows; no personal data; not imported by the app. Tier capped at 2 (see docs/INTERVENTION_CATALOG_RECIPE_BACKLOG.md section 3).",
+  "annotation_only": [
+    "Did you take magnesium?"
+  ],
+  "recipes": [
+    {
+      "recipe_id": "R1",
+      "intervention_context": "Did you view a screen in bed?",
+      "context_source": "journal_starter_question",
+      "baseline_control": "explicit_no_comparable_wake_days",
+      "outcome_keys": [
+        "sleep_performance"
+      ],
+      "lag_wake_days": 1,
+      "owner": "journal+behaviour_effects",
+      "mode": "assignable",
+      "predicted_direction": "yes_lower",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R2",
+      "intervention_context": "Did you have caffeine late in the day?",
+      "context_source": "journal_starter_question",
+      "baseline_control": "explicit_no_comparable_wake_days",
+      "outcome_keys": [
+        "sleep_performance",
+        "recovery"
+      ],
+      "lag_wake_days": 1,
+      "owner": "journal+behaviour_effects",
+      "mode": "assignable_abstain_only",
+      "predicted_direction": "yes_lower",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R3",
+      "intervention_context": "Did you eat close to bedtime?",
+      "context_source": "journal_starter_question",
+      "baseline_control": "explicit_no_comparable_wake_days",
+      "outcome_keys": [
+        "sleep_performance"
+      ],
+      "lag_wake_days": 1,
+      "owner": "journal+behaviour_effects",
+      "mode": "assignable_abstain_only",
+      "predicted_direction": "yes_lower",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R4",
+      "intervention_context": "Did you read before bed?",
+      "context_source": "journal_starter_question",
+      "baseline_control": "explicit_no_comparable_wake_days",
+      "outcome_keys": [
+        "sleep_performance"
+      ],
+      "lag_wake_days": 1,
+      "owner": "journal+behaviour_effects",
+      "mode": "assignable",
+      "predicted_direction": "yes_higher",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R5",
+      "intervention_context": "PROPOSED: Did you finish a breathing session this evening?",
+      "context_source": "proposed_journal_question",
+      "baseline_control": "explicit_no_comparable_wake_days",
+      "outcome_keys": [
+        "hrv"
+      ],
+      "lag_wake_days": 1,
+      "owner": "breathing+journal(#51)",
+      "mode": "assignable",
+      "predicted_direction": "yes_higher",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R6",
+      "intervention_context": "PROPOSED: Did you keep your usual bedtime +-30 min?",
+      "context_source": "proposed_journal_question",
+      "baseline_control": "explicit_no_trailing_14_28_wake_days",
+      "outcome_keys": [
+        "recovery"
+      ],
+      "lag_wake_days": 1,
+      "owner": "sleep+journal",
+      "mode": "assignable",
+      "predicted_direction": "yes_higher",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R7",
+      "intervention_context": "PROPOSED: Did you do a structured workout today?",
+      "context_source": "proposed_journal_question",
+      "baseline_control": "explicit_no_matched_prior_sleep_weekday_training_load_covariate",
+      "outcome_keys": [
+        "hrv",
+        "rhr"
+      ],
+      "lag_wake_days": 1,
+      "owner": "workouts+journal",
+      "mode": "observe_only",
+      "predicted_direction": "prespecified_at_lock",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R8",
+      "intervention_context": "Did you use a sauna?",
+      "context_source": "journal_starter_question",
+      "baseline_control": "explicit_no_same_season",
+      "outcome_keys": [
+        "sleep_performance"
+      ],
+      "lag_wake_days": 1,
+      "owner": "journal+insights",
+      "mode": "observe_only",
+      "predicted_direction": "prespecified_at_lock",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R9",
+      "intervention_context": "spaced-retrieval schedule A vs B",
+      "context_source": "external_producer",
+      "baseline_control": "randomized_equivalent_item_families",
+      "outcome_keys": [
+        "retention_24h",
+        "retention_7d",
+        "retention_30d"
+      ],
+      "lag_wake_days": [
+        1,
+        7,
+        30
+      ],
+      "owner": "external_anki_fsrs_via_#77",
+      "mode": "assignable_external",
+      "predicted_direction": "a_higher",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    },
+    {
+      "recipe_id": "R10",
+      "intervention_context": "AI assistance on vs off",
+      "context_source": "external_producer",
+      "baseline_control": "randomized_equivalent_item_families",
+      "outcome_keys": [
+        "immediate_score",
+        "delayed_unassisted_transfer"
+      ],
+      "lag_wake_days": [
+        0,
+        7
+      ],
+      "owner": "external_benchmark_via_#77",
+      "mode": "assignable_external",
+      "predicted_direction": "prespecified_at_lock",
+      "evidence_tier": 2,
+      "min_exposure_days": 5,
+      "min_control_days": 5,
+      "min_coverage": 0.7,
+      "verdict_below_coverage": "inconclusive",
+      "synthetic": true
+    }
+  ]
+}
