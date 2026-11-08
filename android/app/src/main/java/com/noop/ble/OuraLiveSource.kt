@@ -156,6 +156,10 @@ class OuraLiveSource(
      *  can re-point this device onto its `oura-<serial>` id — the identity that survives a re-pair, unlike the
      *  transient address (#771). Default no-op. Only plausible serials are surfaced. Twin of Swift's `onSerial`. */
     private val onSerial: (String) -> Unit = {},
+    /** Fired with the ring's STABLE identity address (the MAC that survives RPA rotation) once a bonded
+     *  connection is established, so the registry can persist it and future connects use the stable address
+     *  instead of a stale RPA. Default no-op. */
+    private val onIdentityAddress: (String) -> Unit = {},
     /**
      * Source of cryptographically-random bytes for a freshly-generated install key (adopt flow step 1).
      * Injected so a test can pin a deterministic key; production defaults to [java.security.SecureRandom]
@@ -317,6 +321,8 @@ class OuraLiveSource(
     private var lastDevice: BluetoothDevice? = null
     /** Guards the single status-133 (Android GATT_ERROR) auto-retry; reset on a successful connect. */
     private var retried133 = false
+    /** Guards the single status-147 (0x93 GATT conn timeout) auto-retry; reset on a successful connect. */
+    private var retried147 = false
     /** Logs the FIRST live-HR sample of a connection only; reset on stop/disconnect. */
     private var loggedFirstHr = false
     /**
@@ -414,6 +420,13 @@ class OuraLiveSource(
      * Reads the CURRENT [lastDevice] at fire time (the newest connect target is the right one to retry).
      */
     private val retry133Runnable = Runnable {
+        val device = lastDevice
+        if (!intentionalDisconnect && device != null) connectToDevice(device)
+    }
+
+    /** The one-shot status-147 (0x93 GATT conn timeout) auto-retry, held as a NAMED field so [stop]
+     *  can remove it. Mirrors [retry133Runnable]. */
+    private val retry147Runnable = Runnable {
         val device = lastDevice
         if (!intentionalDisconnect && device != null) connectToDevice(device)
     }
@@ -835,7 +848,7 @@ class OuraLiveSource(
         val resolves = drain.maxStoredRingTime > 0 &&
             driver?.unixSeconds(forRingTimestamp = drain.maxStoredRingTime) != null
         val anchorConfirmsContinuity = drain.sawPreResumeData && syncAnchorsConfirmContinuity()
-        val newCursor = drain.resumeCursorAtDrainEnd(historyCursor, resolves, anchorConfirmsContinuity)
+        val newCursor = drain.resumeCursorAtDrainEnd(historyCursor, resolves, anchorConfirmsContinuity, drainCompleted)
         if (drain.sawPreResumeData && !anchorConfirmsContinuity) {
             log("Oura: history $how but the ring served data older than cursor $resumeCursorAtFetchStart" +
                 " - clock reset/seek ignored; next connect does a full pull")
@@ -1173,9 +1186,44 @@ class OuraLiveSource(
         reconnectAddress = address
         intentionalDisconnect = false
         _linkPhase.value = LinkPhase.CONNECTING   // every branch below is an attempt to reach the ring
+
+        // ROOT CAUSE FIX: The [address] passed here is the registry's stored peripheralId, which for an
+        // Oura ring is often a stale RPA (resolvable private address) that has since rotated. Connecting
+        // via getRemoteDevice(staleRPA) yields GATT timeout (status=147). Instead, find the BONDED Oura
+        // device from the system bond list and connect using that BluetoothDevice object — it holds the
+        // LTK and resolves the current RPA internally. After a successful connection we surface the
+        // stable identity address via [onIdentityAddress] so the registry can persist it for next time.
+        val bondedOuraDevice = findBondedOuraDevice(preferredAddress = address)
+        if (bondedOuraDevice != null) {
+            log("Oura: connecting via bonded device ${bondedOuraDevice.address} (registry had $address)")
+            connectToDevice(bondedOuraDevice)
+            return
+        }
+
+        // Fallback: no bonded device found (first pair, or bond lost). Use the address as before —
+        // either a discovered device from the current scan, or getRemoteDevice for a fresh pair.
         val device = seen[address] ?: runCatching { adapter?.getRemoteDevice(address) }.getOrNull()
         if (device == null) { pendingConnectAddress = address; return }
         connectToDevice(device)
+    }
+
+    /** Find the bonded Oura ring device from the system bond list. Returns null if not bonded. */
+    @SuppressLint("MissingPermission")
+    private fun findBondedOuraDevice(preferredAddress: String? = null): BluetoothDevice? {
+        val bonded = adapter?.bondedDevices ?: return null
+        val serviceUuid = ParcelUuid(SERVICE_UUID)
+        return bonded.firstOrNull { device ->
+            // Match by address first (preferred identity or RPA), then by name/service UUID.
+            val addrMatch = preferredAddress?.let { addr ->
+                device.address == addr
+            } ?: false
+            if (addrMatch) return@firstOrNull true
+            // Match by name (Oura rings include "Oura" in the bond cache name) OR by service UUID.
+            val name = runCatching { device.name }.getOrNull() ?: ""
+            val hasOuraName = name.contains("Oura", ignoreCase = true)
+            val hasOuraService = runCatching { device.uuids?.any { it.uuid == SERVICE_UUID } ?: false }.getOrDefault(false)
+            hasOuraName || hasOuraService
+        }
     }
 
     /**
@@ -1195,6 +1243,7 @@ class OuraLiveSource(
         failedReconnectAttempts = 0
         handler.removeCallbacks(reconnectRunnable)
         handler.removeCallbacks(retry133Runnable)
+        handler.removeCallbacks(retry147Runnable)
         val device = lastDevice
         val address = reconnectAddress
         when {
@@ -1288,6 +1337,10 @@ class OuraLiveSource(
         previousSyncAnchorUnixSeconds = loadedAnchor?.second
         currentSyncAnchorTicks = null
         currentSyncAnchorUnixSeconds = null
+        // Start a connect watchdog: if the GATT connection doesn't progress to STATE_CONNECTED within
+        // CONNECT_WATCHDOG_MS, tear it down and retry (or report failure). This prevents the "connecting"
+        // state from stalling indefinitely when the ring is held by another central.
+        startConnectWatchdog()
         // connectGatt can throw (SecurityException if BLUETOOTH_CONNECT was revoked mid-session,
         // IllegalArgumentException on a stale device) - never let that crash the app; a failed start
         // simply leaves the previous source in place (mirrors [StandardHrSource]).
@@ -1300,8 +1353,31 @@ class OuraLiveSource(
             }
         }.getOrElse {
             log("Oura: connectGatt failed (${it.javaClass.simpleName}: ${it.message})")
+            cancelConnectWatchdog()
             null
         }
+    }
+
+    private val connectWatchdogRunnable = Runnable {
+        log("Oura: connect watchdog fired - GATT connection timed out after ${CONNECT_WATCHDOG_MS / 1000}s")
+        // Tear down the stuck connection attempt
+        gatt?.let { runCatching { it.disconnect(); it.close() } }
+        gatt = null
+        _linkPhase.value = LinkPhase.DISCONNECTED
+        // Retry via the normal auto-reconnect path (which will try the bonded device again)
+        scheduleReconnect()
+    }
+
+    /** Timeout before the connect watchdog fires. Long enough for a healthy connect, short enough to not stall. */
+    private val CONNECT_WATCHDOG_MS = 15_000L
+
+    private fun startConnectWatchdog() {
+        handler.removeCallbacks(connectWatchdogRunnable)
+        handler.postDelayed(connectWatchdogRunnable, CONNECT_WATCHDOG_MS)
+    }
+
+    private fun cancelConnectWatchdog() {
+        handler.removeCallbacks(connectWatchdogRunnable)
     }
 
     /** Tear down: cancel the connection and stop scanning, persisting anything still buffered. Idempotent. */
@@ -1315,6 +1391,8 @@ class OuraLiveSource(
         failedReconnectAttempts = 0
         handler.removeCallbacks(reconnectRunnable)
         handler.removeCallbacks(retry133Runnable)
+        handler.removeCallbacks(retry147Runnable)
+        handler.removeCallbacks(connectWatchdogRunnable)   // cancel connect watchdog on intentional stop
         stopScan()
         pendingConnectAddress = null
         _linkPhase.value = LinkPhase.DISCONNECTED
@@ -1477,7 +1555,12 @@ class OuraLiveSource(
                     if (status != BluetoothGatt.GATT_SUCCESS) {
                         log("Oura: WARNING connected with non-success status=$status")
                     }
+                    cancelConnectWatchdog()   // connection established, stop the watchdog
+                    // Surface the stable identity address (the MAC that survives RPA rotation) so the
+                    // registry can persist it for future connects. This fixes the stale-RPA root cause.
+                    runCatching { onIdentityAddress(g.device.address) }
                     retried133 = false   // a real connection clears the one-shot 133 retry guard
+                    retried147 = false   // a real connection clears the one-shot 147 retry guard
                     failedReconnectAttempts = 0   // a real connection clears the reconnect backoff (#912)
                     log("Oura: connected (status=$status) - discovering services")
                     _linkPhase.value = LinkPhase.AUTHENTICATING   // link up; discovery + the nonce handshake follow
@@ -1534,6 +1617,19 @@ class OuraLiveSource(
                             "Settings → Bluetooth, then re-pair.")
                         // Fall through to the capped-backoff reconnect so a transient 133 storm still recovers
                         // on its own once the ring settles, rather than giving up until a manual reconnect.
+                    }
+                    // Same one-shot retry for status 147 (0x93 GATT conn timeout on S25). If it fails again,
+                    // another app (e.g. com.ouraring.oura) may be holding the ring's bond — log a clear hint.
+                    if (status == GATT_ERROR_147 && !retried147 && lastDevice != null && !intentionalDisconnect) {
+                        retried147 = true
+                        log("Oura: connect error 147 (0x93 GATT conn timeout) - retrying once in 1s")
+                        handler.postDelayed(retry147Runnable, 1000)
+                        return@guardedCallback   // the one-shot 147 retry owns the reconnect for this drop
+                    }
+                    if (status == GATT_ERROR_147 && retried147) {
+                        log("Oura: still failing (147) - another app may hold the ring's bond; " +
+                            "force-stop com.ouraring.oura in Settings → Apps, then retry.")
+                        // Fall through to the capped-backoff reconnect.
                     }
                     // Auto-reconnect on an INVOLUNTARY drop / failed connect (#912): the paired ring went out
                     // of range or the link dropped. Re-issue a connect on the capped backoff so it comes back
@@ -2535,6 +2631,11 @@ class OuraLiveSource(
         /** Android's infamous generic GATT connect failure (`BluetoothGatt.GATT_ERROR`, not a public
          *  constant). We auto-retry it once. */
         private const val GATT_ERROR_133 = 133
+
+        /** Samsung/vendor GATT status 147 (0x93), seen as a connection-timeout on S25 when the Oura
+         *  app holds the ring's bond or the link drops mid-handshake. We auto-retry it once, then
+         *  fall through to the capped-backoff auto-reconnect. */
+        private const val GATT_ERROR_147 = 147
 
         /** Max self-chained drain passes per session (twin of Swift's maxChainedDrainPasses). */
         private const val MAX_CHAINED_DRAIN_PASSES = 6

@@ -592,6 +592,11 @@ class SourceCoordinator(
             onBattery = batterySink,  // ring battery → the same live state the WHOOP strap battery uses
             onModel = { model -> scope.launch { runCatching { registry.setModel(id, model) } } },  // #772: correct a name-guessed gen
             onSerial = { serial -> adoptOuraSerial(currentId = id, serial = serial) },  // #771
+            onIdentityAddress = { identityAddress ->
+                scope.launch {
+                    runCatching { registry.setPeripheralId(id, identityAddress) }
+                }
+            },  // persist stable identity address (fixes stale RPA root cause)
         )
         // CONSUME the one-shot adopt-intent the wizard armed after its irreversible-consent gate AND its
         // second "Take over" confirm (and ONLY then). True permits the DANGEROUS post-factory-reset key
