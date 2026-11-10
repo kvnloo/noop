@@ -52,6 +52,7 @@ enum GpsSplitMath {
         guard previous.distanceMetres / splitMetres <= maximumCompleteSplits else { return [] }
 
         var splits: [Split] = []
+        var nextBoundaryIndex = 1
         var nextBoundaryMetres = splitMetres
         var lastBoundaryMetres = 0.0
         var lastCrossingMs = 0.0
@@ -73,7 +74,10 @@ enum GpsSplitMath {
                                     complete: true))
                 lastCrossingMs = crossedMs
                 lastBoundaryMetres = nextBoundaryMetres
-                nextBoundaryMetres += splitMetres
+                // Derive each boundary independently: repeated addition drifts for mile
+                // and decimal strides, inventing tails or misclassifying complete splits.
+                nextBoundaryIndex += 1
+                nextBoundaryMetres = Double(nextBoundaryIndex) * splitMetres
             }
         }
 

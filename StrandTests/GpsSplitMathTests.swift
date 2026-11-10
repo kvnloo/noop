@@ -111,6 +111,25 @@ final class GpsSplitMathTests: XCTestCase {
         ])
     }
 
+    func testTenExactMilesEndWithACompleteSplit() {
+        expect(GpsSplitMath.calculate(points: [p(0, 0), p(16_093.44, 6_000_000)],
+                                      splitMetres: 1_609.344),
+               (1...10).map { s(1_609.344, Double($0) * 600, 600, true) })
+    }
+
+    func testDecimalStrideHasNoAccumulatedPhantomTail() {
+        expect(GpsSplitMath.calculate(points: [p(0, 0), p(1, 10_000)], splitMetres: 0.1),
+               (1...10).map { s(0.1, Double($0), 1, true) })
+    }
+
+    func testOneUlpShortOfBoundaryRemainsIncomplete() {
+        let end = 1.0.nextDown
+        let expected = (1...9).map { s(0.1, Double($0), 1, true) }
+            + [s(end - 0.9, 10, 1, false)]
+        expect(GpsSplitMath.calculate(points: [p(0, 0), p(end, 10_000)], splitMetres: 0.1),
+               expected)
+    }
+
     func testStationaryDuplicateTimeIsNotMovement() {
         expect(GpsSplitMath.calculate(points: [p(0, 0), p(0, 0), p(1_500, 600_000)],
                                       splitMetres: 1_000), [

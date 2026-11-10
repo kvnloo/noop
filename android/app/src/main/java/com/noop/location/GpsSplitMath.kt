@@ -48,6 +48,7 @@ object GpsSplitMath {
         if (previous.distanceMetres / splitMetres > maximumCompleteSplits) return emptyList()
 
         val splits = ArrayList<Split>()
+        var nextBoundaryIndex = 1
         var nextBoundaryMetres = splitMetres
         var lastBoundaryMetres = 0.0
         var lastCrossingMs = 0.0
@@ -70,7 +71,10 @@ object GpsSplitMath {
                 ))
                 lastCrossingMs = crossedMs
                 lastBoundaryMetres = nextBoundaryMetres
-                nextBoundaryMetres += splitMetres
+                // Derive each boundary independently: repeated addition drifts for mile
+                // and decimal strides, inventing tails or misclassifying complete splits.
+                nextBoundaryIndex += 1
+                nextBoundaryMetres = nextBoundaryIndex.toDouble() * splitMetres
             }
         }
 

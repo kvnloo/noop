@@ -107,6 +107,23 @@ class GpsSplitMathTest {
         ))
     }
 
+    @Test fun tenExactMilesEndWithACompleteSplit() {
+        expect(GpsSplitMath.calculate(listOf(p(0.0, 0), p(16_093.44, 6_000_000)),
+            1_609.344), (1..10).map { s(1_609.344, it * 600.0, 600.0, true) })
+    }
+
+    @Test fun decimalStrideHasNoAccumulatedPhantomTail() {
+        expect(GpsSplitMath.calculate(listOf(p(0.0, 0), p(1.0, 10_000)), 0.1),
+            (1..10).map { s(0.1, it.toDouble(), 1.0, true) })
+    }
+
+    @Test fun oneUlpShortOfBoundaryRemainsIncomplete() {
+        val end = Math.nextDown(1.0)
+        val expected = (1..9).map { s(0.1, it.toDouble(), 1.0, true) } +
+            s(end - 0.9, 10.0, 1.0, false)
+        expect(GpsSplitMath.calculate(listOf(p(0.0, 0), p(end, 10_000)), 0.1), expected)
+    }
+
     @Test fun stationaryDuplicateTimeIsNotMovement() {
         expect(GpsSplitMath.calculate(listOf(p(0.0, 0), p(0.0, 0),
             p(1_500.0, 600_000)), 1_000.0), listOf(
