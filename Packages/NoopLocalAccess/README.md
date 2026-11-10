@@ -32,6 +32,8 @@ Arguments reuse the MCP defaults and bounds:
   and `--device-id`. The newest bounded suffix is returned in ascending time/order.
   Missing `rrInterval` tables and optional legacy columns are supported; malformed
   non-integer rows and rows labelled `spo2Ibi` or `tsSuspect=1` are excluded.
+  Optional `seq`/`ord` metadata must be integers or NULL; malformed metadata is
+  excluded before limiting so it cannot displace valid points or inflate truncation.
   This is a raw diagnostic-style read, not the scoring-selected `rrIntervals` stream.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or

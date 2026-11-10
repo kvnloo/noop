@@ -358,6 +358,15 @@ public final class ReadonlyNoopStore {
             whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
         }
 
+        // SQLite affinity does not guarantee integer metadata. Filter before LIMIT so malformed
+        // optional values neither trap GRDB decoding nor displace valid points from the page.
+        if hasOrd {
+            whereSQL += " AND (ord IS NULL OR typeof(ord) = 'integer')"
+        }
+        if hasSeq {
+            whereSQL += " AND (seq IS NULL OR typeof(seq) = 'integer')"
+        }
+
         var order = ["ts DESC"]
         if hasOrd { order.append("ord DESC") }
         order.append("rrMs DESC")
