@@ -1328,6 +1328,36 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
                 self.assertEqual(1, code)
                 self.assertIn("duplicate compact baseline group", output)
 
+    def test_malformed_compact_groups_fail_closed(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        original = baseline["accepted_findings"][0]
+        malformed = [
+            [None, *baseline["accepted_findings"]],
+            ["ignored evidence", *baseline["accepted_findings"]],
+            None,
+            {},
+            *[[{**original, key: value}] for key, value in (
+                ("rule", []), ("scope", {}), ("scope", None),
+                ("rule", ""), ("count", True), ("count", 1.0),
+                ("count", "1"), ("count", -1),
+                ("identities_sha256", []), ("identities_sha256", "bad"),
+            )],
+        ]
+        for groups in malformed:
+            with self.subTest(groups=groups):
+                invalid = {**baseline, "accepted_findings": groups}
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, invalid))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, invalid)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code)
+                self.assertIn("invalid compact baseline", output)
+
     def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
         """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
         self.write_clean_tree()

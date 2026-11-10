@@ -2588,10 +2588,21 @@ def build_compact_baseline(result: ScanResult) -> dict:
 
 def _compact_baseline_groups(baseline: dict) -> dict[tuple[str, str], dict]:
     groups = {}
-    for item in baseline.get("accepted_findings", []):
+    accepted = baseline.get("accepted_findings", [])
+    if not isinstance(accepted, list):
+        raise ValueError("invalid compact baseline: accepted_findings must be an array")
+    for index, item in enumerate(accepted):
+        location = f"invalid compact baseline: accepted_findings[{index}]"
         if not isinstance(item, dict):
-            continue
-        key = (item.get("rule"), item.get("scope"))
+            raise ValueError(f"{location} must be an object")
+        for field in ("rule", "scope"):
+            if not isinstance(item.get(field), str) or not item[field].strip():
+                raise ValueError(f"{location} needs non-empty {field}")
+        if (type(item.get("count")) is not int or item["count"] < 1
+                or not isinstance(item.get("identities_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", item["identities_sha256"]) is None):
+            raise ValueError(f"{location} needs count and identity SHA-256")
+        key = (item["rule"], item["scope"])
         if key in groups:
             raise ValueError(f"duplicate compact baseline group: {key[0]}|{key[1]}")
         groups[key] = item
