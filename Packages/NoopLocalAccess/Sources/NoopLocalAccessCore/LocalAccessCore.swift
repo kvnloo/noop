@@ -843,11 +843,17 @@ private struct SleepStageMinutes {
     var awake = 0.0
 
     mutating func add(stage: String, minutes: Double) {
+        guard minutes.isFinite, minutes >= 0 else { return }
+        // Malformed stored values must not make the entire CLI/MCP response unencodable.
+        func accumulate(_ total: inout Double) {
+            let updated = total + minutes
+            if updated.isFinite { total = updated }
+        }
         switch stage {
-        case "light": light += minutes
-        case "deep": deep += minutes
-        case "rem": rem += minutes
-        case "awake": awake += minutes
+        case "light": accumulate(&light)
+        case "deep": accumulate(&deep)
+        case "rem": accumulate(&rem)
+        case "awake": accumulate(&awake)
         default: break
         }
     }

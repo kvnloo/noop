@@ -28,7 +28,8 @@ Arguments reuse the MCP defaults and bounds:
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000).
 - `sleep_stages`: optional `--days` (default 30, clamped to 1...4000), `--limit` sessions
   (default 14, clamped to 1...60), and `--max-points` per session (default 200, clamped to
-  1...2000). `sleep_summary` still returns `hasStages` only.
+  1...2000). Negative/nonfinite stored minute values and additions that overflow a stage
+  total are ignored. `sleep_summary` still returns `hasStages` only.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
