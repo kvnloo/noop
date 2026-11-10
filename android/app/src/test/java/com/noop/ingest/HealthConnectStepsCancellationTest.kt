@@ -220,7 +220,7 @@ class HealthConnectStepsCancellationTest {
             endTime = start.plusSeconds(120),
             endZoneOffset = zone.rules.getOffset(start.plusSeconds(120)),
             count = count,
-            metadata = Metadata.manualEntry(),
+            metadata = Metadata(recordingMethod = Metadata.RECORDING_METHOD_MANUAL_ENTRY),
         )
     }
 
@@ -307,7 +307,7 @@ class HealthConnectStepsCancellationTest {
             endTime = start.plusSeconds(120),
             endZoneOffset = zone.rules.getOffset(start.plusSeconds(120)),
             count = 42L,
-            metadata = Metadata.manualEntry(),
+            metadata = Metadata(recordingMethod = Metadata.RECORDING_METHOD_MANUAL_ENTRY),
         )
         val cancellation = CancellationException("Room upsert cancelled")
         val daoCalls = mutableListOf<String>()
