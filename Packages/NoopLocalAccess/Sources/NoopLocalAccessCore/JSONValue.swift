@@ -68,7 +68,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
         case .int(let value):
             return value
         case .double(let value):
-            return Int(value)
+            return Int(exactly: value.rounded(.towardZero))
         case .string(let value):
             return Int(value)
         default:

@@ -15,6 +15,7 @@ public final class NoopToolDispatcher {
         "data_freshness",
         "sleep_summary",
         "workout_summary",
+        "rr_series",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -39,6 +40,19 @@ public final class NoopToolDispatcher {
             return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
         case "workout_summary":
             return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
+        case "rr_series":
+            let fromTs = try rrTimestamp(arguments["from_ts"], name: "from_ts")
+            let toTs = try rrTimestamp(arguments["to_ts"], name: "to_ts")
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
+            }
+            return try data().rrSeries(
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
         default:
             throw LocalAccessError.toolNotFound(name)
         }
@@ -57,6 +71,17 @@ public final class NoopToolDispatcher {
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }
+    }
+
+    private func rrTimestamp(_ value: JSONValue?, name: String) throws -> Int? {
+        guard let value else { return nil }
+        if case .double(let number) = value, number.rounded(.towardZero) != number {
+            throw LocalAccessError.invalidParams("rr_series \(name) must be an integer timestamp")
+        }
+        guard let timestamp = value.intValue else {
+            throw LocalAccessError.invalidParams("rr_series \(name) must be an integer timestamp")
+        }
+        return timestamp
     }
 
     private func data() throws -> NoopDataAccess {
