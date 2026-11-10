@@ -35,7 +35,7 @@ import org.robolectric.annotation.Config
  * Cancellation during Health Connect's live steps top-up must not be treated as a recoverable
  * permission, read or Room error. The existing reader is exercised with a throwing client;
  * a caller-supplied test client and proxy DAO exercise the real steps preflight and Room paths.
- * All five regressions assert observable behavior, never source-text patterns.
+ * All regressions assert observable behavior, never source-text patterns.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -108,7 +108,9 @@ class HealthConnectStepsCancellationTest {
         permissionFailure: Exception? = null,
         records: List<StepsRecord> = emptyList(),
         calls: MutableList<String> = mutableListOf(),
+        secondPageFailure: Exception? = null,
     ): HealthConnectClient {
+        var pagesRead = 0
         val controller = Proxy.newProxyInstance(
             PermissionController::class.java.classLoader,
             arrayOf(PermissionController::class.java),
@@ -128,13 +130,14 @@ class HealthConnectStepsCancellationTest {
                 "getPermissionController" -> controller
                 "readRecords" -> {
                     calls.add("readRecords")
+                    if (pagesRead++ > 0 && secondPageFailure != null) throw secondPageFailure
                     // The SDK response constructor is internal; build this test fixture reflectively.
                     val constructor = ReadRecordsResponse::class.java.declaredConstructors.single {
                         it.parameterCount == 2
                     }
                     constructor.isAccessible = true
                     @Suppress("UNCHECKED_CAST")
-                    constructor.newInstance(records, null) as ReadRecordsResponse<StepsRecord>
+                    constructor.newInstance(records, if (secondPageFailure != null) "next-page" else null) as ReadRecordsResponse<StepsRecord>
                 }
                 else -> error("Unexpected Health Connect call: " + method.name)
             }
@@ -205,6 +208,85 @@ class HealthConnectStepsCancellationTest {
         }
         assertSame(cancellation, thrown)
         assertEquals(listOf("appleDaily"), daoCalls)
+        assertNoStamp(context, before)
+    }
+
+    private fun todaySteps(count: Long): StepsRecord {
+        val zone = ZoneId.systemDefault()
+        val start = LocalDate.now(zone).atStartOfDay(zone).toInstant().plusSeconds(60)
+        return StepsRecord(
+            startTime = start,
+            startZoneOffset = zone.rules.getOffset(start),
+            endTime = start.plusSeconds(120),
+            endZoneOffset = zone.rules.getOffset(start.plusSeconds(120)),
+            count = count,
+            metadata = Metadata.manualEntry(),
+        )
+    }
+
+    @Test
+    fun failedSecondPagePreservesStoredTotalWithoutWritingOrSyncStamp() {
+        val (context, before) = preparedContext()
+        val daoCalls = mutableListOf<String>()
+        val clientCalls = mutableListOf<String>()
+        val prior = AppleDaily(
+            deviceId = HealthConnectImporter.HC_DEVICE,
+            day = LocalDate.now().toString(),
+            steps = 500,
+        )
+        val actual = runBlocking {
+            HealthConnectImporter.refreshTodaySteps(
+                context, repository(daoCalls, stored = prior),
+                testClient = fakeClient(
+                    records = listOf(todaySteps(42L)), calls = clientCalls,
+                    secondPageFailure = IllegalStateException("provider page unavailable"),
+                ),
+            )
+        }
+        assertEquals(500, actual)
+        assertEquals(listOf("permissionPreflight", "readRecords", "readRecords"), clientCalls)
+        assertEquals(listOf("appleDaily"), daoCalls)
+        assertNoStamp(context, before)
+    }
+
+    @Test
+    fun failedSecondPageWithoutStoredDayDoesNotCreatePartialTotal() {
+        val (context, before) = preparedContext()
+        val daoCalls = mutableListOf<String>()
+        val actual = runBlocking {
+            HealthConnectImporter.refreshTodaySteps(
+                context, repository(daoCalls),
+                testClient = fakeClient(
+                    records = listOf(todaySteps(42L)),
+                    secondPageFailure = IllegalStateException("provider page unavailable"),
+                ),
+            )
+        }
+        assertEquals(null, actual)
+        assertEquals(listOf("appleDaily"), daoCalls)
+        assertNoStamp(context, before)
+    }
+
+    @Test
+    fun cancelledSecondPageDiscardsPartialReadBeforeAnyRoomAccess() {
+        val (context, before) = preparedContext()
+        val cancellation = CancellationException("second page cancelled")
+        val daoCalls = mutableListOf<String>()
+        val clientCalls = mutableListOf<String>()
+        val thrown = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                HealthConnectImporter.refreshTodaySteps(
+                    context, repository(daoCalls),
+                    testClient = fakeClient(
+                        records = listOf(todaySteps(42L)), calls = clientCalls,
+                        secondPageFailure = cancellation,
+                    ),
+                )
+            }
+        }
+        assertSame(cancellation, thrown)
+        assertEquals(listOf("permissionPreflight", "readRecords", "readRecords"), clientCalls)
+        assertTrue("No DAO work is allowed after a cancelled page", daoCalls.isEmpty())
         assertNoStamp(context, before)
     }
 

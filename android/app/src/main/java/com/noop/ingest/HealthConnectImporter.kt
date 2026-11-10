@@ -942,9 +942,9 @@ object HealthConnectImporter {
         // (sum within a source, MAX across sources), instead of summing them into a ~2x inflated count.
         val stepsBySource = HashMap<String, Long>()
         val selfPackage = context.packageName // #528: skip our own writes (see readAll / isSelfWritten)
-        // readAll swallows ordinary read failures (the map stays empty), so a flaky provider degrades
-        // to the stored row instead of clobbering it with zero. Cancellation still propagates.
-        readAll(
+        // A later page can fail after earlier records populated the map. Only a complete read
+        // may replace the stored total; cancellation still propagates out of readAll.
+        val readComplete = readAll(
             client, StepsRecord::class,
             // #1002: reach back an extra day. The FILTER is in the phone's zone but the day key below is
             // now the record's own, and a record whose offset sits EAST of the phone's zone can belong to
@@ -974,7 +974,7 @@ object HealthConnectImporter {
             null
         }
         // Zero is indistinguishable from "no data yet today" — never overwrite a stored count with it.
-        if (sum <= 0L) return existing?.steps
+        if (!readComplete || sum <= 0L) return existing?.steps
 
         val updated = existing?.copy(steps = sum.toInt())
             ?: AppleDaily(deviceId = HC_DEVICE, day = dayKey, steps = sum.toInt())
