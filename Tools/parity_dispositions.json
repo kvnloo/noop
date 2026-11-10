@@ -436,6 +436,14 @@
       "identity_sha256": "6aa52285ae46cf0ae75a690feee01765f9401825b6c9845c146163fdf5b2bb3e",
       "platform": "swift",
       "rationale": "A LOCAL binding inside the private v16 ECG decoder (#2847), not a static constant. The ledger's Swift rule treats any four-space `let` in a file-scope function as a candidate `static let`, which is how it finds file-scope constants without parsing, so a local in a top-level `private func` lands in the inventory. The Kotlin twin's equivalent is a local `val` in its own decodeWhoop5HistoricalV16, which the Kotlin rule never inventories because it matches `const val` only, and a Set-valued or object-valued local cannot be `const` in Kotlin at all. There is nothing to pair and nothing to change in either decoder."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HealthConnectImporter.kt::refreshTodaySteps/3#1",
+      "identity_sha256": "cb968a4132fa141904a76fd4b061bd4a8ecdd78d080e9586cf84011c9443be39",
+      "platform": "kotlin",
+      "rationale": "Android Health Connect SDK permission and paginated StepsRecord adapter with an optional injected HealthConnectClient for cancellation tests. The existing two-argument adapter gained only this Android SDK test seam; Apple uses HealthKit rather than HealthConnectClient. This does not waive shared step aggregation or scoring parity."
     }
   ]
 }
