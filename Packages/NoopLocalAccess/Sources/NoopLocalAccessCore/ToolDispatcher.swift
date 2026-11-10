@@ -15,6 +15,7 @@ public final class NoopToolDispatcher {
         "data_freshness",
         "sleep_summary",
         "workout_summary",
+        "event_series",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -39,6 +40,23 @@ public final class NoopToolDispatcher {
             return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
         case "workout_summary":
             return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
+        case "event_series":
+            guard let kind = arguments["kind"]?.stringValue else {
+                throw LocalAccessError.invalidParams("event_series requires kind")
+            }
+            let fromTs = try eventTimestamp(arguments["from_ts"], name: "from_ts")
+            let toTs = try eventTimestamp(arguments["to_ts"], name: "to_ts")
+            if (fromTs == nil) != (toTs == nil) {
+                throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
+            }
+            return try data().eventSeries(
+                kind: kind,
+                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                fromTs: fromTs,
+                toTs: toTs,
+                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                deviceId: arguments["device_id"]?.stringValue
+            )
         default:
             throw LocalAccessError.toolNotFound(name)
         }
@@ -57,6 +75,20 @@ public final class NoopToolDispatcher {
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }
+    }
+
+    private func eventTimestamp(_ value: JSONValue?, name: String) throws -> Int? {
+        guard let value else { return nil }
+        let timestamp: Int?
+        if case .double(let number) = value {
+            timestamp = Int(exactly: number)
+        } else {
+            timestamp = value.intValue
+        }
+        guard let timestamp else {
+            throw LocalAccessError.invalidParams("event_series \(name) must be a representable integer timestamp")
+        }
+        return timestamp
     }
 
     private func data() throws -> NoopDataAccess {
