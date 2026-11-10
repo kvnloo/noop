@@ -44,8 +44,8 @@ public final class NoopToolDispatcher {
             guard let kind = arguments["kind"]?.stringValue else {
                 throw LocalAccessError.invalidParams("event_series requires kind")
             }
-            let fromTs = arguments["from_ts"]?.intValue
-            let toTs = arguments["to_ts"]?.intValue
+            let fromTs = try eventTimestamp(arguments["from_ts"], name: "from_ts")
+            let toTs = try eventTimestamp(arguments["to_ts"], name: "to_ts")
             if (fromTs == nil) != (toTs == nil) {
                 throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
             }
@@ -75,6 +75,20 @@ public final class NoopToolDispatcher {
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }
+    }
+
+    private func eventTimestamp(_ value: JSONValue?, name: String) throws -> Int? {
+        guard let value else { return nil }
+        let timestamp: Int?
+        if case .double(let number) = value {
+            timestamp = Int(exactly: number)
+        } else {
+            timestamp = value.intValue
+        }
+        guard let timestamp else {
+            throw LocalAccessError.invalidParams("event_series \(name) must be a representable integer timestamp")
+        }
+        return timestamp
     }
 
     private func data() throws -> NoopDataAccess {

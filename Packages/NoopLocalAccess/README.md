@@ -29,7 +29,8 @@ Arguments reuse the MCP defaults and bounds:
 - `event_series`: required `--kind`; optional `--hours` (default 6, clamped to 1...24),
   `--from-ts` and `--to-ts` together, `--limit` (default 500, clamped to 1...2000), and
   `--device-id`. One kind per call. Unknown kinds and a missing `event` table return empty
-  points. Stored `payloadJSON` is parsed as JSON when valid, otherwise returned as a string.
+  points. Explicit timestamps must be representable integers; malformed or fractional
+  bounds are rejected instead of silently selecting the default window. Stored `payloadJSON` is parsed as JSON when valid, otherwise returned as a string.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
