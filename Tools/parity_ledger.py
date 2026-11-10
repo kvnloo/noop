@@ -2586,16 +2586,24 @@ def build_compact_baseline(result: ScanResult) -> dict:
     }
 
 
+def _compact_baseline_groups(baseline: dict) -> dict[tuple[str, str], dict]:
+    groups = {}
+    for item in baseline.get("accepted_findings", []):
+        if not isinstance(item, dict):
+            continue
+        key = (item.get("rule"), item.get("scope"))
+        if key in groups:
+            raise ValueError(f"duplicate compact baseline group: {key[0]}|{key[1]}")
+        groups[key] = item
+    return groups
+
+
 def compact_baseline_drift(result: ScanResult, baseline: dict) -> list[str]:
     try:
         current = build_compact_baseline(result)
+        checked_groups = _compact_baseline_groups(baseline)
     except ValueError as exc:
         return [str(exc)]
-    checked_groups = {
-        (item.get("rule"), item.get("scope")): item
-        for item in baseline.get("accepted_findings", [])
-        if isinstance(item, dict)
-    }
     current_groups = {
         (item["rule"], item["scope"]): item
         for item in current["accepted_findings"]
@@ -2616,13 +2624,9 @@ def compact_baseline_changes(
     """Return (regressions, improvements) for compact finding groups."""
     try:
         current = build_compact_baseline(result)
+        checked_groups = _compact_baseline_groups(baseline)
     except ValueError as exc:
         return [str(exc)], []
-    checked_groups = {
-        (item.get("rule"), item.get("scope")): item
-        for item in baseline.get("accepted_findings", [])
-        if isinstance(item, dict)
-    }
     current_groups = {
         (item["rule"], item["scope"]): item
         for item in current["accepted_findings"]

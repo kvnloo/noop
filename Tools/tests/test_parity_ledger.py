@@ -1309,6 +1309,25 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
         self.assertTrue(regressions)
         self.assertEqual([], improvements)
 
+    def test_duplicate_compact_groups_cannot_hide_conflicting_evidence(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        original = baseline["accepted_findings"][0]
+        conflicting = {**original, "count": original["count"] + 1}
+        for first in (dict(original), conflicting):
+            with self.subTest(first=first):
+                duplicated = {**baseline, "accepted_findings": [first, *baseline["accepted_findings"]]}
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, duplicated))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, duplicated)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+                code, output = self.run_cli(twin_map, duplicated)
+                self.assertEqual(1, code)
+                self.assertIn("duplicate compact baseline group", output)
+
     def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
         """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
         self.write_clean_tree()
