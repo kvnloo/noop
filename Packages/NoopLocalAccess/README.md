@@ -11,6 +11,7 @@ noop-local-access query metric_series --key hrv --days 90
 noop-local-access query data_freshness
 noop-local-access query sleep_summary --days 30
 noop-local-access query workout_summary --days 90
+noop-local-access query sleep_stages --days 14 --limit 7 --max-points 120
 ```
 
 Set `NOOP_DB_PATH` to select a database, or pass `--db-path PATH`. Query results are written to
@@ -25,6 +26,10 @@ Arguments reuse the MCP defaults and bounds:
 - `data_freshness`: no tool arguments.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000).
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000).
+- `sleep_stages`: optional `--days` (default 30, clamped to 1...4000), `--limit` sessions
+  (default 14, clamped to 1...60), and `--max-points` per session (default 200, clamped to
+  1...2000). Negative/nonfinite stored minute values and additions that overflow a stage
+  total are ignored. `sleep_summary` still returns `hasStages` only.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.

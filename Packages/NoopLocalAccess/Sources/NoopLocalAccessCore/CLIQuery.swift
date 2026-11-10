@@ -71,8 +71,11 @@ public enum NoopCLIQuery {
                 guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["to_day"] = .string(try requiredValue(flag, arguments: arguments, index: &index))
             case "--limit":
-                guard toolName == "metric_series" else { throw unsupported(flag, toolName: toolName) }
+                guard toolName == "metric_series" || toolName == "sleep_stages" else { throw unsupported(flag, toolName: toolName) }
                 toolArguments["limit"] = try integerValue(flag, arguments: arguments, index: &index)
+            case "--max-points":
+                guard toolName == "sleep_stages" else { throw unsupported(flag, toolName: toolName) }
+                toolArguments["max_points"] = try integerValue(flag, arguments: arguments, index: &index)
             default:
                 throw NoopCLIQueryError.usage("unknown query flag")
             }
