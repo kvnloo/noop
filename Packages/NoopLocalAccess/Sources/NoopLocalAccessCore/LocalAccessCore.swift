@@ -300,7 +300,7 @@ public final class ReadonlyNoopStore {
         guard tableNames.contains("rrInterval") else { return nil }
         return try dbQueue.read { db in
             let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('rrInterval')"))
-            var whereSQL = "WHERE deviceId = ?"
+            var whereSQL = "WHERE deviceId = ? AND typeof(ts) = 'integer'"
             if columns.contains("srcChannel") {
                 whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
             }
@@ -320,14 +320,14 @@ public final class ReadonlyNoopStore {
     public func latestEventTs(deviceId: String) throws -> Int? {
         guard tableNames.contains("event") else { return nil }
         return try dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM event WHERE deviceId = ?", arguments: [deviceId])
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM event WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
         }
     }
 
     public func latestSleepSessionTs(deviceId: String) throws -> Int? {
         guard tableNames.contains("sleepSession") else { return nil }
         return try dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT MAX(endTs) FROM sleepSession WHERE deviceId = ?", arguments: [deviceId])
+            try Int.fetchOne(db, sql: "SELECT MAX(endTs) FROM sleepSession WHERE deviceId = ? AND typeof(endTs) = 'integer'", arguments: [deviceId])
         }
     }
 
@@ -341,15 +341,15 @@ public final class ReadonlyNoopStore {
             case (true, true):
                 return try Int.fetchOne(db, sql: """
                     SELECT MAX(ts) FROM (
-                        SELECT ts FROM hrSample WHERE deviceId = ?
+                        SELECT ts FROM hrSample WHERE deviceId = ? AND typeof(ts) = 'integer'
                         UNION ALL
-                        SELECT ts FROM ppgHrSample WHERE deviceId = ?
+                        SELECT ts FROM ppgHrSample WHERE deviceId = ? AND typeof(ts) = 'integer'
                     )
                     """, arguments: [deviceId, deviceId])
             case (true, false):
-                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM hrSample WHERE deviceId = ?", arguments: [deviceId])
+                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM hrSample WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
             case (false, true):
-                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM ppgHrSample WHERE deviceId = ?", arguments: [deviceId])
+                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM ppgHrSample WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
             case (false, false):
                 return nil
             }

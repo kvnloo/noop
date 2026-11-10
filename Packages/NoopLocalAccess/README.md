@@ -25,7 +25,9 @@ Arguments reuse the MCP defaults and bounds:
 - `data_freshness`: no tool arguments. Its original keys remain unchanged; it additionally returns
   nullable `latestRrInterval`, `latestEvent`, and `latestSleepSession` timestamps (missing or
   empty tables return JSON `null`). RR excludes SpO2-derived or suspect timestamps when the
-  corresponding schema columns exist.
+  corresponding schema columns exist. All source watermarks aggregate only integer-stored
+  timestamps; malformed text, real and blob values are ignored before selecting the maximum.
+  A source containing only invalid or NULL timestamps returns JSON `null`.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000).
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000).
 
