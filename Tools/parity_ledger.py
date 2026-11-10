@@ -2587,6 +2587,12 @@ def build_compact_baseline(result: ScanResult) -> dict:
 
 
 def _compact_baseline_groups(baseline: dict) -> dict[tuple[str, str], dict]:
+    counters = baseline.get("counters", {})
+    if not isinstance(counters, dict):
+        raise ValueError("invalid compact baseline: counters must be an object")
+    for name, count in counters.items():
+        if not isinstance(name, str) or type(count) is not int or count < 0:
+            raise ValueError(f"invalid compact baseline: counter {name!r} must be a non-negative integer")
     groups = {}
     accepted = baseline.get("accepted_findings", [])
     if not isinstance(accepted, list):
@@ -2824,12 +2830,6 @@ def main(argv: list[str] | None = None) -> int:
 
     baseline = _load_json(baseline_path, {})
     compact_drift, improvements = compact_baseline_changes(result, baseline)
-    baseline_counters = baseline.get("counters", {})
-    counter_regressions = [
-        (name, baseline_counters[name], count)
-        for name, count in result.counters.items()
-        if name in baseline_counters and count > baseline_counters[name]
-    ]
     if compact_drift:
         print(f"FAIL compact baseline drift in {', '.join(compact_drift)}")
         actionable = [item for item in result.findings if item.rule.startswith("add-unpaired-")]
@@ -2844,6 +2844,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(f"\nScanned {_summary(result)}")
         return 1
+
+    baseline_counters = baseline.get("counters", {})
+    counter_regressions = [
+        (name, baseline_counters[name], count)
+        for name, count in result.counters.items()
+        if name in baseline_counters and count > baseline_counters[name]
+    ]
 
     if improvements:
         try:

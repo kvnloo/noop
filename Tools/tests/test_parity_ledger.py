@@ -1358,6 +1358,24 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
                 self.assertEqual(1, code)
                 self.assertIn("invalid compact baseline", output)
 
+    def test_malformed_baseline_counters_fail_closed(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        name = next(iter(result.counters))
+        invalid_values = [None, [], "bad", True, -1, 1.5]
+        for counters in [None, [], "bad", *[{name: value} for value in invalid_values]]:
+            with self.subTest(counters=counters):
+                invalid = {**baseline, "counters": counters}
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code)
+                self.assertIn("invalid compact baseline", output)
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, invalid))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, invalid)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+
     def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
         """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
         self.write_clean_tree()
