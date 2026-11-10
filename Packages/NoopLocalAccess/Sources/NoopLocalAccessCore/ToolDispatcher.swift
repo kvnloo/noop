@@ -41,8 +41,8 @@ public final class NoopToolDispatcher {
         case "workout_summary":
             return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
         case "rr_series":
-            let fromTs = arguments["from_ts"]?.intValue
-            let toTs = arguments["to_ts"]?.intValue
+            let fromTs = try rrTimestamp(arguments["from_ts"], name: "from_ts")
+            let toTs = try rrTimestamp(arguments["to_ts"], name: "to_ts")
             if (fromTs == nil) != (toTs == nil) {
                 throw LocalAccessError.invalidParams("rr_series requires both from_ts and to_ts")
             }
@@ -71,6 +71,17 @@ public final class NoopToolDispatcher {
         default:
             throw LocalAccessError.resourceNotFound(uri)
         }
+    }
+
+    private func rrTimestamp(_ value: JSONValue?, name: String) throws -> Int? {
+        guard let value else { return nil }
+        if case .double(let number) = value, number.rounded(.towardZero) != number {
+            throw LocalAccessError.invalidParams("rr_series \(name) must be an integer timestamp")
+        }
+        guard let timestamp = value.intValue else {
+            throw LocalAccessError.invalidParams("rr_series \(name) must be an integer timestamp")
+        }
+        return timestamp
     }
 
     private func data() throws -> NoopDataAccess {

@@ -38,3 +38,7 @@ Arguments reuse the MCP defaults and bounds:
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
+
+Explicit `rr_series` timestamp bounds must be representable integers. Null, malformed,
+fractional or out-of-range bounds return an invalid-parameters error instead of silently
+selecting the default recent window. Integral JSON numbers and integer strings remain accepted.
