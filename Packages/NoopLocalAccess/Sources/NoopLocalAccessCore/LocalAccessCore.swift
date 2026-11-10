@@ -702,7 +702,8 @@ private func workoutJSON(_ row: WorkoutRow, includeZones: Bool = false) -> JSONV
 }
 
 private let workoutZonesMaxEntries = 32
-private let workoutZonesMaxStringChars = 2048
+private let workoutZonesMaxStringScalars = 2048
+private let workoutZonesMaxInputBytes = 65_536
 
 private struct WorkoutZonesDecode {
     let payload: JSONValue
@@ -713,14 +714,24 @@ private func decodeWorkoutZones(_ zonesJSON: String?) -> WorkoutZonesDecode {
     guard let zonesJSON else {
         return WorkoutZonesDecode(payload: .null, truncated: false)
     }
+    guard zonesJSON.utf8.prefix(workoutZonesMaxInputBytes + 1).count <= workoutZonesMaxInputBytes else {
+        return boundedWorkoutZonesText(zonesJSON, forceTruncated: true)
+    }
     if let data = zonesJSON.data(using: .utf8),
        let decoded = try? JSONDecoder().decode(JSONValue.self, from: data) {
         let bounded = boundWorkoutZonesJSON(decoded)
         return WorkoutZonesDecode(payload: bounded.payload, truncated: bounded.truncated)
     }
-    let truncated = zonesJSON.count > workoutZonesMaxStringChars
-    let raw = truncated ? String(zonesJSON.prefix(workoutZonesMaxStringChars)) : zonesJSON
-    return WorkoutZonesDecode(payload: .string(raw), truncated: truncated)
+    return boundedWorkoutZonesText(zonesJSON)
+}
+
+private func boundedWorkoutZonesText(_ raw: String, forceTruncated: Bool = false) -> WorkoutZonesDecode {
+    let scalars = raw.unicodeScalars.prefix(workoutZonesMaxStringScalars + 1)
+    let truncated = forceTruncated || scalars.count > workoutZonesMaxStringScalars
+    return WorkoutZonesDecode(
+        payload: .string(String(scalars.prefix(workoutZonesMaxStringScalars))),
+        truncated: truncated
+    )
 }
 
 private func boundWorkoutZonesJSON(_ value: JSONValue) -> WorkoutZonesDecode {
@@ -740,9 +751,7 @@ private func boundWorkoutZonesJSON(_ value: JSONValue) -> WorkoutZonesDecode {
         }
         return WorkoutZonesDecode(payload: .object(kept), truncated: truncated)
     case .string(let raw):
-        let truncated = raw.count > workoutZonesMaxStringChars
-        let kept = truncated ? String(raw.prefix(workoutZonesMaxStringChars)) : raw
-        return WorkoutZonesDecode(payload: .string(kept), truncated: truncated)
+        return boundedWorkoutZonesText(raw)
     default:
         return WorkoutZonesDecode(payload: value, truncated: false)
     }

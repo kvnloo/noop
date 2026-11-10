@@ -25,7 +25,7 @@ Arguments reuse the MCP defaults and bounds:
   clamped to 1...4000), `--from-day`, `--to-day`, and `--limit` (default 500, clamped to 1...2000).
 - `data_freshness`: no tool arguments.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000).
-- `workout_summary`: optional `--days` (default 90, clamped to 1...4000) and `--include-zones` (default off). Default rows still return `hasZones` only. When set, each row gets a bounded `zones` object (`payload` plus `truncated`); oversized objects/arrays keep 32 entries.
+- `workout_summary`: optional `--days` (default 90, clamped to 1...4000) and `--include-zones` (default off). Default rows still return `hasZones` only. When set, each row gets a bounded `zones` object (`payload` plus `truncated`); objects/arrays keep at most 32 top-level entries. JSON inputs over 64 KiB (UTF-8) are returned as truncated text without decoding. Text payloads and invalid-JSON fallbacks keep at most 2,048 Unicode scalars, so combining-character sequences cannot bypass the limit.
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
