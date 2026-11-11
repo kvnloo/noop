@@ -210,39 +210,11 @@ def _is_out_of_scope_reclassification(old: dict, current: dict | None) -> bool:
 
 
 def _validate_baseline(value: dict, location: str) -> None:
-    if value.get("schema_version") != 3 or set(value) != {"schema_version", "accepted_findings", "counters"}:
-        raise RatchetError(f"{location}: compact baseline v3 keys must be exact")
-    groups = _array(value, "accepted_findings", location)
-    identities: set[tuple[str, str]] = set()
-    group_keys = {"rule", "scope", "reason", "provenance", "count", "identities_sha256"}
-    for index, group in enumerate(groups):
-        if not isinstance(group, dict) or set(group) != group_keys:
-            raise RatchetError(f"{location}: accepted_findings[{index}] keys must be exact")
-        for key in ("rule", "scope", "reason", "provenance"):
-            if not isinstance(group[key], str) or not group[key].strip():
-                raise RatchetError(f"{location}: accepted_findings[{index}] needs non-empty {key}")
-        expected_reason = parity_ledger.BASELINE_REASONS.get(group["rule"])
-        expected_provenance = parity_ledger.baseline_group_provenance(
-            group["rule"], group["scope"]
-        )
-        if group["reason"] != expected_reason or group["provenance"] != expected_provenance:
-            raise RatchetError(
-                f"{location}: accepted_findings[{index}] must retain its canonical reviewed reason and provenance"
-            )
-        identity = (group["rule"], group["scope"])
-        if identity in identities:
-            raise RatchetError(f"{location}: duplicate accepted finding group {identity}")
-        identities.add(identity)
-        if (type(group["count"]) is not int or group["count"] < 1
-                or not isinstance(group["identities_sha256"], str)
-                or re.fullmatch(r"[0-9a-f]{64}", group["identities_sha256"]) is None):
-            raise RatchetError(f"{location}: accepted_findings[{index}] needs count and identity SHA-256")
-    counters = value.get("counters")
-    if not isinstance(counters, dict):
-        raise RatchetError(f"{location}: counters must be an object")
-    for name, count in counters.items():
-        if not isinstance(name, str) or type(count) is not int or count < 0:
-            raise RatchetError(f"{location}: counter {name!r} must be a non-negative integer")
+    try:
+        parity_ledger.validate_compact_baseline(value, location)
+    except ValueError as exc:
+        raise RatchetError(str(exc)) from exc
+
 
 
 def _issues(value: object) -> set[issue_ref.IssueRef]:

@@ -2586,33 +2586,52 @@ def build_compact_baseline(result: ScanResult) -> dict:
     }
 
 
-def _compact_baseline_groups(baseline: dict) -> dict[tuple[str, str], dict]:
-    counters = baseline.get("counters", {})
+def validate_compact_baseline(value: object, location: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"{location}: compact baseline must be an object")
+    if value.get("schema_version") != 3 or set(value) != {"schema_version", "accepted_findings", "counters"}:
+        raise ValueError(f"{location}: compact baseline v3 keys must be exact")
+    groups = value.get("accepted_findings")
+    if not isinstance(groups, list):
+        raise ValueError(f"{location}: accepted_findings must be an array")
+    identities: set[tuple[str, str]] = set()
+    group_keys = {"rule", "scope", "reason", "provenance", "count", "identities_sha256"}
+    for index, group in enumerate(groups):
+        if not isinstance(group, dict) or set(group) != group_keys:
+            raise ValueError(f"{location}: accepted_findings[{index}] keys must be exact")
+        for key in ("rule", "scope", "reason", "provenance"):
+            if not isinstance(group[key], str) or not group[key].strip():
+                raise ValueError(f"{location}: accepted_findings[{index}] needs non-empty {key}")
+        expected_reason = BASELINE_REASONS.get(group["rule"])
+        expected_provenance = baseline_group_provenance(
+            group["rule"], group["scope"]
+        )
+        if group["reason"] != expected_reason or group["provenance"] != expected_provenance:
+            raise ValueError(
+                f"{location}: accepted_findings[{index}] must retain its canonical reviewed reason and provenance"
+            )
+        identity = (group["rule"], group["scope"])
+        if identity in identities:
+            raise ValueError(f"{location}: duplicate accepted finding group {identity}")
+        identities.add(identity)
+        if (type(group["count"]) is not int or group["count"] < 1
+                or not isinstance(group["identities_sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", group["identities_sha256"]) is None):
+            raise ValueError(f"{location}: accepted_findings[{index}] needs count and identity SHA-256")
+    counters = value.get("counters")
     if not isinstance(counters, dict):
-        raise ValueError("invalid compact baseline: counters must be an object")
+        raise ValueError(f"{location}: counters must be an object")
     for name, count in counters.items():
         if not isinstance(name, str) or type(count) is not int or count < 0:
-            raise ValueError(f"invalid compact baseline: counter {name!r} must be a non-negative integer")
-    groups = {}
-    accepted = baseline.get("accepted_findings", [])
-    if not isinstance(accepted, list):
-        raise ValueError("invalid compact baseline: accepted_findings must be an array")
-    for index, item in enumerate(accepted):
-        location = f"invalid compact baseline: accepted_findings[{index}]"
-        if not isinstance(item, dict):
-            raise ValueError(f"{location} must be an object")
-        for field in ("rule", "scope"):
-            if not isinstance(item.get(field), str) or not item[field].strip():
-                raise ValueError(f"{location} needs non-empty {field}")
-        if (type(item.get("count")) is not int or item["count"] < 1
-                or not isinstance(item.get("identities_sha256"), str)
-                or re.fullmatch(r"[0-9a-f]{64}", item["identities_sha256"]) is None):
-            raise ValueError(f"{location} needs count and identity SHA-256")
-        key = (item["rule"], item["scope"])
-        if key in groups:
-            raise ValueError(f"duplicate compact baseline group: {key[0]}|{key[1]}")
-        groups[key] = item
-    return groups
+            raise ValueError(f"{location}: counter {name!r} must be a non-negative integer")
+
+def _compact_baseline_groups(baseline: dict) -> dict[tuple[str, str], dict]:
+    validate_compact_baseline(baseline, "invalid compact baseline")
+    return {
+        (item["rule"], item["scope"]): item
+        for item in baseline["accepted_findings"]
+    }
+
 
 
 def compact_baseline_drift(result: ScanResult, baseline: dict) -> list[str]:

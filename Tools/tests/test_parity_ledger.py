@@ -1326,7 +1326,7 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
                 self.assertEqual([], improvements)
                 code, output = self.run_cli(twin_map, duplicated)
                 self.assertEqual(1, code)
-                self.assertIn("duplicate compact baseline group", output)
+                self.assertIn("duplicate accepted finding group", output)
 
     def test_malformed_compact_groups_fail_closed(self) -> None:
         self.write_clean_tree()
@@ -1393,6 +1393,35 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
         baseline = self.baseline_for(twin_map)
         code, output = self.run_cli(twin_map, baseline)
         self.assertEqual(0, code, output)
+
+    def test_baseline_review_provenance_cannot_be_erased_or_rewritten(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline = self.baseline_for(twin_map)
+        for field in ("reason", "provenance"):
+            for replacement in (None, "unreviewed replacement"):
+                with self.subTest(field=field, replacement=replacement):
+                    invalid = json.loads(json.dumps(baseline))
+                    if replacement is None:
+                        del invalid["accepted_findings"][0][field]
+                    else:
+                        invalid["accepted_findings"][0][field] = replacement
+                    code, output = self.run_cli(twin_map, invalid)
+                    self.assertEqual(1, code, output)
+                    self.assertIn("invalid compact baseline", output)
+
+    def test_baseline_envelope_must_match_supported_schema(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline = self.baseline_for(twin_map)
+        for invalid in ({}, [], "not an object", {**baseline, "schema_version": 2},
+                        {**baseline, "extra": True},
+                        {key: value for key, value in baseline.items() if key != "accepted_findings"}):
+            with self.subTest(invalid=invalid):
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code, output)
+                self.assertIn("invalid compact baseline", output)
 
     def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
         """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
