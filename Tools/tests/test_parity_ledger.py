@@ -1277,5 +1277,211 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
         self.assertIn("constant-value-mismatch", output)
 
 
+    def test_compact_evidence_reordering_is_stable_but_duplicate_findings_are_not(self) -> None:
+        """Source-row order is not provenance; repeating a finding changes the accepted evidence."""
+        self.write_clean_tree()
+        self.swift.write_text(
+            self.swift.read_text().replace(
+                "    public static let sampleLimit = 3\n",
+                "    public static let sampleLimit = 3\n    public static let windowLimit = 5\n",
+            )
+        )
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace(
+                "    const val SAMPLE_LIMIT = 3\n",
+                "    const val SAMPLE_LIMIT = 4\n    const val WINDOW_LIMIT = 6\n",
+            )
+        )
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        self.assertGreaterEqual(len(result.findings), 2)
+        baseline = parity_ledger.build_compact_baseline(result)
+
+        result.findings.reverse()
+        self.assertEqual(baseline, parity_ledger.build_compact_baseline(result))
+        self.assertEqual([], parity_ledger.compact_baseline_drift(result, baseline))
+        self.assertEqual(([], []), parity_ledger.compact_baseline_changes(result, baseline))
+
+        # Replaying an observation is not an independent source observation.
+        result.findings.append(result.findings[0])
+        self.assertTrue(parity_ledger.compact_baseline_drift(result, baseline))
+        regressions, improvements = parity_ledger.compact_baseline_changes(result, baseline)
+        self.assertTrue(regressions)
+        self.assertEqual([], improvements)
+
+    def test_duplicate_compact_groups_cannot_hide_conflicting_evidence(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        original = baseline["accepted_findings"][0]
+        conflicting = {**original, "count": original["count"] + 1}
+        for first in (dict(original), conflicting):
+            with self.subTest(first=first):
+                duplicated = {**baseline, "accepted_findings": [first, *baseline["accepted_findings"]]}
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, duplicated))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, duplicated)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+                code, output = self.run_cli(twin_map, duplicated)
+                self.assertEqual(1, code)
+                self.assertIn("duplicate accepted finding group", output)
+
+    def test_malformed_compact_groups_fail_closed(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        original = baseline["accepted_findings"][0]
+        malformed = [
+            [None, *baseline["accepted_findings"]],
+            ["ignored evidence", *baseline["accepted_findings"]],
+            None,
+            {},
+            *[[{**original, key: value}] for key, value in (
+                ("rule", []), ("scope", {}), ("scope", None),
+                ("rule", ""), ("count", True), ("count", 1.0),
+                ("count", "1"), ("count", -1),
+                ("identities_sha256", []), ("identities_sha256", "bad"),
+            )],
+        ]
+        for groups in malformed:
+            with self.subTest(groups=groups):
+                invalid = {**baseline, "accepted_findings": groups}
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, invalid))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, invalid)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code)
+                self.assertIn("invalid compact baseline", output)
+
+    def test_malformed_baseline_counters_fail_closed(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        name = next(iter(result.counters))
+        invalid_values = [None, [], "bad", True, -1, 1.5]
+        for counters in [None, [], "bad", *[{name: value} for value in invalid_values]]:
+            with self.subTest(counters=counters):
+                invalid = {**baseline, "counters": counters}
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code)
+                self.assertIn("invalid compact baseline", output)
+                self.assertTrue(parity_ledger.compact_baseline_drift(result, invalid))
+                regressions, improvements = parity_ledger.compact_baseline_changes(result, invalid)
+                self.assertTrue(regressions)
+                self.assertEqual([], improvements)
+
+    def test_missing_baseline_is_not_an_empty_accepted_baseline(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline_path = self.root / "baseline.json"
+        self.assertFalse(baseline_path.exists())
+        code, output = self.run_cli(twin_map)
+        self.assertEqual(1, code)
+        self.assertIn("baseline", output)
+        self.assertIn("not found", output)
+        self.assertFalse(baseline_path.exists())
+        # Explicit observation-only mode remains usable without accepted debt metadata.
+        code, output = self.run_cli(twin_map, no_baseline=True)
+        self.assertEqual(0, code, output)
+        self.assertFalse(baseline_path.exists())
+        baseline = self.baseline_for(twin_map)
+        code, output = self.run_cli(twin_map, baseline)
+        self.assertEqual(0, code, output)
+
+    def test_baseline_review_provenance_cannot_be_erased_or_rewritten(self) -> None:
+        self.write_clean_tree()
+        self.kotlin.write_text(self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4"))
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline = self.baseline_for(twin_map)
+        for field in ("reason", "provenance"):
+            for replacement in (None, "unreviewed replacement"):
+                with self.subTest(field=field, replacement=replacement):
+                    invalid = json.loads(json.dumps(baseline))
+                    if replacement is None:
+                        del invalid["accepted_findings"][0][field]
+                    else:
+                        invalid["accepted_findings"][0][field] = replacement
+                    code, output = self.run_cli(twin_map, invalid)
+                    self.assertEqual(1, code, output)
+                    self.assertIn("invalid compact baseline", output)
+
+    def test_baseline_envelope_must_match_supported_schema(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline = self.baseline_for(twin_map)
+        for invalid in ({}, [], "not an object", {**baseline, "schema_version": 2},
+                        {**baseline, "extra": True},
+                        {key: value for key, value in baseline.items() if key != "accepted_findings"}):
+            with self.subTest(invalid=invalid):
+                code, output = self.run_cli(twin_map, invalid)
+                self.assertEqual(1, code, output)
+                self.assertIn("invalid compact baseline", output)
+
+    def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
+        """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
+        self.write_clean_tree()
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4")
+        )
+        self.mark_current_tree_as_origin_main()
+        base_sha = subprocess.check_output(
+            ["git", "rev-parse", "origin/main"], cwd=self.root, text=True
+        ).strip()
+        base_findings = parity_ledger.finding_identities_at_git_ref(self.root, base_sha)
+        self.assertTrue(base_findings)
+
+        # This second commit exists only on the fixture's HEAD, not origin/main.
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace("SAMPLE_LIMIT = 4", "SAMPLE_LIMIT = 3")
+        )
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(
+            [
+                "git", "-c", "user.name=Parity Test",
+                "-c", "user.email=parity@example.invalid",
+                "commit", "-qm", "resolve synthetic mismatch on unmerged head",
+            ],
+            cwd=self.root,
+            check=True,
+        )
+        head_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, text=True
+        ).strip()
+        self.assertNotEqual(base_sha, head_sha)
+        self.assertEqual(set(), parity_ledger.finding_identities_at_git_ref(self.root, head_sha))
+        self.assertEqual(
+            base_findings, parity_ledger.finding_identities_at_git_ref(self.root, base_sha)
+        )
+        self.assertEqual(
+            base_findings, parity_ledger.finding_identities_at_git_ref(self.root, "origin/main")
+        )
+
+    def test_missing_platform_proof_cannot_be_added_to_accepted_baseline(self) -> None:
+        """A newly unpaired Swift declaration must remain a failure, not approved debt."""
+        self.write_clean_tree()
+        frozen_map = parity_ledger.build_compact_twin_map(self.root)
+        baseline = self.baseline_for(frozen_map)
+        self.mark_current_tree_as_origin_main()
+        self.swift.write_text(
+            self.swift.read_text()
+            + "\npublic func newlyUnpaired(_ value: Int) -> Int { value }\n"
+        )
+
+        result = parity_ledger.scan(self.root, frozen_map)
+        self.assertIn("add-unpaired-function", {item.rule for item in result.findings})
+        with self.assertRaisesRegex(ValueError, "source drift"):
+            parity_ledger.build_compact_baseline(result)
+        code, output = self.run_cli(frozen_map, baseline)
+        self.assertEqual(1, code)
+        self.assertIn("compact baseline drift", output)
+
+
+
 if __name__ == "__main__":
     unittest.main()
