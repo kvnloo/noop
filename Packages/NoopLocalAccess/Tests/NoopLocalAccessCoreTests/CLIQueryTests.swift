@@ -39,6 +39,43 @@ final class CLIQueryTests: XCTestCase {
         }
     }
 
+    func testDataFreshnessAddsSourceTimestampsAndKeepsExistingContract() throws {
+        func freshness(_ url: URL) throws -> [String: JSONValue] {
+            let result = try NoopCLIQuery.dispatch(NoopCLIQueryRequest(
+                toolName: "data_freshness",
+                arguments: [:],
+                configuration: LocalAccessConfiguration(databasePath: url.path)
+            ))
+            return try XCTUnwrap(result.objectValue)
+        }
+
+        let seeded = try freshness(TemporaryDatabase.seeded())
+        for key in [
+            "generatedAt", "deviceId", "computedDeviceId", "latestHeartRateSample",
+            "latestRrInterval", "latestEvent", "latestSleepSession", "storage",
+            "coverage", "metricKeys",
+        ] {
+            XCTAssertNotNil(seeded[key], "missing freshness key \(key)")
+        }
+        XCTAssertEqual(seeded["deviceId"], .string("my-whoop"))
+        XCTAssertEqual(seeded["latestHeartRateSample"]?.objectValue?["ts"], .int(102))
+        XCTAssertEqual(seeded["latestRrInterval"]?.objectValue?["ts"], .int(101))
+        XCTAssertEqual(seeded["latestEvent"], .null)
+        XCTAssertEqual(seeded["latestSleepSession"]?.objectValue?["ts"], .int(2000))
+        XCTAssertNil(seeded["analysisFingerprint"])
+        XCTAssertNil(seeded["score"])
+        XCTAssertNil(seeded["recoveryScore"])
+
+        let withEvents = try freshness(TemporaryDatabase.withEvents())
+        XCTAssertEqual(withEvents["latestEvent"]?.objectValue?["ts"], .int(103))
+        let qualifiedRR = try freshness(TemporaryDatabase.withRRQualityRows())
+        XCTAssertEqual(qualifiedRR["latestRrInterval"]?.objectValue?["ts"], .int(104))
+        let withoutRR = try freshness(TemporaryDatabase.withoutRRInterval())
+        XCTAssertEqual(withoutRR["latestRrInterval"], .null)
+        let withoutSleep = try freshness(TemporaryDatabase.withoutSleepSession())
+        XCTAssertEqual(withoutSleep["latestSleepSession"], .null)
+    }
+
     func testMetricSeriesRequiresKeyAndRejectsUnknownOrMissingFlags() {
         assertUsageError([])
         assertUsageError(["metric_series"])

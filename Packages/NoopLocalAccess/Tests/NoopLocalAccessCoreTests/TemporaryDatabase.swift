@@ -107,4 +107,60 @@ enum TemporaryDatabase {
         try db.execute(sql: "INSERT INTO rrInterval(deviceId, ts, rrMs) VALUES ('my-whoop', 101, 850)")
         try db.execute(sql: "INSERT INTO rawBatch(batchId, deviceId, byteSize) VALUES ('batch-1', 'my-whoop', 12)")
     }
+
+    static func withEvents() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE event(
+                    deviceId TEXT NOT NULL, ts INTEGER NOT NULL, kind TEXT NOT NULL,
+                    payloadJSON TEXT NOT NULL, PRIMARY KEY(deviceId, ts, kind)
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO event(deviceId, ts, kind, payloadJSON) VALUES
+                    ('my-whoop', 103, 'TEST', '{"source":"fixture"}'),
+                    ('other-device', 999, 'TEST', '{"source":"other"}')
+                """)
+        }
+        return url
+    }
+
+    static func withRRQualityRows() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "ALTER TABLE rrInterval ADD COLUMN srcChannel INTEGER")
+            try db.execute(sql: "ALTER TABLE rrInterval ADD COLUMN tsSuspect INTEGER")
+            try db.execute(sql: """
+                INSERT INTO rrInterval(deviceId, ts, rrMs, srcChannel, tsSuspect) VALUES
+                    ('my-whoop', 102, 810, 2, NULL),
+                    ('my-whoop', 103, 820, 1, 1),
+                    ('my-whoop', 104, 830, 3, 0),
+                    ('my-whoop', 105, 840, 2, 0),
+                    ('my-whoop', 106, 850, NULL, 1),
+                    ('other-device', 999, 890, NULL, NULL)
+                """)
+        }
+        return url
+    }
+
+    static func withoutRRInterval() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE rrInterval")
+        }
+        return url
+    }
+
+    static func withoutSleepSession() throws -> URL {
+        let url = try seeded()
+        let dbQueue = try DatabaseQueue(path: url.path)
+        try dbQueue.write { db in
+            try db.execute(sql: "DROP TABLE sleepSession")
+        }
+        return url
+    }
 }

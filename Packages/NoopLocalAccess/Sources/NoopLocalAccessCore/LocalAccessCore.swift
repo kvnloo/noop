@@ -294,6 +294,43 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    /// Last usable R-R observation, with quality filters matching WhoopStore's RR reads.
+    /// Older databases may lack source/quality columns, so filter only columns that exist.
+    public func latestRRIntervalTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("rrInterval") else { return nil }
+        return try dbQueue.read { db in
+            let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('rrInterval')"))
+            var whereSQL = "WHERE deviceId = ? AND typeof(ts) = 'integer'"
+            if columns.contains("srcChannel") {
+                whereSQL += " AND (srcChannel IS NULL OR srcChannel <> ?)"
+            }
+            if columns.contains("tsSuspect") {
+                whereSQL += " AND (tsSuspect IS NULL OR tsSuspect <> 1)"
+            }
+
+            let sql = "SELECT MAX(ts) FROM rrInterval \(whereSQL)"
+            if columns.contains("srcChannel") {
+                // WhoopStore RRSourceChannel.spo2Ibi.rawValue is 2 (not the BLE wire tag).
+                return try Int.fetchOne(db, sql: sql, arguments: [deviceId, 2])
+            }
+            return try Int.fetchOne(db, sql: sql, arguments: [deviceId])
+        }
+    }
+
+    public func latestEventTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("event") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM event WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
+        }
+    }
+
+    public func latestSleepSessionTs(deviceId: String) throws -> Int? {
+        guard tableNames.contains("sleepSession") else { return nil }
+        return try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT MAX(endTs) FROM sleepSession WHERE deviceId = ? AND typeof(endTs) = 'integer'", arguments: [deviceId])
+        }
+    }
+
     public func latestHRSampleTs(deviceId: String) throws -> Int? {
         let hasHr = tableNames.contains("hrSample")
         let hasPpg = tableNames.contains("ppgHrSample")
@@ -304,15 +341,15 @@ public final class ReadonlyNoopStore {
             case (true, true):
                 return try Int.fetchOne(db, sql: """
                     SELECT MAX(ts) FROM (
-                        SELECT ts FROM hrSample WHERE deviceId = ?
+                        SELECT ts FROM hrSample WHERE deviceId = ? AND typeof(ts) = 'integer'
                         UNION ALL
-                        SELECT ts FROM ppgHrSample WHERE deviceId = ?
+                        SELECT ts FROM ppgHrSample WHERE deviceId = ? AND typeof(ts) = 'integer'
                     )
                     """, arguments: [deviceId, deviceId])
             case (true, false):
-                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM hrSample WHERE deviceId = ?", arguments: [deviceId])
+                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM hrSample WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
             case (false, true):
-                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM ppgHrSample WHERE deviceId = ?", arguments: [deviceId])
+                return try Int.fetchOne(db, sql: "SELECT MAX(ts) FROM ppgHrSample WHERE deviceId = ? AND typeof(ts) = 'integer'", arguments: [deviceId])
             case (false, false):
                 return nil
             }
@@ -462,6 +499,9 @@ public final class NoopDataAccess {
 
     public func freshness() throws -> JSONValue {
         let latestHR = try store.latestHRSampleTs(deviceId: deviceId)
+        let latestRR = try store.latestRRIntervalTs(deviceId: deviceId)
+        let latestEvent = try store.latestEventTs(deviceId: deviceId)
+        let latestSleep = try store.latestSleepSessionTs(deviceId: deviceId)
         let stats = try store.storageStats()
         let now = Date()
         let (fromDay, toDay) = dayRange(days: 4000)
@@ -477,6 +517,9 @@ public final class NoopDataAccess {
             "deviceId": .string(deviceId),
             "computedDeviceId": .string(computedDeviceId),
             "latestHeartRateSample": timestampJSON(latestHR, now: now),
+            "latestRrInterval": timestampJSON(latestRR, now: now),
+            "latestEvent": timestampJSON(latestEvent, now: now),
+            "latestSleepSession": timestampJSON(latestSleep, now: now),
             "storage": .object([
                 "decodedRows": .int(stats.decodedRows),
                 "rawBatches": .int(stats.rawBatches),
@@ -696,10 +739,14 @@ private func workoutJSON(_ row: WorkoutRow) -> JSONValue {
 private func timestampJSON(_ ts: Int?, now: Date) -> JSONValue {
     guard let ts else { return .null }
     let date = Date(timeIntervalSince1970: TimeInterval(ts))
+    let elapsed = max(0, now.timeIntervalSince(date))
+    // A persisted Int timestamp can yield an elapsed interval outside Int's range.
+    // Clamp future ages before conversion and saturate unrepresentably old ages.
+    let ageSeconds = Int(exactly: elapsed.rounded(.towardZero)) ?? Int.max
     return .object([
         "ts": .int(ts),
         "iso": .string(iso(date)),
-        "ageSeconds": .int(max(0, Int(now.timeIntervalSince(date)))),
+        "ageSeconds": .int(ageSeconds),
     ])
 }
 

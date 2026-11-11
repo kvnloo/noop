@@ -22,9 +22,18 @@ Arguments reuse the MCP defaults and bounds:
 - `health_snapshot`: optional `--days` (default 14, clamped to 1...120).
 - `metric_series`: required `--key`; optional `--source` (default `my-whoop`), `--days` (default 90,
   clamped to 1...4000), `--from-day`, `--to-day`, and `--limit` (default 500, clamped to 1...2000).
-- `data_freshness`: no tool arguments.
+- `data_freshness`: no tool arguments. Its original keys remain unchanged; it additionally returns
+  nullable `latestRrInterval`, `latestEvent`, and `latestSleepSession` timestamps (missing or
+  empty tables return JSON `null`). RR excludes SpO2-derived or suspect timestamps when the
+  corresponding schema columns exist. All source watermarks aggregate only integer-stored
+  timestamps; malformed text, real and blob values are ignored before selecting the maximum.
+  A source containing only invalid or NULL timestamps returns JSON `null`.
 - `sleep_summary`: optional `--days` (default 30, clamped to 1...4000).
 - `workout_summary`: optional `--days` (default 90, clamped to 1...4000).
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
+
+Freshness `ageSeconds` remains non-negative: future timestamps have age zero, and
+elapsed intervals exceeding the platform integer range saturate at `Int.max`. The
+original `ts` value is preserved; this is defensive formatting, not timestamp validation.
