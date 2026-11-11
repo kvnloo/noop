@@ -10,6 +10,9 @@ import com.noop.oura.GetEventsSummary
 import com.noop.oura.OuraDriver
 import com.noop.oura.OuraDriverPhase
 import com.noop.oura.OuraHistoryDrain
+import com.noop.oura.OuraEvent
+import com.noop.oura.OuraTemp
+import com.noop.oura.OuraIBI
 import com.noop.oura.OuraRingGen
 import org.junit.Assert.*
 import org.junit.Test
@@ -81,6 +84,32 @@ class OuraHistoryRecoveryTest {
         } finally { source.stop() }
     }
 
+    @Test fun lateAnchorAdvancesHistoryOnlySamplesButNotParkedLiveIbi() {
+        val (source, driver) = source()
+        try {
+            OuraLiveSource::class.java.getDeclaredMethod("emit", List::class.java)
+                .apply { isAccessible = true }.invoke(source, listOf(
+                    OuraEvent.Temp(OuraTemp(200L, 36.5)), OuraEvent.Ibi(OuraIBI(300L, 1000))))
+            assertEquals(0L, (field(source, "drain") as OuraHistoryDrain).maxStoredRingTime)
+            set(driver, "anchorRingTime", 200L)
+            set(driver, "anchorUtcMs", System.currentTimeMillis() - 10_000L)
+            call(source, "drainPendingAnchorEvents")
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
+            assertEquals(200L, field(source, "historyCursor")) // never 300 from a possibly-live IBI
+        } finally { source.stop() }
+    }
+
+    @Test fun wallClockFallbackNeverAdvancesHistoryCursor() {
+        val (source, _) = source()
+        try {
+            OuraLiveSource::class.java.getDeclaredMethod("emit", List::class.java)
+                .apply { isAccessible = true }.invoke(source, listOf(OuraEvent.Temp(OuraTemp(200L, 36.5))))
+            call(source, "drainPendingAnchorEvents")
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
+            assertEquals(100L, field(source, "historyCursor"))
+        } finally { source.stop() }
+    }
+
     @Test fun finalSummaryTailIsParsedStoredAndCommittedUnderRingId() = kotlinx.coroutines.runBlocking {
         bankedBurstPersists(finalSummary = true)
     }
@@ -102,8 +131,11 @@ class OuraHistoryRecoveryTest {
                     .apply { isAccessible = true }.invoke(source, GetEventsSummary(1, 0, false))
             }
             assertEquals("The final summary can precede its last TLVs", OuraDriverPhase.FetchingHistory, driver.phase)
-            // Existing 0x60 fixture from OuraDriverTest: type/len, ring-time 65538 LE, IBI/amplitude.
-            val bytes = "6012020001007d10000000000000000000000007".chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            // Existing 0x60 fixture from OuraDriverTest plus a synthetic 0x46 temperature record:
+            // ring-time 65538 LE, 3650 centidegrees LE. History-only temp, not possibly-live IBI,
+            // advances the durable cursor. Banked IBI still materializes the ring's hrSample.
+            val bytes = "6012020001007d10000000000000000000000007460602000100420e"
+                .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
             OuraLiveSource::class.java.getDeclaredMethod("handleNotification", ByteArray::class.java)
                 .apply { isAccessible = true }.invoke(source, bytes)
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
@@ -115,6 +147,7 @@ class OuraHistoryRecoveryTest {
             repo.insert(StreamBatch(hr = listOf(HrRow(123L, 65))), "my-whoop")
             assertEquals(OuraDriverPhase.Streaming, driver.phase)
             assertEquals(65_538L, field(source, "historyCursor"))
+            assertEquals(65_538L, OuraHistoryCursorStore.read(RuntimeEnvironment.getApplication(), "oura-test"))
             val ringRows = db.whoopDao().hrSamples("oura-test", 0, Long.MAX_VALUE, 100)
             assertTrue("Banked IBI must materialize hrSample in Room", ringRows.isNotEmpty())
             assertTrue(ringRows.all { it.deviceId == "oura-test" })

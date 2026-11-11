@@ -12,6 +12,9 @@ The registry still has one active row. That row is a foreground selection, not a
   inter-record quiet interval, and enforces the existing 300-second drain limit with an independent
   timer. Missing summaries cannot hold FetchingHistory forever. Seen records steer continuation;
   only anchored stored records may advance the durable cursor. No response means no invented progress.
+- Restore the Kotlin cursor bookkeeping already present in Swift for history-only temp/SpO2/HRV/resp/
+  motion samples, including samples parked until an anchor arrives. Previously only hypnograms updated
+  that high-water mark. Possibly-live IBI and wall-clock fallback timestamps still cannot advance it.
 - Automatic background collection does not consume an adopt-consent marker.
 
 Implementation: `android/app/src/main/java/com/noop/ble/SourceCoordinator.kt` and `OuraLiveSource.kt`.

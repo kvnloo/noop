@@ -1497,7 +1497,13 @@ class OuraLiveSource(
         // Batched by resolved second, exactly like the live path (#1072): a record's parked beats are
         // released as ONE persist so `ord` records their emission order instead of restarting at 0 per beat.
         val stamped = pendingAnchorEvents.map { (event, ringTimestamp) ->
-            event to (d.unixSeconds(forRingTimestamp = ringTimestamp)?.toInt() ?: now)
+            val ts = d.unixSeconds(forRingTimestamp = ringTimestamp)
+            // Match Swift drainPendingAnchorEvents: a parked IBI may be live, and a wall-clock
+            // fallback is not an anchor. Neither may skip undrained history on reconnect.
+            if (ts != null && event !is OuraEvent.Ibi) {
+                drain.noteStoredRingTime(ringTimestamp, resumeCursorAtFetchStart)
+            }
+            event to (ts?.toInt() ?: now)
         }
         for ((ts, batch) in OuraStreamMapping.batched(stamped)) enqueue(batch, ts)
         pendingAnchorEvents.clear()
@@ -2409,7 +2415,13 @@ class OuraLiveSource(
      */
     private fun enqueueAnchoredOrPark(event: OuraEvent, ringTimestamp: Long, d: OuraDriver) {
         val ts = d.unixSeconds(forRingTimestamp = ringTimestamp)
-        if (ts != null) enqueue(listOf(event), ts.toInt()) else pendingAnchorEvents.add(event to ringTimestamp)
+        if (ts != null) {
+            enqueue(listOf(event), ts.toInt())
+            // The history-only siblings must bank their ring-time too, not just hypnograms.
+            // Swift's ingest already does this for temp/SpO2/HRV/resp/motion. Live IBI bypasses
+            // this helper and must never advance the resume cursor.
+            drain.noteStoredRingTime(ringTimestamp, resumeCursorAtFetchStart)
+        } else pendingAnchorEvents.add(event to ringTimestamp)
     }
 
     private fun handleBattery(pct: Int) = guardedCallback("battery") {
