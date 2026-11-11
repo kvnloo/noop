@@ -2828,6 +2828,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"OK no parity ledger findings ({_summary(result)})")
         return 0
 
+    if not baseline_path.is_file():
+        print(f"FAIL compact baseline not found at {baseline_path}; use --no-baseline for observation-only scanning")
+        return 1
     baseline = _load_json(baseline_path, {})
     compact_drift, improvements = compact_baseline_changes(result, baseline)
     if compact_drift:

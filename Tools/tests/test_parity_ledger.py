@@ -1376,6 +1376,24 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
                 self.assertTrue(regressions)
                 self.assertEqual([], improvements)
 
+    def test_missing_baseline_is_not_an_empty_accepted_baseline(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        baseline_path = self.root / "baseline.json"
+        self.assertFalse(baseline_path.exists())
+        code, output = self.run_cli(twin_map)
+        self.assertEqual(1, code)
+        self.assertIn("baseline", output)
+        self.assertIn("not found", output)
+        self.assertFalse(baseline_path.exists())
+        # Explicit observation-only mode remains usable without accepted debt metadata.
+        code, output = self.run_cli(twin_map, no_baseline=True)
+        self.assertEqual(0, code, output)
+        self.assertFalse(baseline_path.exists())
+        baseline = self.baseline_for(twin_map)
+        code, output = self.run_cli(twin_map, baseline)
+        self.assertEqual(0, code, output)
+
     def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
         """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
         self.write_clean_tree()
