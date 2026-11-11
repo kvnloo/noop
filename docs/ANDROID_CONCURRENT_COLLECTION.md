@@ -15,6 +15,8 @@ The registry still has one active row. That row is a foreground selection, not a
 - Restore the Kotlin cursor bookkeeping already present in Swift for history-only temp/SpO2/HRV/resp/
   motion samples, including samples parked until an anchor arrives. Previously only hypnograms updated
   that high-water mark. Possibly-live IBI and wall-clock fallback timestamps still cannot advance it.
+- Flush the final buffered batch before committing the cursor. A quiet burst below the count/interval
+  thresholds must reach persistence without waiting for another notification or a disconnect.
 - Automatic background collection does not consume an adopt-consent marker.
 
 Implementation: `android/app/src/main/java/com/noop/ble/SourceCoordinator.kt` and `OuraLiveSource.kt`.

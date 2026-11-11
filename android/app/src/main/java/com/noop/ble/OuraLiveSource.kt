@@ -823,6 +823,10 @@ class OuraLiveSource(
         handler.removeCallbacks(batchQuietRunnable)
         handler.removeCallbacks(historyDeadlineRunnable)
         hypnogramAssembler.flush()?.let { persistHypnogramBurst(it) }
+        // A quiet final batch may be below the count/30-second flush thresholds. There may be no
+        // next notification to trigger enqueue's interval check. Hand it to persistence now, before
+        // committing its resume point, rather than waiting for an unrelated live push or disconnect.
+        flush()
         // Ask the cursor commit whether it actually reset for a reboot rather than reading
         // `drain.sawPreResumeData` directly: that flag is also raised by a stale replay from a second BLE
         // client's serve position, which the #2097 judge inside `commitResumeCursor` rejects as "not a

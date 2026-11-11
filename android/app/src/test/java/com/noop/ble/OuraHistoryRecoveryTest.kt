@@ -143,7 +143,6 @@ class OuraHistoryRecoveryTest {
                 assertEquals(65_539L, field(source, "lastRequestCursor"))
                 shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(11))
             }
-            call(source, "flush")
             repo.insert(StreamBatch(hr = listOf(HrRow(123L, 65))), "my-whoop")
             assertEquals(OuraDriverPhase.Streaming, driver.phase)
             assertEquals(65_538L, field(source, "historyCursor"))
@@ -151,6 +150,8 @@ class OuraHistoryRecoveryTest {
             val ringRows = db.whoopDao().hrSamples("oura-test", 0, Long.MAX_VALUE, 100)
             assertTrue("Banked IBI must materialize hrSample in Room", ringRows.isNotEmpty())
             assertTrue(ringRows.all { it.deviceId == "oura-test" })
+            assertTrue("Quiet drain must flush temperature too, without another notification or stop",
+                db.whoopDao().skinTempSamples("oura-test", 0, Long.MAX_VALUE, 100).isNotEmpty())
             assertEquals(listOf(65), db.whoopDao().hrSamples("my-whoop", 0, Long.MAX_VALUE, 100).map { it.bpm })
         } finally { source.stop(); db.close() }
     }
