@@ -634,14 +634,25 @@ class OuraLiveSource(
     private var lastRequestCursor = 0L
 
     /**
-     * True between a `0x11` summary that wants more data and the batch-quiet continuation request. The
-     * ring emits the summary EARLY (observed before its batch finished streaming), so the next request
-     * waits for the stream to go quiet — open_oura's `transact()` collects until a 1.5 s silence for
-     * the same reason. Re-requesting mid-stream at a stale cursor restarts the ring's serve.
+     * True while a request awaits batch quiet, including when its summary never arrives. The ring can
+     * emit the summary before its last records, so continuation waits for a 1.5 s inter-record silence
+     * (open_oura transact). An entirely silent response gets the longer historyResponseTimeoutMs.
+     * Re-requesting mid-stream at a stale cursor restarts the ring's serve.
      */
     private var pendingContinuation = false
     private val batchQuietMs = 1_500L
     private val batchQuietRunnable = Runnable { continueDrainAfterQuiet() }
+    // A missing first response must release FetchingHistory too. Allow more than the inter-batch
+    // quiet interval for the ring to start serving flash, but never leave a request pending forever.
+    private val historyResponseTimeoutMs = 10_000L
+    private val historyDeadlineRunnable = Runnable {
+        guardedCallback("history-deadline") {
+            if (driver?.phase == OuraDriverPhase.FetchingHistory) {
+                log("Oura: history drain deadline without completion - keeping stored progress")
+                finishDrain(completed = false, resumeBacklog = drain.maxStoredRingTime > resumeCursorAtFetchStart)
+            }
+        }
+    }
 
     /**
      * Self-chained drain passes: a drain that ends with KNOWN remaining work (ring reboot → full pull
@@ -705,10 +716,13 @@ class OuraLiveSource(
         drain.reset()
         historyAdmission.startRequest()
         lastRequestCursor = historyCursor
-        pendingContinuation = false
+        pendingContinuation = true
         handler.removeCallbacks(batchQuietRunnable)
+        handler.removeCallbacks(historyDeadlineRunnable)
         log("Oura: fetching history from cursor $historyCursor [cursor-fix]")
         advance(OuraTransition.StartHistoryFetch(cursor = historyCursor))
+        handler.postDelayed(batchQuietRunnable, historyResponseTimeoutMs)
+        handler.postDelayed(historyDeadlineRunnable, (OuraHistoryDrain.MAX_DRAIN_SECONDS * 1000).toLong())
     }
 
     private fun scheduleHistoryFetch() {
@@ -720,6 +734,8 @@ class OuraLiveSource(
     private fun cancelHistoryFetch() {
         historyFetchScheduled = false
         handler.removeCallbacks(historyFetchRunnable)
+        handler.removeCallbacks(historyDeadlineRunnable)
+        historyAdmission.endRequest()
     }
 
     /**
@@ -768,7 +784,7 @@ class OuraLiveSource(
     }
 
     /**
-     * The batch went quiet after a more-data summary: issue the next GetEvents at the ADVANCED cursor,
+     * The batch went quiet, with or without a summary: issue the next GetEvents at the ADVANCED cursor,
      * or end the drain when the batch made no progress (open_oura `!progressed → break` — re-sending a
      * non-advancing cursor is exactly what loops the ring).
      */
@@ -786,6 +802,8 @@ class OuraLiveSource(
             lastRequestCursor = next
             log("Oura: history batch done - continuing from cursor $next")
             advance(OuraTransition.HistoryCursorAdvanced(cursor = next, moreData = true))
+            pendingContinuation = true
+            handler.postDelayed(batchQuietRunnable, historyResponseTimeoutMs)
         } else {
             log("Oura: history batch made no cursor progress - stopping drain (ring would re-serve)")
             finishDrain(completed = false, resumeBacklog = false)
@@ -803,6 +821,7 @@ class OuraLiveSource(
         historyAdmission.endRequest()
         pendingContinuation = false
         handler.removeCallbacks(batchQuietRunnable)
+        handler.removeCallbacks(historyDeadlineRunnable)
         hypnogramAssembler.flush()?.let { persistHypnogramBurst(it) }
         // Ask the cursor commit whether it actually reset for a reboot rather than reading
         // `drain.sawPreResumeData` directly: that flag is also raised by a stale replay from a second BLE
