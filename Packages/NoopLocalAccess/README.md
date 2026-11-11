@@ -33,3 +33,7 @@ Arguments reuse the MCP defaults and bounds:
 
 Dates use the existing `YYYY-MM-DD` tool contract. The CLI does not add a separate validation or
 interpretation layer; it passes accepted arguments to the same bounded read-only dispatcher as MCP.
+
+Freshness `ageSeconds` remains non-negative: future timestamps have age zero, and
+elapsed intervals exceeding the platform integer range saturate at `Int.max`. The
+original `ts` value is preserved; this is defensive formatting, not timestamp validation.

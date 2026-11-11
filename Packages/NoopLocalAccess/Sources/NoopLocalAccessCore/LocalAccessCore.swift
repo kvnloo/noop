@@ -739,10 +739,14 @@ private func workoutJSON(_ row: WorkoutRow) -> JSONValue {
 private func timestampJSON(_ ts: Int?, now: Date) -> JSONValue {
     guard let ts else { return .null }
     let date = Date(timeIntervalSince1970: TimeInterval(ts))
+    let elapsed = max(0, now.timeIntervalSince(date))
+    // A persisted Int timestamp can yield an elapsed interval outside Int's range.
+    // Clamp future ages before conversion and saturate unrepresentably old ages.
+    let ageSeconds = Int(exactly: elapsed.rounded(.towardZero)) ?? Int.max
     return .object([
         "ts": .int(ts),
         "iso": .string(iso(date)),
-        "ageSeconds": .int(max(0, Int(now.timeIntervalSince(date)))),
+        "ageSeconds": .int(ageSeconds),
     ])
 }
 
