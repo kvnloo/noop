@@ -300,7 +300,7 @@ class SourceCoordinator(
                 ?: paired.firstOrNull { isWhoop(it) && it.sourceKind in setOf(SourceKind.liveBLE.name, SourceKind.historyBLE.name) }
             val ring = paired.firstOrNull { it.id == id && it.sourceKind == SourceKind.oura.name }
                 ?: paired.firstOrNull { it.id == activeStrapId && it.sourceKind == SourceKind.oura.name }
-                ?: paired.firstOrNull { it.sourceKind == SourceKind.oura.name }
+                ?: paired.filter { it.sourceKind == SourceKind.oura.name }.maxByOrNull { it.lastSeenAt }
             if (whoop != null && ring != null && selected != null &&
                 (isWhoop(selected) || selected.sourceKind == SourceKind.oura.name)) {
                 // Each transport keeps its own datastore id. Selecting the ring must never pause or

@@ -69,7 +69,7 @@ class SourceCoordinatorConcurrentTest {
             }
         } as WhoopDao
         val repo = WhoopRepository(dao)
-        val coordinator = SourceCoordinator(registry, RuntimeEnvironment.getApplication(), repo,
+        val coordinator = SourceCoordinator(context = RuntimeEnvironment.getApplication(), registry = registry, repository = repo,
             stopWhoop = { stops++ }, startWhoop = { starts++ }, liveSink = { hr, _ -> shown.add(hr) },
             scope = scope, log = {}, initialActiveDeviceId = rows.firstOrNull { it.status == "active" }?.id)
         fun ring() = SourceCoordinator::class.java.getDeclaredField("activeSource")
@@ -122,6 +122,18 @@ class SourceCoordinatorConcurrentTest {
                 .apply { isAccessible = true }.invoke(ring, listOf(OuraEvent.Hr(OuraHR(200, 72, 0))))
             shadowOf(Looper.getMainLooper()).idle()
             assertTrue(h.shown.isEmpty())
+        } finally { h.close() }
+    }
+
+    @Test fun newestSeenRingIsChosenOverAnOlderPairing() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.active),
+            row("oura-old", SourceKind.oura, DeviceStatus.paired),
+            row("oura-recent", SourceKind.oura, DeviceStatus.paired).copy(lastSeenAt = 200)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            val ring = requireNotNull(h.ring())
+            assertEquals("oura-recent", OuraLiveSource::class.java.getDeclaredField("deviceId")
+                .apply { isAccessible = true }.get(ring))
         } finally { h.close() }
     }
 
