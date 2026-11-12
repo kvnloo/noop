@@ -19,6 +19,21 @@ class ExperimentFiniteInterventionWindowTest {
         "2026-09-12" to 75.0, // After the experiment's end.
     )
 
+    @Test fun baselineSkipsInvalidAndLoggedDaysBeforeTakingLatestSlots() {
+        assertEquals(
+            listOf("2026-09-06", "2026-09-10"),
+            experimentValidBaselineDays(measured, setOf("2026-09-08"), "2026-09-12", 2),
+        )
+    }
+
+    @Test fun baselineOnlyInvalidOrLoggedObservationsIsEmpty() {
+        assertEquals(
+            emptyList<String>(),
+            experimentValidBaselineDays(measured,
+                setOf("2026-09-05", "2026-09-06", "2026-09-08", "2026-09-10"), "2026-09-12", 10),
+        )
+    }
+
     @Test fun invalidObservationsDoNotConsumeDurationSlots() {
         assertEquals(
             listOf("2026-09-06", "2026-09-08"),

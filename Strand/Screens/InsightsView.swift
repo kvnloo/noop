@@ -26,6 +26,17 @@ import WhoopStore
 // view only loads the series, shapes them, and presents. Empty state via ComingSoon
 // when there is no journal data to interrogate.
 
+/// Select the latest finite behavior-absent observations strictly before the experiment starts.
+/// Invalid measurements must not consume a baseline slot or inflate its evidence count.
+func experimentValidBaselineDays(
+    outcomeDays: [String: Double], loggedDays: Set<String>, before: String, limit: Int
+) -> [String] {
+    Array(outcomeDays.keys
+        .filter { $0 < before && !loggedDays.contains($0) && outcomeDays[$0]?.isFinite == true }
+        .sorted()
+        .suffix(max(1, limit)))
+}
+
 /// Select the first finite observed outcome days in the inclusive experiment window.
 /// Invalid measurements must not consume a limited intervention slot; filtering for
 /// days with a logged behaviour happens after this chronological selection.
@@ -822,10 +833,9 @@ struct InsightsView: View {
         // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
         // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
         // "Intervention" is now an honest present-vs-absent contrast, not a raw pre/post window.
-        let baselineDays = outcomeDays.keys
-            .filter { $0 < experimentStartedDay && !loggedDays.contains($0) }
-            .sorted()
-            .suffix(max(1, experimentBaselineDays))
+        let baselineDays = experimentValidBaselineDays(
+            outcomeDays: outcomeDays, loggedDays: loggedDays,
+            before: experimentStartedDay, limit: experimentBaselineDays)
         // Intervention = the first `duration` finite outcome days in the window;
         // only then keep days when the behaviour WAS logged.
         let interventionWindow = experimentValidObservationDays(

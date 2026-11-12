@@ -1311,6 +1311,17 @@ private fun resolveExperimentBehaviour(candidates: List<String>, saved: String):
     return candidates.firstOrNull()
 }
 
+/** Latest finite behavior-absent observations strictly before the experiment starts.
+ * Invalid measurements must not consume baseline slots or inflate the evidence count. */
+internal fun experimentValidBaselineDays(
+    outcomeDays: Map<String, Double>,
+    loggedDays: Set<String>,
+    before: String,
+    limit: Int,
+): List<String> =
+    outcomeDays.keys.filter { it < before && it !in loggedDays && outcomeDays[it]?.isFinite() == true }
+        .sorted().takeLast(limit.coerceAtLeast(1))
+
 /** First finite observed outcome days within the inclusive experiment window.
  * Invalid measurements cannot consume a limited intervention slot; logged-Yes
  * filtering happens after this chronological selection, as on Apple. */
@@ -1342,10 +1353,10 @@ private fun buildExperimentSnapshot(
     // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
     // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
     // "Intervention" is an honest present-vs-absent contrast, not a raw pre/post window.
-    val baselineKeys = outcomeDays.keys
-        .filter { it < startedDay && it !in loggedDays }
-        .sorted()
-        .takeLast(baselineDays.coerceAtLeast(1))
+    val baselineKeys = experimentValidBaselineDays(
+        outcomeDays = outcomeDays, loggedDays = loggedDays,
+        before = startedDay, limit = baselineDays,
+    )
     // Intervention = the first `duration` finite outcome days in the window;
     // only then keep days when the behaviour WAS logged.
     val interventionWindow = experimentValidObservationDays(
