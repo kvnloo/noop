@@ -106,6 +106,8 @@ class SourceCoordinator(
     /** Initial registry id for process composition. Nullable keeps plain JVM harnesses honest until their
      * first successful reconcile; production injects its already-resolved startup id. */
     initialActiveDeviceId: String? = null,
+    /** Isolated source construction, replaceable by JVM lifecycle tests without Android GATT. */
+    private val sourceFactory: ((String, PairedDeviceRow?) -> LiveHrSource)? = null,
     /** Move Oura's install key alongside serial-identity adoption. Plain JVM tests inject a no-op;
      * production retains the encrypted-store behavior through this default. */
     private val migrateOuraInstallKey: (fromId: String, toId: String) -> Unit = { fromId, toId ->
@@ -420,6 +422,7 @@ class SourceCoordinator(
      * macOS `SourceCoordinator.makeSource(for:)`.
      */
     private fun makeSource(id: String, row: PairedDeviceRow?): LiveHrSource {
+        sourceFactory?.let { return it(id, row) }
         // Non-null in production (set at the composition root); only the JVM-test paths that never reach a
         // strap switch leave it null. Fail loudly rather than silently no-op if that invariant breaks.
         val ctx = requireNotNull(context) { "SourceCoordinator.context is required to run a strap source" }
