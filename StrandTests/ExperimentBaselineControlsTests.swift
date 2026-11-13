@@ -16,6 +16,13 @@ final class ExperimentBaselineControlsTests: XCTestCase {
         "2026-09-01", "2026-09-03", "2026-09-05", "2026-09-06",
     ]
 
+    func testNewestUnansweredDayCannotDisplaceExplicitNoControl() {
+        let measured = ["2026-09-01": 70.0, "2026-09-02": 75.0, "2026-09-03": 99.0]
+        XCTAssertEqual(experimentExplicitNoBaselineDays(
+            outcomeDays: measured, explicitNoDays: ["2026-09-01", "2026-09-02"],
+            before: "2026-09-04", limit: 2), ["2026-09-01", "2026-09-02"])
+    }
+
     func testOnlyExplicitNoDaysBeforeStartAreControls() {
         XCTAssertEqual(
             experimentExplicitNoBaselineDays(

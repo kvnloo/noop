@@ -18,6 +18,13 @@ class ExperimentBaselineControlsTest {
     )
     private val noDays = setOf("2026-09-01", "2026-09-03", "2026-09-05", "2026-09-06")
 
+    @Test fun newestUnansweredDayCannotDisplaceExplicitNoControl() {
+        val measured = mapOf("2026-09-01" to 70.0, "2026-09-02" to 75.0, "2026-09-03" to 99.0)
+        assertEquals(listOf("2026-09-01", "2026-09-02"), experimentExplicitNoBaselineDays(
+            measured, setOf("2026-09-01", "2026-09-02"), "2026-09-04", 2,
+        ))
+    }
+
     @Test fun onlyExplicitNoDaysBeforeStartAreControls() {
         assertEquals(
             listOf("2026-09-01", "2026-09-03", "2026-09-05"),
