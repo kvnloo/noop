@@ -21,33 +21,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Runs exactly ONE device's live BLE at a time, driven by [DeviceRegistry]'s active device id.
+ * Runs a WHOOP client and one paired Oura ring concurrently. The registry's active id selects the
+ * foreground source, not which of those two transports may collect. Other strap kinds stay exclusive.
  *
- * Faithful Kotlin twin of Strand/BLE/SourceCoordinator.swift.
+ * Single-WHOOP startup remains a no-op. WHOOP start/stop/identity updates use the existing injected
+ * closures; each non-WHOOP source owns an isolated scanner/GATT. The Oura persist closures retain the
+ * ring's own id even when WHOOP is foreground, and background ring HR never feeds the shared live sink.
  *
- * WHOOP-FIRST, ZERO REGRESSION
- * ----------------------------
- * This coordinator is a deliberate NO-OP whenever the active device is the WHOOP (id "my-whoop", any
- * `brand == "WHOOP"` row, OR an unknown id). That is the default state and EVERY state where no generic
- * strap is paired: WHOOP is active, the coordinator does nothing, and the existing WHOOP flow
- * ([WhoopBleClient.connect] via [AppViewModel.connect]) runs exactly as it does today. It only ever
- * *acts* when the active device is a NON-WHOOP generic HR strap:
- *
- *   • switching TO a generic strap → [stopWhoop] (WHOOP's existing disconnect), then start the isolated
- *     [StandardHrSource] for that strap's deviceId.
- *   • switching BACK to WHOOP     → stop the [StandardHrSource], then [startWhoop] (WHOOP's existing scan
- *     entry) — but only if we had actually been on a strap, so a plain launch with WHOOP active does NOT
- *     re-trigger a redundant WHOOP scan.
- *
- * It never imports or references [WhoopBleClient] internals: the WHOOP start/stop are injected closures
- * from the composition root, so the two BLE flows stay fully decoupled (mirrors [StandardHrSource]'s
- * isolation). Live HR from a strap is pushed through [liveSink]; the app wires that to the SAME live
- * state the UI observes (e.g. `ble::publishExternalLiveHr`).
- *
- * On Android the registry exposes the active id as a one-shot suspend read (not a published flow like
- * Swift's `@Published activeDeviceId`), so the app calls [onActiveDeviceChanged] after any registry
- * mutation that can change the active device (the Devices screen's setActive — the next task), and
- * [start] reconciles once against the current active id at launch (a no-op for a single-WHOOP install).
+ * The app calls [onActiveDeviceChanged] after registry mutations and [start] once at launch. Repeating
+ * the same foreground id also checks for an archived/forgotten companion. This Android collection
+ * change is not yet mirrored in Swift. Per-metric primary selection remains a read-side follow-up.
  */
 class SourceCoordinator(
     /** Android [Context] for the strap source's own scanner/GATT. Non-null in production (set at the
@@ -105,7 +88,7 @@ class SourceCoordinator(
     private val sensorSink: (StandardHrSource.SensorMetrics) -> Unit = {},
     /** Initial registry id for process composition. Nullable keeps plain JVM harnesses honest until their
      * first successful reconcile; production injects its already-resolved startup id. */
-    initialActiveDeviceId: String? = null,
+    private val initialActiveDeviceId: String? = null,
     /** Isolated source construction, replaceable by JVM lifecycle tests without Android GATT. */
     private val sourceFactory: ((String, PairedDeviceRow?) -> LiveHrSource)? = null,
     /** Move Oura's install key alongside serial-identity adoption. Plain JVM tests inject a no-op;
@@ -165,8 +148,8 @@ class SourceCoordinator(
     private var ouraStateJob: kotlinx.coroutines.Job? = null
 
     /** The single non-WHOOP source currently live — a generic HR strap, FTMS machine, Huami band, or Oura
-     *  ring — held behind the [LiveHrSource] interface. null while WHOOP is active or nothing else is
-     *  paired. Exactly one non-WHOOP source is ever live at a time, and the coordinator only ever connects /
+     *  ring — held behind the [LiveHrSource] interface. An Oura ring may remain live beside WHOOP.
+     *  Exactly one non-WHOOP source is live at a time, and the coordinator only ever connects /
      *  scans / stops it. Built by [makeSource]; each source owns its OWN scanner/GATT and never touches the
      *  WHOOP BLE client, so the WHOOP path cannot regress. (An Oura ring additionally surfaces only its OWN
      *  raw signals + open event tags — NOOP computes its own Charge/Rest — never Oura's encrypted scores.) */
@@ -302,8 +285,6 @@ class SourceCoordinator(
     }
 
     private suspend fun reconcile(id: String): Boolean {
-        if (id == lastSeenId) return true
-        lastSeenId = id
         // CONTAIN every device-switch failure here. reconcile is the single entry point for both
         // start() (launch, against the PERSISTED active id) and onActiveDeviceChanged(), and it runs
         // inside a bare `scope.launch {}` — a SupervisorJob does NOT stop an uncaught throw from
@@ -314,7 +295,49 @@ class SourceCoordinator(
         // the exact underlying throw, and reset lastSeenId so the user can retry after switching away.
         return try {
             val devices = registry.all()
+            val paired = devices.filter { it.status != "archived" }
+            val selected = paired.firstOrNull { it.id == id }
+            val whoop = paired.firstOrNull { it.id == id && isWhoop(it) }
+                ?: paired.firstOrNull { it.id == activeWhoopId && isWhoop(it) }
+                ?: paired.firstOrNull { isWhoop(it) && it.sourceKind in setOf(SourceKind.liveBLE.name, SourceKind.historyBLE.name) }
+            val ring = paired.firstOrNull { it.id == id && it.sourceKind == SourceKind.oura.name }
+                ?: paired.firstOrNull { it.id == activeStrapId && it.sourceKind == SourceKind.oura.name }
+                ?: paired.filter { it.sourceKind == SourceKind.oura.name }.maxByOrNull { it.lastSeenAt }
+            if (whoop != null && ring != null && selected != null &&
+                (isWhoop(selected) || selected.sourceKind == SourceKind.oura.name)) {
+                // Each transport keeps its own datastore id. Selecting the ring must never pause or
+                // re-point the WHOOP client, and selecting WHOOP must not tear the ring down.
+                val resumeAtStartup = activeWhoopId == null && initialActiveDeviceId != null &&
+                    !isWhoop(initialActiveDeviceId, devices)
+                switchToWhoop(whoop.id, devices)
+                // NoopApplication starts with WHOOP disabled when a ring was the persisted primary.
+                // Re-enable that independent transport once, not on every primary/read-side refresh.
+                if (resumeAtStartup) startWhoop()
+                if (activeStrapId != ring.id) {
+                    tearDownNonWhoopSource()
+                    activeStrapId = null
+                    val source = makeSource(ring.id, ring)
+                    activeSource = source
+                    activeStrapId = ring.id
+                    try {
+                        if (ring.peripheralId.isNullOrBlank()) source.scan() else source.connect(ring.peripheralId)
+                    } catch (t: Throwable) {
+                        tearDownNonWhoopSource()
+                        activeStrapId = null
+                        throw t
+                    }
+                }
+                lastSeenId = id
+                return true
+            }
+            // Reconcile removal even when the foreground id did not change.
+            if (!onStrap && activeSource != null) {
+                tearDownNonWhoopSource()
+                activeStrapId = null
+            }
+            if (id == lastSeenId) return true
             if (isWhoop(id, devices)) switchToWhoop(id, devices) else switchToStrap(id, devices)
+            lastSeenId = id
             true
         } catch (t: Throwable) {
             lastSeenId = null
@@ -517,7 +540,8 @@ class SourceCoordinator(
             context = ctx,
             deviceId = id,
             ringGen = ringGen,
-            liveSink = { hr, rr -> liveSink(hr, rr) },   // ring HR + R-R → the existing live recorder
+            // Background samples persist below, but must not overwrite WHOOP's foreground recorder.
+            liveSink = { hr, rr -> if (activeDeviceId.value == id) liveSink(hr, rr) },
             // The 16-byte application install key, read from the at-rest-encrypted key store keyed by this
             // ring's device id. INJECTED, never hardcoded; null drives OuraLiveSource's honest needs-pairing
             // path (no faked data). Read fresh on each connect so a key provisioned mid-session (the adopt
@@ -592,7 +616,7 @@ class SourceCoordinator(
             onsetKeying = { NoopPrefs.ouraOnsetKeying(ctx) },  // #1284 residual 3
             notifyMaskFull = { NoopPrefs.ouraNotifyMaskFull(ctx) },  // packed-notification A/B
             log = straplog,           // Oura connect/auth/stream lifecycle → the SAME exported strap log (#421)
-            onBattery = batterySink,  // ring battery → the same live state the WHOOP strap battery uses
+            onBattery = { pct -> if (activeDeviceId.value == id) batterySink(pct) },
             onModel = { model -> scope.launch { runCatching { registry.setModel(id, model) } } },  // #772: correct a name-guessed gen
             onSerial = { serial -> adoptOuraSerial(currentId = id, serial = serial) },  // #771
         )
@@ -602,7 +626,8 @@ class SourceCoordinator(
         // they NEVER provision a key (OURA_PROTOCOL.md s3.2). One-shot by design: a single consent provisions
         // ONE install. setAdoptIntent must run BEFORE connect (the driver is built per connect with
         // allowKeyInstall wired from it) — the caller connects only after this returns, so the order holds.
-        if (OuraInstallKeyStore.consumePendingAdopt(ctx, id)) {
+        // Auto-connecting a background companion must never consume destructive adopt consent.
+        if (row?.status == "active" && OuraInstallKeyStore.consumePendingAdopt(ctx, id)) {
             source.setAdoptIntent(true)
             straplog("Oura: adopt consent granted - this session may install NOOP's key")
         }

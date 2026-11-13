@@ -1,118 +1,152 @@
 package com.noop.ble
 
-import com.noop.data.DeviceRegistry
-import com.noop.data.DeviceRegistryDao
-import com.noop.data.PairedDeviceRow
-import java.lang.reflect.Proxy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import android.os.Looper
+import com.noop.data.*
+import com.noop.oura.*
+import kotlinx.coroutines.*
+import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
+import android.content.Context
+import android.content.SharedPreferences
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+import java.lang.reflect.Proxy
 
+/** Real coordinator/source/mapping/repository, with Android shadow Bluetooth and an in-memory DAO. */
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [34])
+@LooperMode(LooperMode.Mode.PAUSED)
 class SourceCoordinatorConcurrentTest {
-    private fun device(id: String, brand: String, kind: String, status: String) = PairedDeviceRow(
-        id = id, brand = brand, model = brand, nickname = null,
-        sourceKind = kind, capabilities = "hr", status = status,
-        addedAt = 1L, lastSeenAt = 1L, peripheralId = "$id-address",
+    // The transport never authenticates here. Supply an empty test-only store rather than asking
+    // Robolectric to create an Android Keystore master key or reading any real installation key.
+    @Suppress("UNCHECKED_CAST")
+    private fun prefsCache() = SecurePrefs::class.java.getDeclaredField("cache")
+        .apply { isAccessible = true }.get(null) as MutableMap<String, SharedPreferences>
+    @Before fun emptyInstallKeyStore() {
+        prefsCache()["noop_oura_secure_prefs"] = RuntimeEnvironment.getApplication()
+            .getSharedPreferences("empty-test-oura", Context.MODE_PRIVATE)
+    }
+    @After fun clearInstallKeyStore() { prefsCache().remove("noop_oura_secure_prefs") }
+
+    private fun row(id: String, kind: SourceKind, status: DeviceStatus) = PairedDeviceRow(
+        id, if (kind == SourceKind.oura) "Oura" else "WHOOP", "test", null,
+        sourceKind = kind.name, capabilities = "hr,sleep", status = status.name,
+        addedAt = 1, lastSeenAt = 1,
     )
 
-    private class Source(val deviceId: String) : LiveHrSource {
-        var connections = 0
+    private class Harness(val rows: MutableList<PairedDeviceRow>) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val stored = mutableListOf<HrSample>()
+        val shown = mutableListOf<Int>()
         var stops = 0
-        var connected = false
-        override fun connect(address: String) { connections++; connected = true }
-        override fun scan() { connections++; connected = true }
-        override fun stop() { stops++; connected = false }
-    }
-
-    private class Harness(var rows: List<PairedDeviceRow>) {
-        val sources = mutableListOf<Source>()
-        var whoopRunning = true
-        var whoopStops = 0
-        var whoopStarts = 0
-        var whoopId = "my-whoop"
-        private val dao = Proxy.newProxyInstance(
-            DeviceRegistryDao::class.java.classLoader, arrayOf(DeviceRegistryDao::class.java),
-        ) { _, method, _ ->
+        var starts = 0
+        val registryDao = Proxy.newProxyInstance(DeviceRegistryDao::class.java.classLoader,
+            arrayOf(DeviceRegistryDao::class.java)) { _, method, _ ->
             when (method.name) {
-                "pairedDevices" -> rows
+                "pairedDevices" -> rows.toList()
                 "activeDeviceId" -> rows.firstOrNull { it.status == "active" }?.id
-                else -> error("unexpected registry operation ${method.name}")
+                else -> error("Unexpected registry call ${method.name}")
             }
         } as DeviceRegistryDao
-        val coordinator = SourceCoordinator(
-            context = null,
-            registry = DeviceRegistry(dao, object : DeviceRegistry.Transactor {
-                override suspend fun <R> run(block: suspend () -> R): R = block()
-            }),
-            repository = null,
-            liveSink = { _, _ -> },
-            startWhoop = { whoopRunning = true; whoopStarts++ },
-            stopWhoop = { whoopRunning = false; whoopStops++ },
-            setWhoopActiveDeviceId = { whoopId = it },
-            scope = CoroutineScope(Dispatchers.Unconfined),
-            log = {}, straplog = {},
-            sourceFactory = { id, _ -> Source(id).also { sources.add(it) } },
-        )
+        val registry = DeviceRegistry(registryDao, object : DeviceRegistry.Transactor {
+            override suspend fun <R> run(block: suspend () -> R): R = block()
+        })
+        val dao = Proxy.newProxyInstance(WhoopDao::class.java.classLoader,
+            arrayOf(WhoopDao::class.java)) { _, method, args ->
+            when (method.name) {
+                "insertHr" -> {
+                    @Suppress("UNCHECKED_CAST") val samples = args[0] as List<HrSample>
+                    stored.addAll(samples)
+                    samples.map { 1L }
+                }
+                else -> error("Unexpected repository call ${method.name}")
+            }
+        } as WhoopDao
+        val repo = WhoopRepository(dao)
+        val coordinator = SourceCoordinator(context = RuntimeEnvironment.getApplication(), registry = registry, repository = repo,
+            stopWhoop = { stops++ }, startWhoop = { starts++ }, liveSink = { hr, _ -> shown.add(hr) },
+            scope = scope, log = {}, initialActiveDeviceId = rows.firstOrNull { it.status == "active" }?.id)
+        fun ring() = SourceCoordinator::class.java.getDeclaredField("activeSource")
+            .apply { isAccessible = true }.get(coordinator) as? OuraLiveSource
+        fun close() { ring()?.stop(); scope.cancel() }
     }
 
-    private fun harness() = Harness(listOf(
-        device("whoop-test", "WHOOP", "liveBLE", "active"),
-        device("oura-test", "Oura", "oura", "paired"),
-    ))
-
-    @Test fun whoopSelectionAlsoConnectsThePairedRing() = runBlocking {
-        val h = harness()
-        assertTrue(h.coordinator.reconcileActiveDevice("whoop-test"))
-        assertEquals("the paired ring needs its own live connection", 1, h.sources.size)
-        assertTrue(h.whoopRunning)
-        assertEquals("whoop-test", h.whoopId)
-        assertEquals("oura-test", h.sources.single().deviceId)
-        assertTrue(h.sources.single().connected)
-        assertEquals(0, h.whoopStops)
+    @Test fun whoopPrimaryAlsoStartsPairedOuraAndKeepsTheSameRingOnPrimarySwitches() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.active),
+            row("oura-test", SourceKind.oura, DeviceStatus.paired)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            val ring = h.ring()
+            assertNotNull("A paired ring must run even when WHOOP is primary", ring)
+            assertTrue(h.coordinator.reconcileActiveDevice("oura-test"))
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            assertSame(ring, h.ring())
+            assertEquals(0, h.stops)
+            assertEquals(0, h.starts) // existing WHOOP startup owns the initial connection
+        } finally { h.close() }
     }
 
-    @Test fun selectingTheRingDoesNotDisconnectWhoop() = runBlocking {
-        val h = harness()
-        h.coordinator.reconcileActiveDevice("whoop-test")
-        assertTrue(h.coordinator.reconcileActiveDevice("oura-test"))
-        assertEquals("selecting Oura must not tear down WHOOP", 0, h.whoopStops)
-        assertTrue(h.whoopRunning)
-        assertEquals("whoop-test", h.whoopId)
-        assertEquals("oura-test", h.sources.single().deviceId)
-        assertEquals("oura-test", h.coordinator.activeDeviceId.value)
+    @Test fun selectingOuraDoesNotPauseWhoopAndSamplesKeepTheirOwnDeviceIds() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.paired),
+            row("oura-test", SourceKind.oura, DeviceStatus.active)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("oura-test"))
+            assertEquals("Oura must not stop the independent WHOOP client", 0, h.stops)
+            assertEquals("Ring-primary startup must re-enable the bootstrapped WHOOP client", 1, h.starts)
+            val ring = requireNotNull(h.ring())
+            OuraLiveSource::class.java.getDeclaredField("driver").apply { isAccessible = true }
+                .set(ring, OuraDriver(OuraRingGen.GEN3, authKey = null))
+            OuraLiveSource::class.java.getDeclaredMethod("emit", List::class.java)
+                .apply { isAccessible = true }.invoke(ring, listOf(OuraEvent.Hr(OuraHR(200, 72, 0))))
+            OuraLiveSource::class.java.getDeclaredMethod("flush").apply { isAccessible = true }.invoke(ring)
+            h.repo.insert(StreamBatch(hr = listOf(HrRow(ts = 123, bpm = 65))), "my-whoop")
+            assertEquals(setOf("oura-test", "my-whoop"), h.stored.map { it.deviceId }.toSet())
+        } finally { h.close() }
     }
 
-    @Test fun selectingWhoopAgainKeepsTheRingConnection() = runBlocking {
-        val h = harness()
-        h.coordinator.reconcileActiveDevice("oura-test")
-        val ring = h.sources.single()
-        assertTrue(h.coordinator.reconcileActiveDevice("whoop-test"))
-        assertEquals("a UI selection is not a ring disconnect", 0, ring.stops)
-        assertTrue(ring.connected)
-        assertTrue(h.whoopRunning)
-        assertEquals(1, ring.connections)
+    @Test fun backgroundRingDoesNotOverwriteWhoopLiveReadout() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.active),
+            row("oura-test", SourceKind.oura, DeviceStatus.paired)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            val ring = requireNotNull(h.ring())
+            OuraLiveSource::class.java.getDeclaredField("driver").apply { isAccessible = true }
+                .set(ring, OuraDriver(OuraRingGen.GEN3, authKey = null))
+            OuraLiveSource::class.java.getDeclaredMethod("emit", List::class.java)
+                .apply { isAccessible = true }.invoke(ring, listOf(OuraEvent.Hr(OuraHR(200, 72, 0))))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(h.shown.isEmpty())
+        } finally { h.close() }
     }
 
-    @Test fun anArchivedRingIsNotConnected() = runBlocking {
-        val h = harness()
-        h.rows = h.rows.map { if (it.sourceKind == "oura") it.copy(status = "archived") else it }
-        assertTrue(h.coordinator.reconcileActiveDevice("whoop-test"))
-        assertTrue(h.sources.isEmpty())
-        assertEquals(0, h.whoopStops)
+    @Test fun newestSeenRingIsChosenOverAnOlderPairing() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.active),
+            row("oura-old", SourceKind.oura, DeviceStatus.paired),
+            row("oura-recent", SourceKind.oura, DeviceStatus.paired).copy(lastSeenAt = 200)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            val ring = requireNotNull(h.ring())
+            assertEquals("oura-recent", OuraLiveSource::class.java.getDeclaredField("deviceId")
+                .apply { isAccessible = true }.get(ring))
+        } finally { h.close() }
     }
 
-    @Test fun anExclusiveGenericStrapStillPausesWhoop() = runBlocking {
-        val h = harness()
-        h.rows = h.rows + device("polar-test", "Polar", "liveBLE", "paired")
-        assertTrue(h.coordinator.reconcileActiveDevice("polar-test"))
-        assertFalse(h.whoopRunning)
-        assertEquals("polar-test", h.sources.last().deviceId)
-        assertTrue(h.coordinator.reconcileActiveDevice("whoop-test"))
-        assertTrue(h.whoopRunning)
-        assertEquals(1, h.sources.first().stops)
+    @Test fun archivedRingIsNotStartedAndArchivingLiveRingTearsItDown() = runBlocking {
+        val h = Harness(mutableListOf(row("my-whoop", SourceKind.liveBLE, DeviceStatus.active),
+            row("oura-test", SourceKind.oura, DeviceStatus.paired)))
+        try {
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            assertNotNull(h.ring())
+            h.rows[1] = h.rows[1].copy(status = DeviceStatus.archived.name)
+            assertTrue(h.coordinator.reconcileActiveDevice("my-whoop"))
+            assertNull(h.ring())
+            assertEquals(0, h.stops)
+        } finally { h.close() }
     }
 }
