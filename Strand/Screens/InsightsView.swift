@@ -26,6 +26,18 @@ import WhoopStore
 // view only loads the series, shapes them, and presents. Empty state via ComingSoon
 // when there is no journal data to interrogate.
 
+/// Select the first finite observed outcome days in the inclusive experiment window.
+/// Invalid measurements must not consume a limited intervention slot; filtering for
+/// days with a logged behaviour happens after this chronological selection.
+func experimentValidObservationDays(
+    outcomeDays: [String: Double], from: String, through: String, limit: Int
+) -> [String] {
+    Array(outcomeDays.keys
+        .filter { $0 >= from && $0 <= through && outcomeDays[$0]?.isFinite == true }
+        .sorted()
+        .prefix(max(1, limit)))
+}
+
 /// `.task(id:)` key for the Insights journal load: the data-refresh sequence plus today's day-key, so the
 /// load re-runs both on a data change and on a calendar-day rollover (#860 item 4).
 private struct InsightsLoadKey: Equatable {
@@ -814,12 +826,11 @@ struct InsightsView: View {
             .filter { $0 < experimentStartedDay && !loggedDays.contains($0) }
             .sorted()
             .suffix(max(1, experimentBaselineDays))
-        // Intervention = the first `duration` outcome days in the window where the behaviour
-        // WAS logged.
-        let interventionWindow = outcomeDays.keys
-            .filter { $0 >= experimentStartedDay && $0 <= today }
-            .sorted()
-            .prefix(duration)
+        // Intervention = the first `duration` finite outcome days in the window;
+        // only then keep days when the behaviour WAS logged.
+        let interventionWindow = experimentValidObservationDays(
+            outcomeDays: outcomeDays, from: experimentStartedDay,
+            through: today, limit: duration)
         let interventionDays = interventionWindow.filter { loggedDays.contains($0) }
 
         let baselineValues = baselineDays.compactMap { outcomeDays[$0] }

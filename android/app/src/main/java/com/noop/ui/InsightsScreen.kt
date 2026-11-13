@@ -1311,6 +1311,18 @@ private fun resolveExperimentBehaviour(candidates: List<String>, saved: String):
     return candidates.firstOrNull()
 }
 
+/** First finite observed outcome days within the inclusive experiment window.
+ * Invalid measurements cannot consume a limited intervention slot; logged-Yes
+ * filtering happens after this chronological selection, as on Apple. */
+internal fun experimentValidObservationDays(
+    outcomeDays: Map<String, Double>,
+    from: String,
+    through: String,
+    limit: Int,
+): List<String> =
+    outcomeDays.keys.filter { it >= from && it <= through && outcomeDays[it]?.isFinite() == true }
+        .sorted().take(limit.coerceAtLeast(1))
+
 private fun buildExperimentSnapshot(
     model: InsightModel,
     behaviours: Map<String, Set<String>>,
@@ -1334,12 +1346,12 @@ private fun buildExperimentSnapshot(
         .filter { it < startedDay && it !in loggedDays }
         .sorted()
         .takeLast(baselineDays.coerceAtLeast(1))
-    // Intervention = the first `duration` outcome days from the start where the
-    // behaviour WAS logged.
-    val interventionWindow = outcomeDays.keys
-        .filter { it >= startedDay && it <= today }
-        .sorted()
-        .take(duration)
+    // Intervention = the first `duration` finite outcome days in the window;
+    // only then keep days when the behaviour WAS logged.
+    val interventionWindow = experimentValidObservationDays(
+        outcomeDays = outcomeDays, from = startedDay,
+        through = today, limit = duration,
+    )
     val interventionKeys = interventionWindow.filter { it in loggedDays }
 
     val baselineValues = baselineKeys.mapNotNull { outcomeDays[it] }
