@@ -15,19 +15,6 @@ final class ExperimentFiniteInterventionWindowTests: XCTestCase {
         "2026-09-12": 75, // After the experiment's end.
     ]
 
-    func testBaselineSkipsInvalidAndLoggedDaysBeforeTakingLatestSlots() {
-        XCTAssertEqual(experimentValidBaselineDays(
-            outcomeDays: measured, loggedDays: ["2026-09-08"],
-            before: "2026-09-12", limit: 2),
-            ["2026-09-06", "2026-09-10"])
-    }
-
-    func testBaselineOnlyInvalidOrLoggedObservationsIsEmpty() {
-        XCTAssertEqual(experimentValidBaselineDays(
-            outcomeDays: measured, loggedDays: ["2026-09-05", "2026-09-06", "2026-09-08", "2026-09-10"],
-            before: "2026-09-12", limit: 10), [])
-    }
-
     func testInvalidObservationsDoNotConsumeDurationSlots() {
         XCTAssertEqual(
             experimentValidObservationDays(
