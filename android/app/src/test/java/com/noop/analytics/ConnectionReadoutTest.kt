@@ -221,6 +221,22 @@ class ConnectionReadoutTest {
         assertEquals("yes", ConnectionReadout.clockLatchedLabel(1_782_475_600L, 40_000_000L))
     }
 
+    // #2809: a working 5/MG can have a seeded range with newestUnix=0 until a REAL
+    // data-range reply arrives. The placeholder is unknown, not evidence of 1970/71.
+    @Test fun unpopulatedFiveMgRangeDoesNotClaimEpochClockFault() {
+        assertEquals("n/a (no banked record timestamp)", ConnectionReadout.clockLatchedLabel(null, 0L))
+        assertEquals("n/a (no banked record timestamp)", ConnectionReadout.clockLatchedLabel(null, -1L))
+        assertNull(ConnectionReadout.rtcWarning(null, 0L))
+        assertNull(ConnectionReadout.rtcWarning(null, -1L))
+        // Both twins must agree at the exact 1972 boundary.
+        assertEquals("no (records dated 1970/71)", ConnectionReadout.clockLatchedLabel(null, 63_071_999L))
+        assertEquals("yes", ConnectionReadout.clockLatchedLabel(null, 63_072_000L))
+        assertTrue(ConnectionReadout.rtcWarning(null, 63_071_999L) != null)
+        assertNull(ConnectionReadout.rtcWarning(null, 63_072_000L))
+        // A real correlated GET_CLOCK response wins over an unpopulated data range.
+        assertEquals("yes", ConnectionReadout.clockLatchedLabel(1_782_475_600L, 0L))
+    }
+
     @Test fun rtcWarningFiresOnEpochEraClockOrNewest() {
         assertTrue(ConnectionReadout.rtcWarning(40_000_000L, null) != null)
         assertTrue(ConnectionReadout.rtcWarning(null, 30_000_000L) != null)

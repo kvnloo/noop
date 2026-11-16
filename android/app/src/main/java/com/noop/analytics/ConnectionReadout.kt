@@ -250,7 +250,12 @@ object ConnectionReadout {
         // #1823: this branch has NOT read a clock - it is reached when no correlation exists, which is
         // every 5/MG. The only evidence is how the strap DATED its records, so say that rather than
         // claiming a clock reading we never took. Twin of the Swift wording.
-        if (strapNewestUnix != null) return if (strapNewestUnix < ceiling) "no (records dated 1970/71)" else "yes"
+        if (strapNewestUnix != null) {
+            // #2809: WHOOP 5/MG seeds strapRange.newestUnix with zero before a real range
+            // reply. An unset placeholder is not evidence of an epoch-era clock fault.
+            if (strapNewestUnix <= 0L) return "n/a (no banked record timestamp)"
+            return if (strapNewestUnix < ceiling) "no (records dated 1970/71)" else "yes"
+        }
         return "no (waiting for the strap clock)"
     }
 
