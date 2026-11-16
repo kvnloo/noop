@@ -100,6 +100,19 @@ internal fun mergeJournalEntries(
     return byKey.values.sortedWith(compareBy({ it.day }, { it.question }))
 }
 
+/**
+ * Only answers explicitly logged on [day] may appear selected in the Journal.
+ *
+ * Earlier days are not defaults: silently copying them into a new day fabricates Yes/No
+ * evidence for behaviour insights and prospective experiments. Import/native precedence
+ * is handled by the caller; this helper receives native rows only, preserving tri-state
+ * Yes / No / unlogged and last-row-wins for duplicate same-day keys.
+ */
+internal fun explicitJournalDayAnswers(native: List<JournalEntry>, day: String): Map<String, Boolean> =
+    native.asSequence()
+        .filter { it.day == day }
+        .associate { it.question to it.answeredYes }
+
 /** Importer convention (WhoopCsvImporter.parseJournal): journal day = the wake/cycle day whose
  *  morning recovery the previous ~24 h affected. "Log today" = answers about yesterday / last
  *  night, attributed to TODAY's local day key; daysBack=1 edits yesterday; daysBack=-1 logs ahead
