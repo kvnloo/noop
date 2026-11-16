@@ -45,6 +45,9 @@
 
     <!-- Keep the BLE link alive while collecting/offloading in the background. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Experimental fork-only Hermes agent access (com.noop.agent): a foreground service that runs only
+         while the owner's time-boxed grant is live and serves bounded reads on the Tailscale address. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
         tools:targetApi="34" />
@@ -175,6 +178,27 @@
         tools:targetApi="34">
 
         <!-- Explicit z0live onboarding target: visible user-confirmed BLE sampling only. -->
+        <!-- Experimental Hermes agent access controls. Exported only so a noop-agent://pair link can open it;
+             the link is staged in memory and needs an explicit owner tap. -->
+        <activity android:name="com.noop.agent.AgentAccessActivity"
+            android:exported="true" android:excludeFromRecents="true" android:launchMode="singleTop"
+            android:label="Hermes agent access" android:theme="@style/Theme.NOOP">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="noop-agent" android:host="pair" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name="com.noop.agent.AgentAccessService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Owner-granted, time-boxed local agent access over the owner's own Tailscale network" />
+        </service>
+
         <activity android:name="com.noop.ui.OuraGestureSetupActivity"
             android:exported="true" android:excludeFromRecents="true"
             android:label="Oura gesture setup" android:theme="@style/Theme.NOOP" />

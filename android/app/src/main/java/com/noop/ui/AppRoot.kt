@@ -72,6 +72,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -513,6 +514,16 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val current = Destination.forRoute(currentRoute)
+    // Experimental Hermes agent access: navigate to an allow-listed screen, then report it landed.
+    val agentNav by com.noop.agent.AgentNav.pending.collectAsState()
+    LaunchedEffect(agentNav?.id) {
+        val request = agentNav ?: return@LaunchedEffect
+        val dest = Destination.entries.firstOrNull { it.route == request.screen }
+        if (dest != null && request.screen in com.noop.agent.AgentPolicy.SCREENS) {
+            if (dest.route != currentRoute) nav.navigateTopLevel(dest.route)
+            com.noop.agent.AgentNav.landed(request.id)
+        }
+    }
     var showQuickActions by remember { mutableStateOf(false) }
     // The Updates inbox sheet (opened by the Today header bell). The store is a process singleton so
     // the Today cards and the import path post to the same inbox this sheet renders.
