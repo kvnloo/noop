@@ -1277,5 +1277,97 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
         self.assertIn("constant-value-mismatch", output)
 
 
+    def test_compact_evidence_reordering_is_stable_but_duplicate_findings_are_not(self) -> None:
+        """Source-row order is not provenance; repeating a finding changes the accepted evidence."""
+        self.write_clean_tree()
+        self.swift.write_text(
+            self.swift.read_text().replace(
+                "    public static let sampleLimit = 3\n",
+                "    public static let sampleLimit = 3\n    public static let windowLimit = 5\n",
+            )
+        )
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace(
+                "    const val SAMPLE_LIMIT = 3\n",
+                "    const val SAMPLE_LIMIT = 4\n    const val WINDOW_LIMIT = 6\n",
+            )
+        )
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        self.assertGreaterEqual(len(result.findings), 2)
+        baseline = parity_ledger.build_compact_baseline(result)
+
+        result.findings.reverse()
+        self.assertEqual(baseline, parity_ledger.build_compact_baseline(result))
+        self.assertEqual([], parity_ledger.compact_baseline_drift(result, baseline))
+        self.assertEqual(([], []), parity_ledger.compact_baseline_changes(result, baseline))
+
+        # Replaying an observation is not an independent source observation.
+        result.findings.append(result.findings[0])
+        self.assertTrue(parity_ledger.compact_baseline_drift(result, baseline))
+        regressions, improvements = parity_ledger.compact_baseline_changes(result, baseline)
+        self.assertTrue(regressions)
+        self.assertEqual([], improvements)
+
+    def test_exact_base_identity_is_not_replaced_by_unmerged_head(self) -> None:
+        """Compare archived commit evidence, not the current checkout or a newer unmerged HEAD."""
+        self.write_clean_tree()
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace("SAMPLE_LIMIT = 3", "SAMPLE_LIMIT = 4")
+        )
+        self.mark_current_tree_as_origin_main()
+        base_sha = subprocess.check_output(
+            ["git", "rev-parse", "origin/main"], cwd=self.root, text=True
+        ).strip()
+        base_findings = parity_ledger.finding_identities_at_git_ref(self.root, base_sha)
+        self.assertTrue(base_findings)
+
+        # This second commit exists only on the fixture's HEAD, not origin/main.
+        self.kotlin.write_text(
+            self.kotlin.read_text().replace("SAMPLE_LIMIT = 4", "SAMPLE_LIMIT = 3")
+        )
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(
+            [
+                "git", "-c", "user.name=Parity Test",
+                "-c", "user.email=parity@example.invalid",
+                "commit", "-qm", "resolve synthetic mismatch on unmerged head",
+            ],
+            cwd=self.root,
+            check=True,
+        )
+        head_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, text=True
+        ).strip()
+        self.assertNotEqual(base_sha, head_sha)
+        self.assertEqual(set(), parity_ledger.finding_identities_at_git_ref(self.root, head_sha))
+        self.assertEqual(
+            base_findings, parity_ledger.finding_identities_at_git_ref(self.root, base_sha)
+        )
+        self.assertEqual(
+            base_findings, parity_ledger.finding_identities_at_git_ref(self.root, "origin/main")
+        )
+
+    def test_missing_platform_proof_cannot_be_added_to_accepted_baseline(self) -> None:
+        """A newly unpaired Swift declaration must remain a failure, not approved debt."""
+        self.write_clean_tree()
+        frozen_map = parity_ledger.build_compact_twin_map(self.root)
+        baseline = self.baseline_for(frozen_map)
+        self.mark_current_tree_as_origin_main()
+        self.swift.write_text(
+            self.swift.read_text()
+            + "\npublic func newlyUnpaired(_ value: Int) -> Int { value }\n"
+        )
+
+        result = parity_ledger.scan(self.root, frozen_map)
+        self.assertIn("add-unpaired-function", {item.rule for item in result.findings})
+        with self.assertRaisesRegex(ValueError, "source drift"):
+            parity_ledger.build_compact_baseline(result)
+        code, output = self.run_cli(frozen_map, baseline)
+        self.assertEqual(1, code)
+        self.assertIn("compact baseline drift", output)
+
+
+
 if __name__ == "__main__":
     unittest.main()
