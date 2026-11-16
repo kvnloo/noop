@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Experimental breath camera (com.noop.breathcam). Every number it shows is an estimate. -->
+<resources>
+    <string name="l10n_breath_camera_title">Breath camera · Experimental</string>
+    <string name="l10n_breath_camera_privacy">Uses the front camera to follow your chest and shoulders. Frames are processed on this phone and never stored or sent.</string>
+    <string name="l10n_breath_camera_start">Watch my breathing</string>
+    <string name="l10n_breath_camera_stop">Stop camera</string>
+    <string name="l10n_breath_camera_on">Camera on · on this phone only</string>
+    <string name="l10n_breath_camera_framing">Prop the phone at chest height with your head and shoulders in view, then sit still.</string>
+    <string name="l10n_breath_camera_permission_needed">This experiment needs camera permission.</string>
+    <string name="l10n_breath_camera_failed">The camera could not start.</string>
+    <string name="l10n_breath_camera_phase_in">Breathing in</string>
+    <string name="l10n_breath_camera_phase_out">Breathing out</string>
+    <string name="l10n_breath_camera_phase_hold_full">Holding, lungs full</string>
+    <string name="l10n_breath_camera_phase_hold_empty">Holding, lungs empty</string>
+    <string name="l10n_breath_camera_phase_unknown">Finding your breath…</string>
+    <string name="l10n_breath_camera_rate">About %1$s breaths per minute</string>
+    <string name="l10n_breath_camera_heart_swing">Heart-rate swing per breath: about %1$s bpm</string>
+    <string name="l10n_breath_camera_in_step">Your heart rate is rising and falling in step with your breath.</string>
+    <string name="l10n_breath_camera_lag">Your heart rate follows your breath by about %1$s s.</string>
+    <string name="l10n_breath_camera_follow_guide">Your breaths are drifting from the guide. Try to follow the ring.</string>
+    <string name="l10n_breath_camera_pace_adapting">Guide is testing %1$s breaths per minute</string>
+    <string name="l10n_breath_camera_pace_settled">Your strongest pace this session: %1$s breaths per minute</string>
+    <string name="l10n_breath_camera_estimate_note">Estimates from video and ring timing. Not a medical measurement.</string>
+    <string name="l10n_breath_camera_setting">Breath camera (experimental)</string>
+    <string name="l10n_breath_camera_setting_adapt">Let my breathing tune the guide pace (experimental)</string>
+</resources>

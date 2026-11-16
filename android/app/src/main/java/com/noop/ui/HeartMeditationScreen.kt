@@ -52,6 +52,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.noop.ble.LiveState
+import com.noop.breathcam.BreathCameraCard
+import com.noop.breathcam.BreathCameraPrefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import java.util.Locale
@@ -89,6 +91,14 @@ fun HeartMeditationScreen(
         mutableStateOf(NoopPrefs.of(context).getBoolean(KEY_HEART_MEDITATION_GUIDE, true))
     }
     val sessionStartMs = remember { nowMs() }
+
+    // Experimental breath camera (com.noop.breathcam, Settings, default off). When it adapts the pace, the
+    // guide switches only at the start of an inhale and restarts its cycle there, so the ring never jumps.
+    val breathCamera = remember { BreathCameraPrefs.enabled(context) }
+    var cameraBreath by remember { mutableStateOf<Double?>(null) }
+    var pendingPace by remember { mutableStateOf<Double?>(null) }
+    var guidePace by remember { mutableStateOf(pace) }
+    var pacerStartMs by remember { mutableLongStateOf(sessionStartMs) }
 
     // Snapshots the UI reads; refreshed per packet / per pulse, never per frame.
     var pulses by remember { mutableIntStateOf(0) }
@@ -143,11 +153,11 @@ fun HeartMeditationScreen(
             publish()
         }
         // The guide as a phase word: one wake-up per inhale/exhale boundary, no animation.
-        LaunchedEffect(guideOn, pace) {
+        LaunchedEffect(guideOn, guidePace, pacerStartMs) {
             while (guideOn) {
-                val elapsed = nowMs() - sessionStartMs
-                inhaling = pacerInhaling(elapsed, pace)
-                delay(pacerMsToNextPhase(elapsed, pace))
+                val elapsed = nowMs() - pacerStartMs
+                inhaling = pacerInhaling(elapsed, guidePace)
+                delay(pacerMsToNextPhase(elapsed, guidePace))
             }
         }
     } else {
@@ -165,8 +175,15 @@ fun HeartMeditationScreen(
 
     // The parent recomposes only when the guide flips phase; the per-frame reads live in MeditationStage
     // (the vessel's level) and in the halo's draw block.
-    val inhaleNow by remember(still, pace) {
-        derivedStateOf { if (still) inhaling else pacerInhaling(frameMs - sessionStartMs, pace) }
+    val inhaleNow by remember(still, guidePace, pacerStartMs) {
+        derivedStateOf { if (still) inhaling else pacerInhaling(frameMs - pacerStartMs, guidePace) }
+    }
+    LaunchedEffect(inhaleNow) {
+        val next = pendingPace
+        if (inhaleNow && next != null && next != guidePace) {
+            pacerStartMs = if (still) nowMs() else frameMs
+            guidePace = next
+        }
     }
     val beating = steadiness != BeatSteadiness.WAITING
 
@@ -209,7 +226,8 @@ fun HeartMeditationScreen(
             MeditationStage(
                 frameMs = { frameMs },
                 level = { if (still) stillLevel else session.levelAt(frameMs) },
-                pacer = { if (still || !guideOn) null else pacerLevel(frameMs - sessionStartMs, pace) },
+                pacer = { if (still || !guideOn) null else pacerLevel(frameMs - pacerStartMs, guidePace) },
+                breath = { if (still) null else cameraBreath },
                 pulses = pulses,
                 halo = !still && beating,
                 bpm = bpm,
@@ -264,7 +282,17 @@ fun HeartMeditationScreen(
                 )
             }
 
-            GuideToggle(on = guideOn, pace = pace) {
+            if (breathCamera) {
+                BreathCameraCard(
+                    live = live,
+                    pacedBpm = pace,
+                    pacerSign = { if (!guideOn) 0 else if (inhaleNow) 1 else -1 },
+                    onSuggestedPace = { pendingPace = it ?: pace },
+                    onLevel = { cameraBreath = it },
+                )
+            }
+
+            GuideToggle(on = guideOn, pace = guidePace) {
                 guideOn = !guideOn
                 NoopPrefs.of(context).edit().putBoolean(KEY_HEART_MEDITATION_GUIDE, guideOn).apply()
             }
@@ -283,6 +311,7 @@ private fun MeditationStage(
     frameMs: () -> Long,
     level: () -> Double,
     pacer: () -> Double?,
+    breath: () -> Double?,
     pulses: Int,
     halo: Boolean,
     bpm: Int?,
@@ -291,7 +320,10 @@ private fun MeditationStage(
         modifier = Modifier.fillMaxWidth().aspectRatio(1f),
         contentAlignment = Alignment.Center,
     ) {
-        MeditationHalo(pacer = pacer, pulses = pulses, frameMs = frameMs, animate = halo, modifier = Modifier.fillMaxSize())
+        MeditationHalo(
+            pacer = pacer, breath = breath, pulses = pulses, frameMs = frameMs, animate = halo,
+            modifier = Modifier.fillMaxSize(),
+        )
         LiquidVessel(
             value = level(),
             tint = liquidHeartPink,
@@ -331,11 +363,19 @@ private fun steadinessTitle(s: BeatSteadiness): String = uiString(
  * hidden and the guide ring, if any, sits at rest.
  */
 @Composable
-private fun MeditationHalo(pacer: () -> Double?, pulses: Int, frameMs: () -> Long, animate: Boolean, modifier: Modifier) {
+private fun MeditationHalo(
+    pacer: () -> Double?,
+    breath: () -> Double?,
+    pulses: Int,
+    frameMs: () -> Long,
+    animate: Boolean,
+    modifier: Modifier,
+) {
     var pulseAtMs by remember { mutableLongStateOf(Long.MIN_VALUE) }
     LaunchedEffect(pulses) { if (pulses != 0) pulseAtMs = frameMs() }
     val guideColor = Palette.restBright
     val haloColor = liquidHeartPink
+    val breathColor = Palette.textPrimary.copy(alpha = StrandAlpha.subtleLine)
     Canvas(modifier = modifier) {
         val c = center
         val vesselR = size.minDimension * 0.36f
@@ -349,6 +389,17 @@ private fun MeditationHalo(pacer: () -> Double?, pulses: Int, frameMs: () -> Lon
                 radius = r,
                 center = c,
                 style = Stroke(width = 2.dp.toPx()),
+            )
+        }
+        // The experimental breath camera's measured breath (-1 empty … +1 full) on the guide's own scale:
+        // following the guide means this thin ring rides on the guide ring.
+        breath()?.let { b ->
+            val unit = ((b + 1.0) / 2.0).coerceIn(0.0, 1.0).toFloat()
+            drawCircle(
+                color = breathColor,
+                radius = vesselR * (1.06f + 0.30f * unit),
+                center = c,
+                style = Stroke(width = Metrics.space2.toPx() * 0.75f),
             )
         }
         if (animate && pulseAtMs != Long.MIN_VALUE) {

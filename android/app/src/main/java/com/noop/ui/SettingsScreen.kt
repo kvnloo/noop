@@ -723,6 +723,9 @@ fun SettingsScreen(
     var stressAutoNudge by remember { mutableStateOf(BiofeedbackPrefs.autoNudge(context)) }
     var rhythmEnabled by remember { mutableStateOf(RhythmConsent.isEnabled(context)) }
     var coachSignals by remember { mutableStateOf(NoopPrefs.coachSignals(context)) }
+    // Experimental breath camera for the heart meditation (com.noop.breathcam). Default off.
+    var breathCamera by remember { mutableStateOf(com.noop.breathcam.BreathCameraPrefs.enabled(context)) }
+    var breathCameraAdapt by remember { mutableStateOf(com.noop.breathcam.BreathCameraPrefs.adaptPace(context)) }
     var autoDetectWorkouts by remember { mutableStateOf(NoopPrefs.autoDetectWorkouts(context)) }
     var journalReminder by remember { mutableStateOf(NoopPrefs.journalReminderEnabled(context)) }
     // Keep the screen on during a manual workout recording (#703), default OFF. The live-workout
@@ -3452,6 +3455,27 @@ fun SettingsScreen(
                         }
                     },
                 )
+                SettingsRowDivider()
+                SettingsToggleRow(
+                    title = uiString(R.string.l10n_breath_camera_setting),
+                    detail = "Adds \"Watch my breathing\" to the heart meditation: the front camera follows your chest and shoulders to estimate breathing in, out and holds, and pairs it with your ring or strap heart rate. Frames are processed on this phone, never stored or sent; the camera runs only while you have it on. Estimates, not medical readings.",
+                    checked = breathCamera,
+                    onCheckedChange = {
+                        breathCamera = it
+                        com.noop.breathcam.BreathCameraPrefs.setEnabled(context, it)
+                    },
+                )
+                if (breathCamera) {
+                    SettingsToggleRow(
+                        title = uiString(R.string.l10n_breath_camera_setting_adapt),
+                        detail = "While the camera runs, the guide tries nearby slow paces (4.5–7 breaths/min) and keeps the one where your heart-rate swing per breath was largest. Off keeps your own pace.",
+                        checked = breathCameraAdapt,
+                        onCheckedChange = {
+                            breathCameraAdapt = it
+                            com.noop.breathcam.BreathCameraPrefs.setAdaptPace(context, it)
+                        },
+                    )
+                }
                 SettingsRowDivider()
                 SettingsToggleRow(
                     title = uiString(R.string.l10n_settings_screen_share_on_device_signals_with_the_b3fd747e),
