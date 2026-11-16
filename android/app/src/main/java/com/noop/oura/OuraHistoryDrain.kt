@@ -113,23 +113,27 @@ class OuraHistoryDrain {
 
     /**
      * The cursor to persist at drain end, given the current cursor and whether [maxStoredRingTime]
-     * resolves under the CURRENT anchor. A reboot ([sawPreResumeData]) resets to 0 (honest full pull
-     * next connect) UNLESS [anchorConfirmsContinuity] says the ring's own clock never paused (#2097) —
-     * in that case the stale replay came from something other than a power-cycle (observed: a second
-     * BLE client serving the ring in between), so it is treated like ordinary stale data: discarded,
-     * cursor left to the same forward-only-if-resolving rule as any other drain. Otherwise the cursor
-     * advances to [maxStoredRingTime] only if it moved forward AND resolves; unchanged in every other
-     * case.
-     */
-    fun resumeCursorAtDrainEnd(
-        currentCursor: Long,
-        resolvesUnderAnchor: Boolean,
-        anchorConfirmsContinuity: Boolean = false,
-    ): Long {
-        if (sawPreResumeData && !anchorConfirmsContinuity) return 0
-        if (maxStoredRingTime > currentCursor && resolvesUnderAnchor) return maxStoredRingTime
-        return currentCursor
-    }
+      * resolves under the CURRENT anchor. A reboot ([sawPreResumeData]) resets to 0 (honest full pull
+      * next connect) UNLESS [anchorConfirmsContinuity] says the ring's own clock never paused (#2097) —
+      * in that case the stale replay came from something other than a power-cycle (observed: a second
+      * BLE client serving the ring in between), so it is treated like ordinary stale data: discarded,
+      * cursor left to the same forward-only-if-resolving rule as any other drain. Otherwise the cursor
+      * advances to [maxStoredRingTime] only if it moved forward AND resolves; unchanged in every other
+      * case. When [drainCompleted] is true (bytes_left reached 0, the ring served everything it had),
+      * the cursor also advances to [maxSeenRingTime] even if no new samples were stored — this prevents
+      * the cursor from staying stuck when the ring only re-serves already-stored history.
+      */
+     fun resumeCursorAtDrainEnd(
+         currentCursor: Long,
+         resolvesUnderAnchor: Boolean,
+         anchorConfirmsContinuity: Boolean = false,
+         drainCompleted: Boolean = false,
+     ): Long {
+         if (sawPreResumeData && !anchorConfirmsContinuity) return 0
+         if (maxStoredRingTime > currentCursor && resolvesUnderAnchor) return maxStoredRingTime
+         if (drainCompleted && maxSeenRingTime > currentCursor) return maxSeenRingTime
+         return currentCursor
+     }
 
     companion object {
         /**
