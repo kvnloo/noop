@@ -97,7 +97,7 @@ final class JournalCatalogStore: ObservableObject {
         var seen = Set<String>()
         var i = 0
         for q in custom {
-            let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = Self.trimJournalCanonical(q)
             let key = norm(q)
             guard !t.isEmpty, seen.insert(key).inserted else { continue }
             out.append(JournalCatalogItem(canonical: t, displayName: nil, kind: .bool,
@@ -105,7 +105,7 @@ final class JournalCatalogStore: ObservableObject {
             i += 1
         }
         for q in hidden {
-            let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = Self.trimJournalCanonical(q)
             let key = norm(q)
             guard !t.isEmpty else { continue }
             if let idx = out.firstIndex(where: { norm($0.canonical) == key }) {
@@ -126,20 +126,34 @@ final class JournalCatalogStore: ObservableObject {
     var customQuestions: [String] {
         get { items.filter { $0.custom }.sorted { $0.sortIndex < $1.sortIndex }.map(\.canonical) }
         set {
-            // Append any new customs as `.bool`/`.other` items; drop customs no longer present.
-            let keys = Set(newValue.map { Self.norm($0) })
-            items.removeAll { $0.custom && !keys.contains(Self.norm($0.canonical)) }
-            let existing = Set(items.map { Self.norm($0.canonical) })
-            var next = nextSortIndex()
+            // A restore or old setter may already have persisted two alias rows.
+            // Keep the first user's custom item (including its display/group/type)
+            // and canonical question key, not just dedupe the incoming new names.
+            let keys = Set(newValue.map { Self.norm($0) }.filter { !$0.isEmpty })
+            // Build a complete snapshot before assigning @Published items:
+            // removeAll + every append on items itself would write an intermediate
+            // catalog to UserDefaults, risking partial state if interrupted.
+            var updated = items
+            var retainedCustom = Set<String>()
+            updated.removeAll { item in
+                guard item.custom else { return false }
+                let key = Self.norm(item.canonical)
+                return !keys.contains(key) || !retainedCustom.insert(key).inserted
+            }
+            // Existing canonical identities win; every accepted alias extends the
+            // seen set so one setter call cannot create duplicate questions.
+            var seen = Set(updated.map { Self.norm($0.canonical) })
+            var next = (updated.map(\.sortIndex).max() ?? -1) + 1
             for q in newValue {
                 let key = Self.norm(q)
-                let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !t.isEmpty, !existing.contains(key) else { continue }
-                items.append(JournalCatalogItem(canonical: t, displayName: nil, kind: .bool,
-                                                group: .other, sortIndex: next,
-                                                hidden: false, custom: true))
+                let t = Self.trimJournalCanonical(q)
+                guard !t.isEmpty, seen.insert(key).inserted else { continue }
+                updated.append(JournalCatalogItem(canonical: t, displayName: nil, kind: .bool,
+                                                  group: .other, sortIndex: next,
+                                                  hidden: false, custom: true))
                 next += 1
             }
+            items = updated
         }
     }
 
@@ -158,11 +172,47 @@ final class JournalCatalogStore: ObservableObject {
     /// them onto one key. The DISPLAYED string is still the original verbatim text, only the match
     /// key is normalised, so the stored behaviour key (which the effects engine joins on) is intact.
     /// Kept value-for-value in step with Android `normJournalKey` (JournalLog.kt).
+    /// Foundation's whitespace set is NOT identical to Kotlin Char.isWhitespace:
+    /// it includes U+0085/U+200B and excludes U+001C...U+001F. Use the proven
+    /// UTF-16/BMP Unicode set shared by the Android journal instead. This only
+    /// changes identity matching; persisted canonical question strings stay intact.
+    // Match Kotlin Char.isWhitespace for Journal keys; Foundation's whitespace
+    // set differs at U+001C...U+001F, U+0085 and U+200B. Use this one contract for
+    // BOTH key normalization and trimming before saving a canonical question.
+    private nonisolated static func isJournalWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0009...0x000D, 0x001C...0x0020, 0x00A0, 0x1680,
+             0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000:
+            return true
+        default:
+            return false
+        }
+    }
+
+    nonisolated static func trimJournalCanonical(_ text: String) -> String {
+        let scalars = Array(text.unicodeScalars)
+        var start = 0
+        var end = scalars.count
+        while start < end && isJournalWhitespace(scalars[start]) { start += 1 }
+        while end > start && isJournalWhitespace(scalars[end - 1]) { end -= 1 }
+        var trimmed = ""
+        for i in start..<end { trimmed.unicodeScalars.append(scalars[i]) }
+        return trimmed
+    }
+
     nonisolated static func norm(_ s: String) -> String {
-        s.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .lowercased()
+        var result = ""
+        var pendingSpace = false
+        for scalar in s.unicodeScalars {
+            if isJournalWhitespace(scalar) {
+                if !result.isEmpty { pendingSpace = true }
+            } else {
+                if pendingSpace { result.append(" ") }
+                result.unicodeScalars.append(scalar)
+                pendingSpace = false
+            }
+        }
+        return result.lowercased()
     }
 
     /// The merged catalog resolved into full v2 items, grouped and ordered for display. Imported +
@@ -180,7 +230,7 @@ final class JournalCatalogStore: ObservableObject {
         var seen = Set<String>()
         var fallbackIndex = (items.map(\.sortIndex).max() ?? -1) + 1
         for q in imported + Self.starterQuestions {
-            let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = Self.trimJournalCanonical(q)
             let key = Self.norm(q)
             guard !t.isEmpty, seen.insert(key).inserted else { continue }
             if let saved = byKey[key] {
@@ -217,7 +267,7 @@ final class JournalCatalogStore: ObservableObject {
         if let idx = items.firstIndex(where: { Self.norm($0.canonical) == key }) {
             mutate(&items[idx])
         } else {
-            let t = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = Self.trimJournalCanonical(canonical)
             var fresh = JournalCatalogItem(canonical: t, displayName: nil, kind: .bool,
                                            group: Self.starterGroups[t] ?? .other,
                                            sortIndex: nextSortIndex(), hidden: false, custom: false)
@@ -259,7 +309,7 @@ final class JournalCatalogStore: ObservableObject {
 
     /// Add a custom question of the given type and group (defaults: yes/no, Other).
     func addCustom(_ q: String, kind: JournalKind = .bool, group: JournalGroup = .other) {
-        let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = Self.trimJournalCanonical(q)
         guard !t.isEmpty else { return }
         let key = Self.norm(t)
         guard !items.contains(where: { Self.norm($0.canonical) == key }) else { return }
