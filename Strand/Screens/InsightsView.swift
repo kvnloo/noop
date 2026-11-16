@@ -28,6 +28,30 @@ import WhoopStore
 
 /// `.task(id:)` key for the Insights journal load: the data-refresh sequence plus today's day-key, so the
 /// load re-runs both on a data change and on a calendar-day rollover (#860 item 4).
+/// Only explicit Journal "No" days can act as observational baseline controls.
+/// Source contracts: #1768 (ryanbr) and earlier #682 (digitalerdude) distinguish
+/// "No" from an unanswered day. Dates are canonical yyyy-MM-dd strings.
+func experimentExplicitNoBaselineDays(
+    outcomeDays: [String: Double], explicitNoDays: Set<String>,
+    before: String, limit: Int
+) -> [String] {
+    Array(outcomeDays.keys
+        .filter { $0 < before && explicitNoDays.contains($0) && outcomeDays[$0]?.isFinite == true }
+        .sorted()
+        .suffix(max(1, limit)))
+}
+
+/// Include only finite observed metrics in the experiment's chronological window.
+/// An invalid sample must not take a day slot from a later valid observation.
+func experimentValidObservationDays(
+    outcomeDays: [String: Double], from: String, through: String, limit: Int
+) -> [String] {
+    Array(outcomeDays.keys
+        .filter { $0 >= from && $0 <= through && outcomeDays[$0]?.isFinite == true }
+        .sorted()
+        .prefix(max(1, limit)))
+}
+
 private struct InsightsLoadKey: Equatable {
     let seq: Int
     let dayKey: String
@@ -807,19 +831,16 @@ struct InsightsView: View {
         let outcomeDays = outcomeByKey[outcome.key] ?? [:]
         let loggedDays = behaviours[behavior] ?? []
 
-        // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
-        // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
-        // "Intervention" is now an honest present-vs-absent contrast, not a raw pre/post window.
-        let baselineDays = outcomeDays.keys
-            .filter { $0 < experimentStartedDay && !loggedDays.contains($0) }
-            .sorted()
-            .suffix(max(1, experimentBaselineDays))
+        // Baseline only uses explicit "No" answers before start. Unanswered
+        // days are unknown, not valid controls — same contract as BehaviorInsights.
+        let baselineDays = experimentExplicitNoBaselineDays(
+            outcomeDays: outcomeDays, explicitNoDays: controls[behavior] ?? [],
+            before: experimentStartedDay, limit: experimentBaselineDays)
         // Intervention = the first `duration` outcome days in the window where the behaviour
         // WAS logged.
-        let interventionWindow = outcomeDays.keys
-            .filter { $0 >= experimentStartedDay && $0 <= today }
-            .sorted()
-            .prefix(duration)
+        let interventionWindow = experimentValidObservationDays(
+            outcomeDays: outcomeDays, from: experimentStartedDay,
+            through: today, limit: duration)
         let interventionDays = interventionWindow.filter { loggedDays.contains($0) }
 
         let baselineValues = baselineDays.compactMap { outcomeDays[$0] }
