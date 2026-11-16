@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Medytacja serca</string>
+    <string name="l10n_heart_meditation_subtitle">Każda fala to jedno uderzenie twojego serca. Poziom rośnie i opada z falą, którą oddech wprowadza do tętna.</string>
+    <string name="l10n_heart_meditation_close">Zamknij medytację serca</string>
+    <string name="l10n_heart_meditation_waiting">Czekam na równe uderzenia</string>
+    <string name="l10n_heart_meditation_waiting_detail">Siedź nieruchomo z dobrze dopasowanym pierścieniem. Widok startuje, gdy kilka czystych uderzeń będzie zgodnych.</string>
+    <string name="l10n_heart_meditation_noisy">Część uderzeń wygląda na zakłócone</string>
+    <string name="l10n_heart_meditation_steady">Równe uderzenia</string>
+    <string name="l10n_heart_meditation_breathe_in">Wdech</string>
+    <string name="l10n_heart_meditation_breathe_out">Wydech</string>
+    <string name="l10n_heart_meditation_follow_wave">Oddychaj powoli i patrz, jak poziom podąża</string>
+    <string name="l10n_heart_meditation_swing_label">Amplituda fali</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d bpm</string>
+    <string name="l10n_heart_meditation_focus_label">Skupienie rytmu</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">Zbieranie · potrzeba ~1 min równych uderzeń</string>
+    <string name="l10n_heart_meditation_guide_on">Prowadzenie oddechu · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Prowadzenie oddechu wyłączone</string>
+    <string name="l10n_heart_meditation_guide_state_on">Wł.</string>
+    <string name="l10n_heart_meditation_guide_state_off">Wył.</string>
+    <string name="l10n_heart_meditation_estimate_note">Szacunki z optycznego pomiaru odstępów między uderzeniami, zakłócone uderzenia są pomijane. Mają sens tylko w bezruchu i nie są pomiarem medycznym.</string>
+    <string name="l10n_heart_meditation_open_hint">Dotknij serca, aby rozpocząć medytację zsynchronizowaną z tętnem</string>
+    <string name="l10n_heart_meditation_open_action">Otwórz medytację serca</string>
+</resources>

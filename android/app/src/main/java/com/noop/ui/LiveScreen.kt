@@ -49,6 +49,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -169,6 +170,8 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
     // already in flight by consuming the ViewModel's one-shot on appear (iOS parity:
     // LiveView.consumeActiveWorkoutRequest). Closing just hides it; the workout keeps recording.
     var showLiveWorkout by remember { mutableStateOf(false) }
+    // Heart meditation: the HR vessel tapped open into a beat-synced, HRV-driven calm view.
+    var showHeartMeditation by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         // consumeActiveWorkoutRequest() returns true exactly once per raise, and only while a workout is
         // active, so a stale flag can never open an empty overlay.
@@ -213,6 +216,17 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
             LiveWorkoutScreen(vm = viewModel, onClose = { showLiveWorkout = false })
+        }
+    }
+
+    // The heart meditation (HeartMeditationScreen.kt). A plain full-screen Dialog over Live, the same idiom
+    // as the HRV reading above; Live keeps the realtime HR want it already holds, so the R-R keeps flowing.
+    if (showHeartMeditation) {
+        Dialog(
+            onDismissRequest = { showHeartMeditation = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            HeartMeditationScreen(live = viewModel.live, onClose = { showHeartMeditation = false })
         }
     }
 
@@ -355,7 +369,7 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
         // Body console — focal live HR VESSEL + live physiology (R-R thread, rolling RMSSD, frame/event).
         item {
         BodyConsole(live = live, bpm = bpm, activeConnection = activeConnection, zone = liveZone, hrMax = profile.hrMax,
-            activeIsOura = activeIsOura, ringPhase = ringPhase)
+            activeIsOura = activeIsOura, ringPhase = ringPhase, onOpenMeditation = { showHeartMeditation = true })
         }
 
         // Signal Trust rail — one tile per signal that has to be current for the console to be trusted.
@@ -1091,6 +1105,7 @@ private fun lastSyncLabel(live: LiveState): String =
 private fun BodyConsole(
     live: LiveState, bpm: Int?, activeConnection: Boolean, zone: Int, hrMax: Int,
     activeIsOura: Boolean, ringPhase: com.noop.ble.OuraLiveSource.LinkPhase,
+    onOpenMeditation: () -> Unit,
 ) {
     // The liquid hero CARD: a translucent near-black that floats over the day-of-sky so the HR vessel + the
     // white count-up number stay crisp — the card does the contrast work, not a muted sky. A rounded 26
@@ -1106,7 +1121,7 @@ private fun BodyConsole(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
             HeartReadout(live = live, bpm = bpm, activeConnection = activeConnection, zone = zone, hrMax = hrMax,
-                activeIsOura = activeIsOura, ringPhase = ringPhase)
+                activeIsOura = activeIsOura, ringPhase = ringPhase, onOpenMeditation = onOpenMeditation)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1122,6 +1137,7 @@ private fun BodyConsole(
 private fun HeartReadout(
     live: LiveState, bpm: Int?, activeConnection: Boolean, zone: Int, hrMax: Int,
     activeIsOura: Boolean, ringPhase: com.noop.ble.OuraLiveSource.LinkPhase,
+    onOpenMeditation: () -> Unit,
 ) {
     // Tint by the live HR zone when streaming, the Effort world otherwise — the workouts/live colour world
     // (UNCHANGED from the hand-drawn ring this replaced: same zone→colour math, same value-sampled tint).
@@ -1140,10 +1156,21 @@ private fun HeartReadout(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Overline("Heart Rate")
+        val openLabel = uiString(R.string.l10n_heart_meditation_open_action)
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.6f)
-                .aspectRatio(1f),
+                .aspectRatio(1f)
+                // Tap opens the heart meditation. The animated vessel consumes its own taps (splash), so the
+                // same action is ALSO handed to it as onTap; this parent clickable is what a still vessel
+                // (reduce-motion / power-save) falls through to. See LiquidVessel's onTap note.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                    onClickLabel = openLabel,
+                    onClick = onOpenMeditation,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             // The live HR GAUGE as a liquid VESSEL — fills to bpm/hrMax in the zone tint, sloshing live once
@@ -1154,6 +1181,7 @@ private fun HeartReadout(
                 tint = tint,
                 animated = bpm != null,
                 modifier = Modifier.fillMaxSize(),
+                onTap = onOpenMeditation,
             )
             // The bpm number rolled up over the vessel — white, tabular, a soft shadow for legibility, and
             // hit-transparent (clearAndSetSemantics + no clickable) so the tap falls THROUGH to the vessel,
@@ -1191,6 +1219,15 @@ private fun HeartReadout(
             color = Palette.textTertiary,
             textAlign = TextAlign.Center,
         )
+        // Discoverability for the heart meditation, only once beats are actually arriving to drive it.
+        if (bpm != null && live.rrRecent.isNotEmpty()) {
+            Text(
+                uiString(R.string.l10n_heart_meditation_open_hint),
+                style = NoopType.footnote,
+                color = Palette.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

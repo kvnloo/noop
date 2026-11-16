@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Meditación del corazón</string>
+    <string name="l10n_heart_meditation_subtitle">Cada onda es uno de tus latidos. El nivel sube y baja con la onda que tu respiración imprime en tu frecuencia cardíaca.</string>
+    <string name="l10n_heart_meditation_close">Cerrar meditación del corazón</string>
+    <string name="l10n_heart_meditation_waiting">Esperando latidos estables</string>
+    <string name="l10n_heart_meditation_waiting_detail">Quédate quieto con el anillo ajustado. La vista empieza cuando varios latidos limpios coinciden.</string>
+    <string name="l10n_heart_meditation_noisy">Algunos latidos parecen ruidosos</string>
+    <string name="l10n_heart_meditation_steady">Latidos estables</string>
+    <string name="l10n_heart_meditation_breathe_in">Inspira</string>
+    <string name="l10n_heart_meditation_breathe_out">Espira</string>
+    <string name="l10n_heart_meditation_follow_wave">Respira despacio y mira cómo el nivel te sigue</string>
+    <string name="l10n_heart_meditation_swing_label">Amplitud de la onda</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d lpm</string>
+    <string name="l10n_heart_meditation_focus_label">Foco del ritmo</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">Preparando · necesita ~1 min de latidos estables</string>
+    <string name="l10n_heart_meditation_guide_on">Guía de respiración · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Guía de respiración desactivada</string>
+    <string name="l10n_heart_meditation_guide_state_on">Activada</string>
+    <string name="l10n_heart_meditation_guide_state_off">Desactivada</string>
+    <string name="l10n_heart_meditation_estimate_note">Estimaciones a partir del ritmo óptico de los latidos, omitiendo los ruidosos. Solo tienen sentido si estás quieto y no son una medición médica.</string>
+    <string name="l10n_heart_meditation_open_hint">Toca el corazón para una meditación sincronizada con tus latidos</string>
+    <string name="l10n_heart_meditation_open_action">Abrir meditación del corazón</string>
+</resources>

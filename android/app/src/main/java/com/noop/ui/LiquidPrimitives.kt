@@ -89,6 +89,10 @@ fun LiquidVessel(
     // reaches the parent by itself. That is why the rings kept working for anyone with reduced motion,
     // and why this went unnoticed for so long.
     onTap: (() -> Unit)? = null,
+    // A beat counter: each change throws a small, gentle splash (fewer drops and a softer stir than a tap).
+    // The heart meditation view bumps it on every clean heartbeat so the liquid pulses in the heart's own
+    // rhythm. 0 = never pulse. The still render ignores it (there is no clock to animate a splash with).
+    beat: Int = 0,
 ) {
     val renderStill = rememberPoseStill()
 
@@ -117,6 +121,10 @@ fun LiquidVessel(
                     last = frame
                 }
             }
+        }
+
+        LaunchedEffect(beat) {
+            if (beat != 0) sim.splash(BEAT_SPLASH_DROPS, kick = BEAT_SPLASH_KICK)
         }
 
         Canvas(
@@ -149,6 +157,11 @@ fun LiquidVessel(
         }
     }
 }
+
+/** Drops and surface stir for one heartbeat pulse ([LiquidVessel]'s `beat`) — a third of a tap's drops and
+ *  a quarter of its energy, so a 60–90 bpm pulse reads as a gentle heartbeat rather than constant churn. */
+private const val BEAT_SPLASH_DROPS = 4
+private const val BEAT_SPLASH_KICK = 0.12
 
 // MARK: - LiquidTube — a horizontal liquid tube
 

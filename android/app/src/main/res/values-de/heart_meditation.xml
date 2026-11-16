@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Herz-Meditation</string>
+    <string name="l10n_heart_meditation_subtitle">Jede Welle ist einer deiner Herzschläge. Der Pegel steigt und fällt mit der Welle, die deine Atmung in deinen Puls legt.</string>
+    <string name="l10n_heart_meditation_close">Herz-Meditation schließen</string>
+    <string name="l10n_heart_meditation_waiting">Warte auf gleichmäßige Schläge</string>
+    <string name="l10n_heart_meditation_waiting_detail">Sitz still, der Ring sitzt fest. Die Ansicht startet, sobald einige saubere Schläge übereinstimmen.</string>
+    <string name="l10n_heart_meditation_noisy">Einige Schläge wirken verrauscht</string>
+    <string name="l10n_heart_meditation_steady">Gleichmäßige Schläge</string>
+    <string name="l10n_heart_meditation_breathe_in">Einatmen</string>
+    <string name="l10n_heart_meditation_breathe_out">Ausatmen</string>
+    <string name="l10n_heart_meditation_follow_wave">Atme langsam und sieh zu, wie der Pegel folgt</string>
+    <string name="l10n_heart_meditation_swing_label">Wellenhub</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d bpm</string>
+    <string name="l10n_heart_meditation_focus_label">Rhythmus-Fokus</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/min</string>
+    <string name="l10n_heart_meditation_focus_building">Im Aufbau · braucht ~1 Min. gleichmäßige Schläge</string>
+    <string name="l10n_heart_meditation_guide_on">Atemführung · %1$s/min</string>
+    <string name="l10n_heart_meditation_guide_off">Atemführung aus</string>
+    <string name="l10n_heart_meditation_guide_state_on">An</string>
+    <string name="l10n_heart_meditation_guide_state_off">Aus</string>
+    <string name="l10n_heart_meditation_estimate_note">Schätzungen aus optischem Herzschlag-Timing, verrauschte Schläge werden übersprungen. Sie sind nur im Stillsitzen aussagekräftig und keine medizinische Messung.</string>
+    <string name="l10n_heart_meditation_open_hint">Tippe auf das Herz für eine herzschlag-synchrone Meditation</string>
+    <string name="l10n_heart_meditation_open_action">Herz-Meditation öffnen</string>
+</resources>

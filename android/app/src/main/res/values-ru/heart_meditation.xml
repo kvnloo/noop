@@ -1,0 +1,24 @@
+<resources>
+    <string name="l10n_heart_meditation_title">Медитация сердца</string>
+    <string name="l10n_heart_meditation_subtitle">Каждая волна — один удар вашего сердца. Уровень поднимается и опускается вместе с волной, которую дыхание вносит в пульс.</string>
+    <string name="l10n_heart_meditation_close">Закрыть медитацию сердца</string>
+    <string name="l10n_heart_meditation_waiting">Ждём ровных ударов</string>
+    <string name="l10n_heart_meditation_waiting_detail">Сидите неподвижно, кольцо должно плотно сидеть. Вид запустится, когда несколько чистых ударов совпадут.</string>
+    <string name="l10n_heart_meditation_noisy">Часть ударов выглядит зашумлённой</string>
+    <string name="l10n_heart_meditation_steady">Ровные удары</string>
+    <string name="l10n_heart_meditation_breathe_in">Вдох</string>
+    <string name="l10n_heart_meditation_breathe_out">Выдох</string>
+    <string name="l10n_heart_meditation_follow_wave">Дышите медленно и следите, как уровень следует за вами</string>
+    <string name="l10n_heart_meditation_swing_label">Размах волны</string>
+    <string name="l10n_heart_meditation_swing_value">±%1$d уд/мин</string>
+    <string name="l10n_heart_meditation_focus_label">Фокус ритма</string>
+    <string name="l10n_heart_meditation_focus_value">%1$d%% · ~%2$s/мин</string>
+    <string name="l10n_heart_meditation_focus_building">Накопление · нужно ~1 мин ровных ударов</string>
+    <string name="l10n_heart_meditation_guide_on">Дыхательный гид · %1$s/мин</string>
+    <string name="l10n_heart_meditation_guide_off">Дыхательный гид выключен</string>
+    <string name="l10n_heart_meditation_guide_state_on">Вкл.</string>
+    <string name="l10n_heart_meditation_guide_state_off">Выкл.</string>
+    <string name="l10n_heart_meditation_estimate_note">Оценки по оптическим интервалам между ударами, зашумлённые удары пропускаются. Имеют смысл только в покое и не являются медицинским измерением.</string>
+    <string name="l10n_heart_meditation_open_hint">Нажмите на сердце для медитации в ритме пульса</string>
+    <string name="l10n_heart_meditation_open_action">Открыть медитацию сердца</string>
+</resources>
