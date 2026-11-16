@@ -55,8 +55,9 @@ def main(argv: list[str]) -> int:
         print(f"{'PASS' if ok else 'FAIL'}  {name}  {json.dumps(info) if info else ''}", flush=True)
 
     check("transport_is_tailnet_http", phone.base.startswith("http://100."), base_host_prefix=phone.base.split("//")[1].split(".")[0])
+    check("credential_kind", True, kind="z0bridge_access_token" if phone.creds.get("z0bridge") else "legacy_z0live_token")
     check("wrong_token_refused", raw_status(phone, "Tok_" + "x" * 40) == 401)
-    check("browser_origin_refused", raw_status(phone, phone.creds["token"], {"Origin": "http://evil.example"}) == 403)
+    check("browser_origin_refused", raw_status(phone, phone.bearer.token(), {"Origin": "http://evil.example"}) == 403)
 
     t0 = time.time(); phone.ensure()
     tools = phone.rpc("tools/list")["tools"]
@@ -72,7 +73,7 @@ def main(argv: list[str]) -> int:
               summary_only=("daily" not in r["data"] and "points" not in r["data"] and "sessions" not in r["data"] and "workouts" not in r["data"]))
 
     detail = phone.call("health_snapshot", {"days": 7, "granularity": "daily"})
-    detail_state = "refused_scope" if detail["isError"] and detail["data"].get("error") == "scope_required" else ("allowed" if not detail["isError"] else "error")
+    detail_state = "refused_scope" if detail["isError"] and detail["data"].get("error") in ("scope_required", "token_scope_required") else ("allowed" if not detail["isError"] else "error")
     check("detail_gate", detail_state in ("refused_scope", "allowed"), state=detail_state)
 
     tool, arg = action.split(":", 1)

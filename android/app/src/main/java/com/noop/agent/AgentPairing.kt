@@ -49,26 +49,42 @@ class AgentPairingStore(private val file: File) {
 }
 
 sealed class AgentAuth {
-    data class Allowed(val deviceShort: String) : AgentAuth()
+    /**
+     * [tokenScopes] is null for the legacy z0live pairing (the on-phone grant alone decides). For a
+     * z0bridge token it is the token's scopes, and a tool needs both the grant and the token.
+     */
+    data class Allowed(val deviceShort: String, val tokenScopes: Set<AgentScope>? = null, val via: String = "z0live") : AgentAuth()
     data class Denied(val reason: String) : AgentAuth()
 }
 
 /**
- * Bearer check against the stored digest, then a cached liveness check against the owner's broker
- * (`GET /v1/devices/self` must return the paired device id). Fails closed when the broker cannot be
- * reached and no fresh check is cached.
+ * Two pairings, newest first:
+ *  1. z0bridge (v2): a short-lived ES256 access token for `noop@<this device>`, verified offline with
+ *     the public key pinned at pairing. No network call, nothing secret on the phone.
+ *  2. Legacy z0live: bearer check against the stored digest, then a cached liveness check against the
+ *     owner's broker (`GET /v1/devices/self` must return the paired device id). Fails closed when the
+ *     broker cannot be reached and no fresh check is cached. Kept until the owner re-pairs with z0bridge;
+ *     a z0bridge pairing replaces it.
  */
 class AgentAuthorizer(
     private val pairing: () -> AgentPairing?,
     private val brokerDeviceId: (brokerUrl: String, token: String) -> String?,
     private val nowMs: () -> Long = System::currentTimeMillis,
+    private val trust: () -> Z0BridgeTrust? = { null },
 ) {
     private var verifiedSha: String? = null
     private var verifiedAtMs: Long = 0
+    private var verifier: Pair<String, Z0BridgeVerifier>? = null
 
     @Synchronized
     fun authorize(bearer: String?): AgentAuth {
-        val p = pairing() ?: return AgentAuth.Denied("not_paired")
+        val t = trust()
+        if (t != null && bearer != null && Z0Bridge.looksLikeJwt(bearer)) {
+            val v = verifier?.takeIf { it.first == t.kid + t.audience }?.second ?: Z0BridgeVerifier(t).also { verifier = (t.kid + t.audience) to it }
+            val caller = v.verify(bearer, nowMs() / 1000) ?: return AgentAuth.Denied("z0bridge_token_invalid")
+            return AgentAuth.Allowed(caller.credential.takeLast(6), caller.scopes, "z0bridge")
+        }
+        val p = pairing() ?: return AgentAuth.Denied(if (t != null) "bad_token" else "not_paired")
         if (!AgentPolicy.tokenMatches(bearer, p.tokenSha256)) return AgentAuth.Denied("bad_token")
         val now = nowMs()
         if (verifiedSha == p.tokenSha256 && now - verifiedAtMs in 0 until AgentPolicy.VERIFY_TTL_MS) return AgentAuth.Allowed(p.deviceShort)
@@ -83,5 +99,5 @@ class AgentAuthorizer(
     }
 
     @Synchronized
-    fun reset() { verifiedSha = null; verifiedAtMs = 0 }
+    fun reset() { verifiedSha = null; verifiedAtMs = 0; verifier = null }
 }

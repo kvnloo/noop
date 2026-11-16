@@ -46,14 +46,15 @@ class AgentAccessService : Service() {
 
         val audit = AgentAccess.audit(this)
         val store = AgentAccess.pairingStore(this)
+        val trust = AgentAccess.trustStore(this)
         val address = AgentAccess.tailnetAddress()
-        if (store.load() == null || address == null) {
+        if ((store.load() == null && trust.load() == null) || address == null) {
             AgentAccess.lastError = if (address == null) "Tailscale is not connected on this phone" else "Pair with your broker first"
             audit.record("grant", null, "refused_${if (address == null) "no_tailnet" else "not_paired"}")
             stopAccess(null); return START_NOT_STICKY
         }
         server?.stop()
-        val authorizer = AgentAuthorizer({ store.load() }, AgentAccess::brokerDeviceId)
+        val authorizer = AgentAuthorizer({ store.load() }, AgentAccess::brokerDeviceId, System::currentTimeMillis, { trust.load() })
         val reader = AgentHealthReader(RoomAgentSql(WhoopDatabase.get(this)))
         val mcp = AgentMcp(reader, AndroidAgentActions(applicationContext), audit, { AgentAccess.grant })
         val http = AgentHttpServer(address, AgentPolicy.PORT, authorizer, mcp, audit)

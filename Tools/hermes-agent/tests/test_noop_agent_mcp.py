@@ -119,3 +119,62 @@ class RedactorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeZ0Bridge(BaseHTTPRequestHandler):
+    """Stands in for `z0bridge serve`: mints TOKEN for the Hermes credential unless revoked."""
+    revoked = False
+    mints: list = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        FakeZ0Bridge.mints.append((self.headers.get("Authorization"), body))
+        if FakeZ0Bridge.revoked or self.headers.get("Authorization") != "Bearer z0bc.cred_0000000000000001." + "s" * 43:
+            raw = json.dumps({"error": {"code": "unauthorized"}}).encode()
+            self.send_response(401)
+        else:
+            raw = json.dumps({"access_token": TOKEN, "token_type": "Bearer", "expires_in": 120, "scope": "noop:health.read", "aud": body["aud"]}).encode()
+            self.send_response(200)
+        self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(raw))); self.end_headers(); self.wfile.write(raw)
+
+
+class Z0BridgeTokenTests(ClientTests):
+    def setUp(self):
+        super().setUp()
+        d = Path(self.tmp.name)
+        self.z0 = ThreadingHTTPServer(("127.0.0.1", 0), FakeZ0Bridge)
+        threading.Thread(target=self.z0.serve_forever, daemon=True).start()
+        cred = d / "z0bridge-credential.json"
+        cred.write_text(json.dumps({"url": f"http://127.0.0.1:{self.z0.server_port}", "credential": "z0bc.cred_0000000000000001." + "s" * 43, "credentialId": "cred_0000000000000001"}))
+        os.chmod(cred, 0o600)
+        self.creds.write_text(json.dumps({"phone_host": "fake", "z0bridge": {"credential_file": str(cred), "aud": "noop@dev_0123456789abcdef", "scopes": ["noop:health.read"], "ttl": 120}}))
+        FakeZ0Bridge.revoked, FakeZ0Bridge.mints = False, []
+
+    def tearDown(self):
+        self.z0.shutdown(); super().tearDown()
+
+    def test_mints_one_scoped_token_and_reuses_it(self):
+        phone = m.Phone()
+        self.assertFalse(phone.call("health_snapshot", {"days": 7})["isError"])
+        self.assertFalse(phone.call("data_freshness", {})["isError"])
+        self.assertEqual(len(FakeZ0Bridge.mints), 1)
+        self.assertEqual(FakeZ0Bridge.mints[0][1], {"aud": "noop@dev_0123456789abcdef", "ttl": 120})
+        self.assertTrue(all(s[0] == "Bearer " + TOKEN for s in FakePhone.seen))
+        self.assertNotIn("z0bc.", m.RECEIPTS.read_text())
+
+    def test_revoked_credential_is_reported_not_raised(self):
+        FakeZ0Bridge.revoked = True
+        r = m.Phone().call("data_freshness", {})
+        self.assertTrue(r["isError"])
+        self.assertIn("z0bridge refused", r["data"]["message"])
+        self.assertEqual(FakePhone.seen, [])
+
+    # Inherited legacy-token tests do not apply to this credential shape.
+    def test_wrong_token_is_reported_not_raised(self):
+        pass
+
+    def test_call_handshakes_redacts_and_logs_receipt_without_values(self):
+        pass

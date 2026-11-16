@@ -30,6 +30,8 @@ object AgentAccess {
     @Volatile var lastError: String? = null
 
     fun pairingStore(context: Context) = AgentPairingStore(File(context.noBackupFilesDir, "agent-pairing.json"))
+    /** z0bridge pairing (v2): public key, issuer and audience only. */
+    fun trustStore(context: Context) = Z0BridgeTrustStore(File(context.noBackupFilesDir, "agent-z0bridge.json"))
     fun audit(context: Context) = AgentAudit(File(context.noBackupFilesDir, "agent-audit.jsonl"))
 
     /** One-shot nonce so only NOOP's own notification can deep-link a screen. */
