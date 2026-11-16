@@ -626,6 +626,29 @@ class SourceCoordinator(
         (activeSource as? OuraLiveSource)?.reconnect()
     }
 
+    fun startActiveOuraGestureCapture(
+        seconds: Int,
+        continuous: Boolean = false,
+        onGesture: (com.noop.ble.gesture.OuraTapDetector.Gesture) -> Unit,
+    ): Boolean = (activeSource as? OuraLiveSource)?.startGestureCapture(seconds, continuous, onGesture) ?: false
+
+    /** Whether the live Oura source has a gesture capture armed (false with no Oura source). Main thread. */
+    fun activeOuraGestureCaptureArmed(): Boolean = (activeSource as? OuraLiveSource)?.gestureCaptureArmed ?: false
+
+    fun stopActiveOuraGestureCapture() {
+        (activeSource as? OuraLiveSource)?.stopGestureCapture()
+    }
+
+    /** Attach (or detach with null) the opt-in debug motion recorder on the live Oura source. Returns the
+     *  ring generation's display name when a live Oura source took it, else null. */
+    fun setActiveOuraAcmRecorder(recorder: com.noop.ble.gesture.OuraAcmRecorder?): String? {
+        val source = activeSource as? OuraLiveSource ?: return null
+        source.acmRecorder = recorder
+        return source.ringGenerationName
+    }
+
+
+
     /**
      * #771 (twin of Swift's `SourceCoordinator.adoptOuraSerial`): the live Oura source read the ring's stable
      * SERIAL on connect. Re-point this device from its transient address-based id ([currentId]) onto its

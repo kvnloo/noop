@@ -59,6 +59,11 @@ class NoopApplication : Application() {
         // case it exists for is a strap that stopped talking. Scheduled here rather than beside a widget
         // so it does not inherit that widget's lifecycle. KEEP, so this is a no-op once scheduled.
         com.noop.notif.StaleBatteryWorker.ensureScheduled(this)
+        // Oura "Always listen" (opt-in, default off): whatever started this process, resume the ring
+        // gesture standby the owner left on. Posted so it never lengthens onCreate itself.
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching { com.noop.ble.gesture.OuraGestureStandby.get(this).startIfEnabled() }
+        }
     }
 
     /** Process-wide Room-backed store. One instance shared by the UI and the background service. */

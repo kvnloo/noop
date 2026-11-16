@@ -1,0 +1,79 @@
+name: Oura z0live NOOP Android APK (fork)
+
+on:
+  push:
+    branches: [feat/android-oura-tap-z0live-20261019]
+    paths:
+      - 'android/**'
+      - 'docs/experiments/OURA_GESTURE_Z0LIVE.md'
+      - '.github/workflows/oura-z0live-noop-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oura-z0live-noop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    # Restrict release publication to this owner, without pinning the repo's
+    # mutable name (factory-ryanbr-noop was renamed to noop in October 2026).
+    if: github.repository_owner == 'kvnloo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/wrapper-validation@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Real Kotlin JVM regression suite (no device claimed)
+        run: ./gradlew testFullDebugUnitTest --no-build-cache --rerun-tasks
+      - name: Build stable-key sideloadable debug APK
+        run: ./gradlew assembleFullDebug --no-build-cache --rerun-tasks
+      - name: Verify package, APK certificate and hash
+        run: |
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk/full/debug -maxdepth 1 -name '*.apk' -type f | head -1)"
+          test -n "$apk"
+          mkdir -p dist
+          cp "$apk" dist/NOOP-Oura-z0live-debug.apk
+          SDKTOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$SDKTOOLS/apksigner" verify --print-certs dist/NOOP-Oura-z0live-debug.apk > dist/certificate.txt
+          "$SDKTOOLS/aapt" dump badging dist/NOOP-Oura-z0live-debug.apk | grep -E '^(package:|sdkVersion:|targetSdkVersion:)' | tee dist/package.txt
+          grep -q "package: name='com.noop.whoop.debug'" dist/package.txt
+          sha256sum dist/NOOP-Oura-z0live-debug.apk | tee dist/SHA256SUMS
+          printf 'repository=%s\ncommit=%s\nrun=%s\nplatform=Android\nflavor=fullDebug\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_RUN_ID" > dist/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NOOP-Oura-z0live-${{ github.sha }}
+          path: android/dist/*
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish exact-commit beta APK for owner sideload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: android
+        run: |
+          set -euo pipefail
+          tag="oura-z0live-noop-${GITHUB_SHA:0:12}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Already published: $tag"
+            exit 0
+          fi
+          gh release create "$tag" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "NOOP Oura z0live Android beta ${GITHUB_SHA:0:12}" --prerelease --latest=false \
+            --notes "Fork-only experimental NOOP Android app with Oura Gen3 bounded gesture onboarding. Build and JVM tests passed for exact commit ${GITHUB_SHA}. Physical ring/BLE and Galaxy S25 tests still require owner+Hermes ADB validation (issues #66-68). Install with consent, and keep original NOOP/launcher backups."
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets

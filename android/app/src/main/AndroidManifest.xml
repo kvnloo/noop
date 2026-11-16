@@ -143,6 +143,7 @@
         <!-- So the connection helper can detect the official WHOOP app and deep-link to its
              info screen (a strap only pairs with one app at a time). Android 11+ visibility. -->
         <package android:name="com.whoop.android" />
+        <package android:name="app.lawnchair.play.debug" />
         <!-- #386: OEM security-centre packages, so BackgroundHealth.oemAutostartIntent's
              resolveActivity can SEE their auto-start screens under Android 11+ package-visibility
              filtering (targetSdk 34) — without these the deep-link would silently never resolve on
@@ -167,6 +168,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.NOOP"
         tools:targetApi="34">
+
+        <!-- Explicit z0live onboarding target: visible user-confirmed BLE sampling only. -->
+        <activity android:name="com.noop.ui.OuraGestureSetupActivity"
+            android:exported="true" android:excludeFromRecents="true"
+            android:label="Oura gesture setup" android:theme="@style/Theme.NOOP" />
 
         <!--
           MainActivity no longer carries the LAUNCHER intent-filter itself. The home-screen entry
@@ -351,6 +357,17 @@
         <receiver
             android:name="com.noop.alarm.SmartAlarmReceiver"
             android:exported="false" />
+
+        <!-- Oura "Always listen": resume the opt-in ring gesture standby after a reboot or an app update.
+             A no-op unless the owner turned it on in the gesture setup screen. -->
+        <receiver
+            android:name="com.noop.ble.gesture.OuraGestureStandbyBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Re-arms the persisted hard-deadline alarm after a reboot so an overnight restart can't
              silently drop the user's wake. -->

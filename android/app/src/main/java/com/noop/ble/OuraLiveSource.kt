@@ -19,6 +19,10 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import com.noop.ble.gesture.OuraAcmCodec
+import com.noop.ble.gesture.OuraAcmRecorder
+import com.noop.ble.gesture.OuraTapDetector
 import android.os.ParcelUuid
 import com.noop.data.OuraStreamMapping
 import com.noop.data.StreamBatch
@@ -455,6 +459,253 @@ class OuraLiveSource(
     private var writeChar: BluetoothGattCharacteristic? = null
     private var notifyChar: BluetoothGattCharacteristic? = null
 
+    // A bounded, user-armed accelerometer session on the EXISTING Oura BLE link.
+    // No new scan, pairing takeover, health-data path or always-on sampling.
+    private val tapDetector = OuraTapDetector(observer = { onTapBurst(it) })
+    /**
+     * Debug raw-motion recorder for the current capture, or null (the default). Attached only by the
+     * gesture setup screen's opt-in recording mode; see [OuraAcmRecorder].
+     */
+    @Volatile var acmRecorder: OuraAcmRecorder? = null
+    /** The generation this source runs as, for the recorder header. */
+    val ringGenerationName: String get() = ringGen.displayName
+    /** Per-capture cap on peak lines in the strap log; the recorder (when attached) keeps every one. */
+    private var tapPeaksLogged = 0
+    private var tapSink: ((OuraTapDetector.Gesture) -> Unit)? = null
+    private var tapEpoch = 0L
+    private var lastTapSampleMs = -1L
+    private var tapCaptureUntilMs = 0L
+    private val tapCaptureTimeout = Runnable { stopGestureCapture() }
+    /** Per-capture counts for the end-of-capture line: `0x33` frames received, frames the codec accepted,
+     *  gestures the detector emitted. Frames are counted on the GATT thread, read on main at the end. */
+    @Volatile private var acmFramesSeen = 0
+    /** Set once per capture after the first `0x33` frame the codec rejected has been logged raw. */
+    @Volatile private var loggedUndecodedAcm = false
+    @Volatile private var acmFramesDecoded = 0
+    private var acmGestures = 0
+
+    /**
+     * Continuous capture for the always-listen standby and guided recording: no local timeout. The ring's
+     * own request stays time-boxed ([STANDBY_RING_SECONDS]) and is re-sent every [STANDBY_RENEW_MS]
+     * without an OFF in between, so the ring never runs unattended for longer than one box if NOOP dies.
+     */
+    private var standbyCapture = false
+    private var standbyArmedAtMs = 0L
+    private var standbyRenewals = 0
+    /** Last `0x33` arrival (GATT thread writes, main reads) and the ring's frame counter for loss accounting. */
+    @Volatile private var lastAcmFrameMs = 0L
+    @Volatile private var lastAcmSeq = -1
+    @Volatile private var acmFramesLost = 0
+    private var statFramesAt = 0
+    private var statLostAt = 0
+    private var statAtMs = 0L
+    private val standbyRenew = object : Runnable {
+        override fun run() {
+            if (!standbyCapture || tapSink == null) return
+            if (write(OuraCommand("gesture_acm_on", OuraAcmCodec.enableForSeconds(STANDBY_RING_SECONDS)))) {
+                standbyRenewals++
+            }
+            handler.postDelayed(this, STANDBY_RENEW_MS)
+        }
+    }
+    private val standbyWatch = object : Runnable {
+        override fun run() {
+            if (!standbyCapture || tapSink == null) return
+            val now = SystemClock.elapsedRealtime()
+            val since = lastAcmFrameMs.takeIf { it > 0 } ?: standbyArmedAtMs
+            if (now - since > STANDBY_STALL_MS) {
+                // The ring stopped streaming (its box expired, or it ignored a renewal). Drop the capture so
+                // the standby owner re-arms it from scratch, and say so: this is the firmware-tolerance fact.
+                log("Oura: gesture standby stalled - no 0x33 frame for ${(now - since) / 1000}s after " +
+                    "${standbyRenewals} renewal(s); re-arming")
+                stopGestureCapture()
+                return
+            }
+            val elapsed = now - standbyArmedAtMs
+            val every = if (elapsed < STANDBY_DETAIL_MS) 60_000L else 600_000L
+            if (now - statAtMs >= every) logStandbyStats(now)
+            handler.postDelayed(this, STANDBY_WATCH_MS)
+        }
+    }
+
+    /** Whether a gesture capture (bounded or continuous) currently owns the motion stream. Main thread. */
+    val gestureCaptureArmed: Boolean get() = tapSink != null
+
+    /** One standby health line: frames and frames lost since the last line, their rate, the ring battery. */
+    private fun logStandbyStats(now: Long) {
+        val frames = acmFramesSeen - statFramesAt
+        val lost = acmFramesLost - statLostAt
+        val secs = ((now - statAtMs).coerceAtLeast(1)) / 1000.0
+        log("Oura: gesture standby ${(now - standbyArmedAtMs) / 60_000} min - $frames frame(s) in " +
+            "${"%.0f".format(secs)}s (${"%.1f".format(frames / secs)}/s), $lost lost by sequence, " +
+            "$standbyRenewals renewal(s), ring battery ${_batteryPct.value?.let { "$it%" } ?: "unknown"}")
+        statFramesAt = acmFramesSeen
+        statLostAt = acmFramesLost
+        statAtMs = now
+        tapPeaksLogged = 0   // a continuous capture gets a fresh burst-line budget per stats window
+    }
+
+    /**
+     * Arm gesture capture on main; only an authenticated Gen 3/4 ring qualifies. [continuous] is the
+     * always-listen standby (and guided recording): it ignores [seconds] locally and keeps the ring's
+     * time-boxed request renewed until [stopGestureCapture].
+     */
+    fun startGestureCapture(
+        seconds: Int,
+        continuous: Boolean = false,
+        onGesture: (OuraTapDetector.Gesture) -> Unit,
+    ): Boolean {
+        require(Looper.myLooper() == Looper.getMainLooper()) { "Gesture capture must be armed on main" }
+        val refusal = gestureCaptureRefusal(
+            seconds = seconds,
+            ringGen = ringGen,
+            phase = driver?.phase,
+            linkAuthenticated = _linkPhase.value == LinkPhase.AUTHENTICATED,
+            hasWriteLink = gatt != null && writeChar != null,
+            alreadyArmed = tapSink != null,
+        )
+        if (refusal != null) {
+            // Rare, user-initiated: name the precondition that refused instead of a bare false.
+            log("Oura: gesture capture not armed - $refusal")
+            return false
+        }
+        tapEpoch++
+        tapDetector.reset()
+        lastTapSampleMs = -1
+        acmFramesSeen = 0
+        tapPeaksLogged = 0
+        loggedUndecodedAcm = false
+        acmFramesDecoded = 0
+        acmGestures = 0
+        acmFramesLost = 0
+        lastAcmSeq = -1
+        lastAcmFrameMs = 0
+        tapSink = onGesture
+        val now = SystemClock.elapsedRealtime()
+        standbyCapture = continuous
+        tapCaptureUntilMs = if (continuous) Long.MAX_VALUE else now + seconds * 1000L
+        val ringSeconds = if (continuous) STANDBY_RING_SECONDS else seconds
+        if (!write(OuraCommand("gesture_acm_on", OuraAcmCodec.enableForSeconds(ringSeconds)))) {
+            standbyCapture = false
+            tapSink = null
+            tapCaptureUntilMs = 0
+            tapEpoch++
+            tapDetector.reset()
+            return false
+        }
+        handler.removeCallbacks(tapCaptureTimeout)
+        handler.removeCallbacks(standbyRenew)
+        handler.removeCallbacks(standbyWatch)
+        if (continuous) {
+            standbyArmedAtMs = now
+            standbyRenewals = 0
+            statFramesAt = 0
+            statLostAt = 0
+            statAtMs = now
+            handler.postDelayed(standbyRenew, STANDBY_RENEW_MS)
+            handler.postDelayed(standbyWatch, STANDBY_WATCH_MS)
+            log("Oura: continuous gesture capture armed (ring box ${STANDBY_RING_SECONDS}s, renewed every " +
+                "${STANDBY_RENEW_MS / 1000}s)")
+        } else {
+            handler.postDelayed(tapCaptureTimeout, seconds * 1000L)
+            log("Oura: bounded gesture training armed for "+seconds+"s")
+        }
+        return true
+    }
+
+    /**
+     * Log the first `0x33` frame of a capture that the codec rejected, raw. Accelerometer bytes only (no
+     * key, serial or address); once per capture, so an unknown layout leaves its evidence without flooding.
+     */
+    private fun logFirstUndecodedAcm(wire: ByteArray) {
+        if (loggedUndecodedAcm) return
+        loggedUndecodedAcm = true
+        log("Oura: first undecoded 0x33 frame this capture (${wire.size}B): " +
+            wire.joinToString(" ") { "%02x".format(it.toInt() and 0xff) })
+    }
+
+    /**
+     * One detector burst (main thread, inside a capture). Logged so a missed tap can be explained from the
+     * strap log: its peak jerk against the quiet level, the impacts counted and their spacing, and the
+     * detector's verdict. Capped per capture; the recorder keeps every burst.
+     */
+    private fun onTapBurst(b: OuraTapDetector.Burst) {
+        acmRecorder?.burst(b)
+        if (tapPeaksLogged >= MAX_TAP_PEAK_LOG_LINES) return
+        tapPeaksLogged++
+        val verdict = when (b.verdict) {
+            OuraTapDetector.Verdict.GESTURE -> b.gesture?.name ?: "gesture"
+            OuraTapDetector.Verdict.TOO_WEAK -> "below the minimum peak"
+            OuraTapDetector.Verdict.TOO_LONG -> "too long for taps"
+            OuraTapDetector.Verdict.MOVING -> "ring moving (handling or walking)"
+            OuraTapDetector.Verdict.IMPACT_COUNT -> "${b.impacts} impact(s), not 2-4"
+            OuraTapDetector.Verdict.IMPACT_SPACING -> "impacts too far apart"
+            OuraTapDetector.Verdict.BURST_LENGTH -> "too long for ${b.impacts} impacts"
+        }
+        log("Oura: tap burst peak=${b.peak} (quiet level ${b.quietLevel}) impacts=${b.impacts} " +
+            "spacing=${if (b.firstSpacingMs < 0) "-" else "${b.firstSpacingMs}ms"} length=${b.durationMs}ms - $verdict still=${b.stillness}" +
+            if (tapPeaksLogged == MAX_TAP_PEAK_LOG_LINES) " (burst log cap reached for this capture)" else "")
+    }
+
+    /** OFF is best effort when Bluetooth has disconnected; the ring's timebox still expires. */
+    fun stopGestureCapture() {
+        handler.removeCallbacks(tapCaptureTimeout)
+        handler.removeCallbacks(standbyRenew)
+        handler.removeCallbacks(standbyWatch)
+        val armed = tapSink != null
+        if (armed && standbyCapture) logStandbyStats(SystemClock.elapsedRealtime())
+        standbyCapture = false
+        if (armed) {
+            // Only what was observed: a Gen 4 ring that answers with another layout shows frames seen > 0
+            // and decoded 0; one that ignores the request shows 0 frames.
+            log("Oura: gesture capture ended - ${acmFramesSeen} 0x33 frame(s) received, " +
+                "${acmFramesDecoded} decoded, ${acmGestures} gesture(s) recognised")
+        }
+        tapSink = null
+        tapCaptureUntilMs = 0
+        tapEpoch++
+        lastTapSampleMs = -1
+        tapDetector.reset()
+        if (armed && gatt != null && writeChar != null) {
+            write(OuraCommand("gesture_acm_off", OuraAcmCodec.stop()))
+        }
+    }
+
+    /** Strict 0x33 parsing and ordered main-thread detector delivery. [wire] is one whole ACM frame. */
+    private fun onGestureAcm(wire: ByteArray) {
+        if (tapSink == null || ringGen !in GESTURE_CAPTURE_GENS) return
+        acmFramesSeen++
+        lastAcmFrameMs = SystemClock.elapsedRealtime()
+        OuraAcmCodec.sequence(wire)?.let { seq ->
+            if (lastAcmSeq >= 0) acmFramesLost += OuraAcmCodec.framesLostBetween(lastAcmSeq, seq)
+            lastAcmSeq = seq
+        }
+        val axes = OuraAcmCodec.decode(wire)
+        acmRecorder?.frame(SystemClock.elapsedRealtime(), wire, axes)
+        if (axes.isEmpty()) {
+            logFirstUndecodedAcm(wire)
+            return
+        }
+        acmFramesDecoded++
+        val epoch = tapEpoch
+        handler.post {
+            if (epoch != tapEpoch || tapSink == null) return@post
+            if (SystemClock.elapsedRealtime() >= tapCaptureUntilMs) {
+                stopGestureCapture()
+                return@post
+            }
+            for (axis in axes) {
+                val stamp = maxOf(SystemClock.elapsedRealtime(), lastTapSampleMs + 20)
+                lastTapSampleMs = stamp
+                val gesture = tapDetector.sample(stamp, axis.x, axis.y, axis.z)
+                if (gesture != null && epoch == tapEpoch) {
+                    acmGestures++
+                    tapSink?.invoke(gesture)
+                }
+            }
+        }
+    }
+
     // MARK: - Auth watchdog (#2304)
 
     /** When the most recent `get_nonce` of this session went out; null once the nonce arrived. */
@@ -482,6 +733,12 @@ class OuraLiveSource(
      * of ours to resolve.
      */
     private var lastWriteAccepted: Boolean? = null
+
+    /** Outbound writes, one in flight at a time ([OuraWriteQueue]). Guarded by synchronizing on itself:
+     *  writes are issued from the main looper and from GATT binder callbacks. */
+    private val writeQueue = OuraWriteQueue<OuraCommand>()
+    /** The busy-retry / completion-deadline kick for [pumpWrites]; named so link teardown can cancel it. */
+    private val writePumpRunnable = Runnable { pumpWrites() }
     /** The nonce timer. One-shot; re-posted by [authWatchdogRunnable] after an escalation. */
     private val authWatchdogRunnable = Runnable { authWatchdogFired() }
 
@@ -1239,6 +1496,7 @@ class OuraLiveSource(
         driver = OuraDriver(ringGen = ringGen, authKey = authKey(), allowTierB = true,
                             allowKeyInstall = adoptIntent, notificationMask = notificationMask)
         reassembler.reset()
+        resetWriteQueue()              // writes queued for the previous link never reach this one
         pendingInstallKey = null       // a new connection starts with no install in flight
         _adoptPhase.value = AdoptPhase.Idle   // a stale outcome must never drive the wizard's transition
         resetWear()   // #628: fresh session — clear any stale worn/charging badge
@@ -1344,12 +1602,14 @@ class OuraLiveSource(
         // disconnect follows in the next statement and nothing guarantees a flush. It closes the common
         // cases -- user disconnect, source switch, Bluetooth off -- and a process kill cannot be covered
         // at all, which is a transport limit rather than a gap in this fix.
+        stopGestureCapture() // send realtime-OFF before disconnect
         disableLiveHR()
         driver?.stop()
         gatt?.let { runCatching { it.disconnect(); it.close() } }
         gatt = null
         writeChar = null
         notifyChar = null
+        resetWriteQueue()
         reassembler.reset()
         loggedFirstHr = false      // a later reconnect should log its first sample again
         loggedFirstTemp = false
@@ -1484,6 +1744,7 @@ class OuraLiveSource(
                     g.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
+                    stopGestureCapture() // disarm on spontaneous link loss
                     log("Oura: disconnected (status=$status)")
                     _linkPhase.value = LinkPhase.DISCONNECTED
                     loggedFirstHr = false   // a reconnect should log its first sample again
@@ -1504,6 +1765,7 @@ class OuraLiveSource(
                     drainPendingAnchorEvents()
                     dropUnanchoredHypnogramBursts()
                     commitInterruptedDrainCursor()   // #2443: bank progress before the anchor goes
+                    resetWriteQueue()
                     reassembler.reset()
                     loggedFirstTemp = false
                     loggedFirstSpo2.clear()
@@ -1603,6 +1865,20 @@ class OuraLiveSource(
                 log("Oura: WARNING CCCD write FAILED (status=$status) - ring will send no data")
                 announceNeedsPairing(KEY_INSTALL_MESSAGE)
             }
+        }
+
+        override fun onCharacteristicWrite(
+            g: BluetoothGatt,
+            ch: BluetoothGattCharacteristic,
+            status: Int,
+        ) = guardedCallback("characteristic-write") {
+            if (ch.uuid != WRITE_UUID || g !== gatt) return@guardedCallback
+            val done = synchronized(writeQueue) { writeQueue.onWriteCompleted() }
+            if (done != null && status != BluetoothGatt.GATT_SUCCESS) {
+                // A GATT-layer status from the write completion, named as such (not a BluetoothStatusCodes value).
+                log("Oura: WARNING ${done.label} write completed with GATT status $status")
+            }
+            pumpWrites()
         }
 
         override fun onCharacteristicChanged(
@@ -1806,24 +2082,74 @@ class OuraLiveSource(
         write(OuraCommands.liveHRUnsubscribe())
     }
 
-    /** Write one built command to the ring's write characteristic (Write Without Response). Logged by its
-     *  short label only (never bytes or an address). */
-    private fun write(cmd: OuraCommand) = guardedCallback("write") {
-        val g = gatt ?: return@guardedCallback
-        val ch = writeChar ?: return@guardedCallback
+    /**
+     * Queue one built command for the ring's write characteristic (Write Without Response) and send it as
+     * soon as the previous write has completed ([OuraWriteQueue] explains why a burst cannot go out back to
+     * back on Android). Logged by its short label only (never bytes or an address). Returns false when there
+     * is no link to write to or the stack refused the command outright; true when it was sent or is queued.
+     */
+    private fun write(cmd: OuraCommand): Boolean {
+        var accepted = false
+        guardedCallback("write") {
+            if (gatt == null || writeChar == null) return@guardedCallback
+            log("Oura: → ${cmd.label}")
+            synchronized(writeQueue) { writeQueue.enqueue(cmd) }
+            accepted = pumpWrites().none { it === cmd }
+        }
+        return accepted
+    }
+
+    /** Send the next queued write if none is in flight. Returns the commands given up on during this pump. */
+    private fun pumpWrites(): List<OuraCommand> {
+        val g = gatt
+        val ch = writeChar
+        if (g == null || ch == null) {
+            synchronized(writeQueue) { writeQueue.clear() }
+            handler.removeCallbacks(writePumpRunnable)
+            return emptyList()
+        }
+        val r = synchronized(writeQueue) {
+            writeQueue.pump(SystemClock.elapsedRealtime()) { cmd -> sendNow(g, ch, cmd) }
+        }
+        r.completionTimedOut?.let {
+            log("Oura: no write completion for ${it.label} within ${OuraWriteQueue.COMPLETION_TIMEOUT_MS} ms - sending the next write")
+        }
+        for (d in r.dropped) log("Oura: WARNING ${d.item.label} was not sent - ${d.detail}")
+        handler.removeCallbacks(writePumpRunnable)
+        r.nextPumpDelayMs?.let { handler.postDelayed(writePumpRunnable, it) }
+        return r.dropped.map { it.item }
+    }
+
+    private fun sendNow(g: BluetoothGatt, ch: BluetoothGattCharacteristic, cmd: OuraCommand): OuraWriteQueue.Attempt {
         val bytes = ByteArray(cmd.bytes.size) { cmd.bytes[it].toByte() }
-        log("Oura: → ${cmd.label}")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val rc = g.writeCharacteristic(ch, bytes, BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE)
             lastWriteAccepted = rc == android.bluetooth.BluetoothStatusCodes.SUCCESS
+            when (rc) {
+                android.bluetooth.BluetoothStatusCodes.SUCCESS ->
+                    OuraWriteQueue.Attempt(OuraWriteQueue.SendResult.ACCEPTED, "writeCharacteristic rc=$rc")
+                android.bluetooth.BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY ->
+                    OuraWriteQueue.Attempt(OuraWriteQueue.SendResult.BUSY, "writeCharacteristic rc=$rc (write request busy)")
+                else -> OuraWriteQueue.Attempt(OuraWriteQueue.SendResult.FAILED, "writeCharacteristic rc=$rc")
+            }
         } else {
             @Suppress("DEPRECATION")
-            run {
+            val ok = run {
                 ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                 ch.value = bytes
-                lastWriteAccepted = g.writeCharacteristic(ch)
+                g.writeCharacteristic(ch)
             }
+            lastWriteAccepted = ok
+            // The legacy call folds "busy" into false, so treat false as busy: the retry is bounded.
+            if (ok) OuraWriteQueue.Attempt(OuraWriteQueue.SendResult.ACCEPTED, "writeCharacteristic returned true")
+            else OuraWriteQueue.Attempt(OuraWriteQueue.SendResult.BUSY, "writeCharacteristic returned false")
         }
+    }
+
+    /** Forget queued writes at a link boundary; they belong to a connection that is gone. */
+    private fun resetWriteQueue() {
+        synchronized(writeQueue) { writeQueue.clear() }
+        handler.removeCallbacks(writePumpRunnable)
     }
 
     /**
@@ -1874,7 +2200,14 @@ class OuraLiveSource(
                     }
                 }
             }
-            if (frame.op == OuraFraming.secureSessionOp) {
+            if (frame.op == 0x33) {
+                // Realtime ACM, not a banked health event: rebuild the wire frame for the codec.
+                val wire = ByteArray(frame.body.size + 2)
+                wire[0] = 0x33
+                wire[1] = frame.body.size.toByte()
+                frame.body.forEachIndexed { i, b -> wire[i + 2] = b.toByte() }
+                onGestureAcm(wire)
+            } else if (frame.op == OuraFraming.secureSessionOp) {
                 val secure = OuraFraming.parseSecureFrame(frame) ?: continue
                 routeSecure(d, secure)
             } else if (frame.op == SET_AUTH_KEY_RESP_OP) {
@@ -2519,6 +2852,61 @@ class OuraLiveSource(
     }
 
     companion object {
+        /**
+         * Generations bounded gesture capture may be armed on. Gen 3 is the generation the `0x06` time-boxed
+         * ACM request and `0x33` frame layout were researched on (open_oura, Gen 3 Horizon). Gen 4 is
+         * included because the framing, auth and event-tag dictionary are generation-invariant
+         * (OURA_PROTOCOL.md s7.2) and Gen 4 already takes the same feature-mode writes for live HR; the
+         * request is time-boxed by the ring itself and turned off explicitly, and [OuraAcmCodec.decode]
+         * rejects any frame whose length or rate byte differs, so a different Gen 4 layout yields no taps
+         * rather than wrong ones (the end-of-capture line counts what arrived). Gen 5 stays out: it
+         * advertises extra characteristics and nothing about its motion stream has been observed.
+         */
+        internal val GESTURE_CAPTURE_GENS = setOf(OuraRingGen.GEN3, OuraRingGen.GEN4)
+
+        /** Strap-log lines per capture for [onTapBurst]. */
+        private const val MAX_TAP_PEAK_LOG_LINES = 80
+
+        /** The ring-side box of a continuous capture: what the ring streams for if NOOP dies mid-capture. */
+        internal const val STANDBY_RING_SECONDS = 300
+        /** Re-send the box well before it expires, with no OFF in between; [STANDBY_STALL_MS] catches a ring that ignores it. */
+        internal const val STANDBY_RENEW_MS = 120_000L
+        /** No `0x33` frame for this long while continuous = the ring stopped; drop and let the owner re-arm. */
+        internal const val STANDBY_STALL_MS = 20_000L
+        private const val STANDBY_WATCH_MS = 5_000L
+        /** Per-minute standby health lines for this long after arming (battery measurement), then 10-min. */
+        private const val STANDBY_DETAIL_MS = 45 * 60_000L
+
+        /**
+         * Why bounded gesture capture may not arm right now, or null when it may. Pure so the gate is
+         * JVM-tested.
+         *
+         * The driver may be `Streaming` OR `FetchingHistory`. Both mean authenticated and past the live-HR
+         * enable; a history drain is a background pass the ring can take minutes over (and, before the write
+         * queue, could never finish), and gesture capture does not interfere with it: `0x33` ACM frames are
+         * split off by their outer op in [handleNotification] before the `0x11` summary routing and the TLV
+         * reassembler, history event tags are all >= 0x41, and the batch-quiet timer only re-arms on decoded
+         * TLV records. `gesture_acm_on` itself goes through the same write queue, behind any `get_events`
+         * in flight rather than racing it.
+         */
+        internal fun gestureCaptureRefusal(
+            seconds: Int,
+            ringGen: OuraRingGen,
+            phase: OuraDriverPhase?,
+            linkAuthenticated: Boolean,
+            hasWriteLink: Boolean,
+            alreadyArmed: Boolean,
+        ): String? = when {
+            seconds !in 1..300 -> "duration ${seconds}s is outside 1-300 s"
+            ringGen !in GESTURE_CAPTURE_GENS -> "ring generation is ${ringGen.displayName}, not Gen 3 or Gen 4"
+            phase != OuraDriverPhase.Streaming && phase != OuraDriverPhase.FetchingHistory ->
+                "driver phase is ${phase?.let { it::class.simpleName } ?: "none"}, not Streaming or FetchingHistory"
+            !linkAuthenticated -> "link is not authenticated"
+            !hasWriteLink -> "no GATT write characteristic"
+            alreadyArmed -> "capture is already armed"
+            else -> null
+        }
+
         /** The ring's base service + write/notify characteristics (OURA_PROTOCOL.md s1.1). Built from the
          *  protocol package's UUID strings so the facts live in exactly one place. */
         val SERVICE_UUID: UUID = UUID.fromString(OuraGatt.serviceUUID)
