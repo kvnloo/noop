@@ -2621,6 +2621,10 @@ def validate_compact_baseline(value: object, location: str) -> None:
     counters = value.get("counters")
     if not isinstance(counters, dict):
         raise ValueError(f"{location}: counters must be an object")
+    if set(counters) != {
+        "day_string_implementations", "resting_hr_paths", "android_ui_pearson_implementations"
+    }:
+        raise ValueError(f"{location}: counter keys must be exact")
     for name, count in counters.items():
         if not isinstance(name, str) or type(count) is not int or count < 0:
             raise ValueError(f"{location}: counter {name!r} must be a non-negative integer")

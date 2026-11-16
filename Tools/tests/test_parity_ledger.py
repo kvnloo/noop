@@ -1376,6 +1376,29 @@ fun broken(value: Int) = "broken ${run { Trace.suffix(value) }
                 self.assertTrue(regressions)
                 self.assertEqual([], improvements)
 
+    def test_baseline_counter_names_cannot_be_omitted_or_misspelled(self) -> None:
+        self.write_clean_tree()
+        twin_map = parity_ledger.build_twin_map(self.root)
+        result = parity_ledger.scan(self.root, twin_map)
+        baseline = parity_ledger.build_compact_baseline(result)
+        code, output = self.run_cli(twin_map, baseline)
+        self.assertEqual(0, code, output)
+        for name in baseline["counters"]:
+            for replacement in (None, name + "_typo"):
+                with self.subTest(name=name, replacement=replacement):
+                    counters = dict(baseline["counters"])
+                    count = counters.pop(name)
+                    if replacement is not None:
+                        counters[replacement] = count
+                    invalid = {**baseline, "counters": counters}
+                    code, output = self.run_cli(twin_map, invalid)
+                    self.assertEqual(1, code, output)
+                    self.assertIn("counter keys must be exact", output)
+                    self.assertTrue(parity_ledger.compact_baseline_drift(result, invalid))
+                    regressions, improvements = parity_ledger.compact_baseline_changes(result, invalid)
+                    self.assertTrue(regressions)
+                    self.assertEqual([], improvements)
+
     def test_missing_baseline_is_not_an_empty_accepted_baseline(self) -> None:
         self.write_clean_tree()
         twin_map = parity_ledger.build_twin_map(self.root)
