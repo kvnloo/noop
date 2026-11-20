@@ -15,7 +15,8 @@ COMBINED = (
 
 def production_queries():
     swift = (ROOT / "Packages/WhoopStore/Sources/WhoopStore/Reads.swift").read_text()
-    method = swift.split("public func gravityFingerprint(", 1)[1]
+    # Match the signature with or without isolation modifiers (#2832 marks it `nonisolated`).
+    method = re.split(r"public (?:nonisolated )?func gravityFingerprint\(", swift, maxsplit=1)[1]
     sql = method.split('sql: """', 1)[1].split('"""', 1)[0]
     # The Swift twin binds the same three values twice, once for each subquery. Actual binding is also
     # exercised by GravityWitnessTests through GRDB; this adapter only runs the SQL on Python's SQLite.
