@@ -165,6 +165,16 @@ def cmd_build(a):
         results.append(r)
         print(f"lane {lane['name']:<10} {r['status']}" + (f"  {r['files']}" if r.get("files") else ""))
 
+    # Fixups: reviewed commits for interactions between PRs that each pass alone (e.g. one PR's test
+    # assumes a signature another PR changes). Applied last, so stage/upstream keeps fast-forwarding.
+    for fx in m.get("fixups", []):
+        git("fetch", "-q", "origin", fx["sha"], check=False)
+        ok = git("cherry-pick", "--allow-empty", fx["sha"], check=False).returncode == 0
+        if not ok:
+            git("cherry-pick", "--abort", check=False)
+        results.append({"fixup": fx["sha"], "prs": fx["prs"], "status": "merged" if ok else "conflict"})
+        print(f"fixup {fx['sha'][:10]} {'applied' if ok else 'CONFLICT'}  ({fx['why']})")
+
     tip = git("rev-parse", "HEAD").stdout.strip()
     report = {"base": base, "staging": tip, "results": results}
     Path(a.report).write_text(json.dumps(report, indent=2) + "\n")

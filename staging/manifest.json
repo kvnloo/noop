@@ -831,5 +831,16 @@
     }
   ],
   "clean_base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
-  "commit_date": "2026-11-20T00:00:00Z"
+  "commit_date": "2026-11-20T00:00:00Z",
+  "fixups": [
+    {
+      "sha": "ae1c8f4effa5f0a77bc52c8ea9c3b5472ebd8679",
+      "branch": "stage/fixup-gravity-test",
+      "prs": [
+        2705,
+        2832
+      ],
+      "why": "#2705's gravity witness test splits on 'public func gravityFingerprint(' and #2832 makes it nonisolated"
+    }
+  ]
 }

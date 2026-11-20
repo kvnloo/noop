@@ -1,6 +1,6 @@
 {
   "base": "2a1de7609843b095505274ad6fc811757210be80",
-  "staging": "a1c7fb43ff55be37dd20daaa6e917341dfbe45b6",
+  "staging": "ae1c8f4effa5f0a77bc52c8ea9c3b5472ebd8679",
   "results": [
     {
       "pr": 506,
@@ -246,6 +246,14 @@
       "sha": "8ca33af02d34ef2e90fee0013200895e160d6fb4",
       "prs": [
         2919
+      ],
+      "status": "merged"
+    },
+    {
+      "fixup": "ae1c8f4effa5f0a77bc52c8ea9c3b5472ebd8679",
+      "prs": [
+        2705,
+        2832
       ],
       "status": "merged"
     }
