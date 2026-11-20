@@ -52,6 +52,8 @@ def main(wave, base_runs, stage_runs):
              "Wave 1 is fixes, tests and translations of at most 600 changed lines. UI restyles are left out, since picking one is your call.")
     w.append("- The same CI commands as this repo's workflows ran on `main` and on the combined branch, on GitHub-hosted runners "
              "(ubuntu-latest, macos-15, macos-26).\n")
+    w.append("macOS and iOS ran on the combined branch before the one-line test fixup described below. Linux ran on "
+             "the final tip, which differs only in that Python test file.\n")
     w.append("| Job | `main` | combined |\n|---|---|---|")
     for name in JOB_ORDER:
         if name in base or name in stage:
@@ -70,10 +72,13 @@ def main(wave, base_runs, stage_runs):
                  f"{', '.join(f'`{f.split(chr(47))[-1]}`' for f in c.get('files', []))} | "
                  f"[`{l['branch']}`](https://github.com/kvnloo/noop/tree/{l['branch']}) |")
     w.append("")
+    for fx in m.get("fixups", []):
+        w.append(f"**Interaction found only by testing them together:** {' and '.join(f'#{p}' for p in fx['prs'])} each pass "
+                 f"on their own, but combined they break a test: {fx['why']}. The fix is one commit, "
+                 f"[`{fx['sha'][:10]}`](https://github.com/kvnloo/noop/commit/{fx['sha']}), applied last.\n")
     w.append("Rebuild and check it yourself: [`staging-meta`](https://github.com/kvnloo/noop/tree/staging-meta) has the manifest "
              "(PR number plus pinned head), the builder, and `staging.py verify`, which checks every pinned head is in "
              "the combined history.\n")
-    w.append("Refs " + ", ".join(f"#{p}" for p in sorted(entries)))
     return "\n".join(w)
 
 
