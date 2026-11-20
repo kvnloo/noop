@@ -9,12 +9,14 @@ The manifest is the source of truth, and the branch can be rebuilt from it at an
 Each PR merges --no-ff at its exact pinned head, so contributor commits are never rewritten
 and dropping a PR is deleting one manifest entry. Entries upstream has already merged report
 "landed" and add nothing. A conflict is recorded with its files and skipped. The builder never
-hand-resolves; a resolution would be its own reviewed `fixup` entry.
+hand-resolves: conflicting PRs go to a resolution lane, a reviewed branch that merges them on top of
+the clean tip. The builder merges each lane after the clean pass, so git composes the lanes.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -38,8 +40,11 @@ commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:60){nodes{..
 files(first:100){nodes{path}}}}}}"""
 
 
+ENV = None  # set by cmd_build from the manifest: fixed identity and date, so a rebuild is byte-identical
+
+
 def run(*cmd, cwd=None, check=True):
-    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, env=ENV)
     if check and p.returncode:
         sys.exit(f"$ {' '.join(cmd)}\n{p.stdout}{p.stderr}")
     return p
@@ -97,7 +102,12 @@ def cmd_select(a):
 
 
 def cmd_build(a):
+    global ENV
     m = json.loads(Path(a.manifest).read_text())
+    who, when = m.get("committer", "kvnloo staging <kvnloo@users.noreply.github.com>"), m.get("commit_date", "2026-11-20T00:00:00Z")
+    name, email = who.rsplit(" <", 1)
+    ENV = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_COMMITTER_NAME": name, "GIT_AUTHOR_EMAIL": email.rstrip(">"),
+           "GIT_COMMITTER_EMAIL": email.rstrip(">"), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
     repo = a.repo
     git = lambda *x, check=True: run("git", *x, cwd=repo, check=check)
     if git("status", "--porcelain").stdout.strip():
@@ -110,38 +120,55 @@ def cmd_build(a):
     git("checkout", "-q", "-B", "stage-local", base)
 
     results = []
-    # Clean entries first, then entries with a resolution: each resolution was made on top of
-    # every clean merge, so it must be applied after them, in manifest order.
-    ordered = [e for e in m["entries"] if not e.get("resolve_from")] + [e for e in m["entries"] if e.get("resolve_from")]
-    for e in ordered:
+    in_lane = {pr for lane in m.get("lanes", []) for pr in lane["prs"]}
+    for e in m["entries"]:
         head = git("rev-parse", f"refs/staging-pr/{e['pr']}").stdout.strip()
         r = {"pr": e["pr"], "sha": e["sha"]}
         if head != e["sha"]:
             r.update(status="moved", now=head)  # contributor pushed; re-pin deliberately, never silently
         elif git("merge-base", "--is-ancestor", e["sha"], base, check=False).returncode == 0:
             r.update(status="landed")
+        elif e["pr"] in in_lane:
+            continue  # merged by its resolution lane below
         else:
             msg = f"staging: merge {m['upstream']}#{e['pr']} by @{e['author']}\n\n{e['title']}\nhead {e['sha']}"
             if git("merge", "--no-ff", "-q", "-m", msg, e["sha"], check=False).returncode == 0:
                 r.update(status="merged")
             else:
                 files = git("diff", "--name-only", "--diff-filter=U").stdout.split()
-                fix = e.get("resolve_from")  # a reviewed commit holding the resolved versions of these files
-                if fix:
-                    git("fetch", "-q", "origin", fix, check=False)
-                    git("checkout", fix, "--", *files)
-                    git("commit", "-q", "--no-edit", "-m", f"{msg}\nresolved-from {fix}")
-                    r.update(status="resolved", files=files, resolve_from=fix)
-                else:
-                    git("merge", "--abort")
-                    r.update(status="conflict", files=files)
+                git("merge", "--abort")
+                r.update(status="conflict", files=files)
         results.append(r)
         print(f"#{e['pr']:<5} {r['status']}" + (f"  {r['files']}" if r.get("files") else ""))
+
+    # Resolution lanes: reviewed branches that merged their PRs (with conflicts resolved) on top of the
+    # clean tip. They all start from that tip, so a plain merge composes them hunk by hunk.
+    clean = git("rev-parse", "HEAD").stdout.strip()
+    pinned = m.get("clean_base")
+    if pinned:
+        git("fetch", "-q", "origin", pinned, check=False)
+        if git("rev-parse", f"{pinned}^{{tree}}").stdout == git("rev-parse", "HEAD^{tree}").stdout:
+            git("reset", "-q", "--hard", pinned)  # same content as the commit the lanes were resolved on
+            clean = pinned
+    for lane in m.get("lanes", []):
+        r = {"lane": lane["name"], "sha": lane["sha"], "prs": lane["prs"]}
+        git("fetch", "-q", "origin", lane["sha"], check=False)
+        if lane["base"] != clean:
+            r.update(status="stale")  # clean set changed since the lane was resolved; redo the lane
+        elif git("merge", "--no-ff", "-q", "-m", f"staging: resolution lane {lane['name']} ({', '.join(f'#{p}' for p in lane['prs'])})",
+                 lane["sha"], check=False).returncode == 0:
+            r.update(status="merged")
+        else:
+            files = git("diff", "--name-only", "--diff-filter=U").stdout.split()
+            git("merge", "--abort")
+            r.update(status="conflict", files=files)
+        results.append(r)
+        print(f"lane {lane['name']:<10} {r['status']}" + (f"  {r['files']}" if r.get("files") else ""))
 
     tip = git("rev-parse", "HEAD").stdout.strip()
     report = {"base": base, "staging": tip, "results": results}
     Path(a.report).write_text(json.dumps(report, indent=2) + "\n")
-    counts = {s: sum(r["status"] == s for r in results) for s in ("merged", "resolved", "landed", "conflict", "moved")}
+    counts = {s: sum(r["status"] == s for r in results) for s in ("merged", "landed", "conflict", "moved", "stale")}
     print(f"staging {tip[:10]} on {m['upstream']}@{base[:10]}: {counts}")
     if a.push:
         # Never force: every rebuild is a new immutable snapshot; stage/upstream only fast-forwards.
@@ -151,6 +178,16 @@ def cmd_build(a):
         print(f"pushed {snap}; stage/upstream {'advanced' if ff else 'unchanged (not a fast-forward; point readers at the snapshot)'}")
 
 
+def cmd_verify(a):
+    """The property the maintainer needs: every pinned PR head (and every lane) is in the tip's history."""
+    m = json.loads(Path(a.manifest).read_text())
+    git = lambda *x, check=True: run("git", *x, cwd=a.repo, check=check)
+    missing = [str(x) for x in [e["sha"] for e in m["entries"]] + [l["sha"] for l in m.get("lanes", [])]
+               if git("merge-base", "--is-ancestor", x, a.tip, check=False).returncode]
+    print(f"{len(m['entries'])} PR heads + {len(m.get('lanes', []))} lanes; missing from {a.tip}: {missing or 'none'}")
+    sys.exit(1 if missing else 0)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -158,8 +195,10 @@ def main():
     b = sub.add_parser("build"); b.add_argument("manifest"); b.add_argument("--repo", required=True)
     b.add_argument("--report", default="report.json"); b.add_argument("--push", action="store_true")
     b.add_argument("--label", default="snapshot", help="snapshot branch name under stage/, e.g. w1-20261120-0201")
+    v = sub.add_parser("verify"); v.add_argument("manifest"); v.add_argument("--repo", required=True)
+    v.add_argument("--tip", default="HEAD")
     a = ap.parse_args()
-    {"select": cmd_select, "build": cmd_build}[a.cmd](a)
+    {"select": cmd_select, "build": cmd_build, "verify": cmd_verify}[a.cmd](a)
 
 
 if __name__ == "__main__":

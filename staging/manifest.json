@@ -758,5 +758,78 @@
       "pr": 2921,
       "reason": "draft"
     }
-  ]
+  ],
+  "lanes": [
+    {
+      "name": "parity",
+      "branch": "stage/fix-parity",
+      "sha": "d99c922ce78598711abbab82cfcb74f68b4158c9",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2599,
+        2652,
+        2735,
+        2773
+      ]
+    },
+    {
+      "name": "xcstrings",
+      "branch": "stage/fix-xcstrings",
+      "sha": "37450852674705d2c7d94e76f96dcdcaf08fbe99",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2661,
+        2700,
+        2904,
+        2905
+      ]
+    },
+    {
+      "name": "trends",
+      "branch": "stage/fix-trends",
+      "sha": "90053003c3ea089ea4f564e3721d94719c3a4a22",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2764
+      ]
+    },
+    {
+      "name": "aiprov",
+      "branch": "stage/fix-aiprov",
+      "sha": "88007f3c64da38c8ce79e167186298ac7ffd013b",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2774
+      ]
+    },
+    {
+      "name": "ptpt",
+      "branch": "stage/fix-ptpt",
+      "sha": "c06dc5d2b11ec4b7af150b1eebb7ce5591be99ab",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2784
+      ]
+    },
+    {
+      "name": "reads",
+      "branch": "stage/fix-reads",
+      "sha": "e63717b4cdf077d207bd82032fc01c2143ba0f16",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2832
+      ]
+    },
+    {
+      "name": "ble",
+      "branch": "stage/fix-ble",
+      "sha": "8ca33af02d34ef2e90fee0013200895e160d6fb4",
+      "base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+      "prs": [
+        2919
+      ]
+    }
+  ],
+  "clean_base": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+  "commit_date": "2026-11-20T00:00:00Z"
 }

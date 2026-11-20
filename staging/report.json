@@ -1,6 +1,6 @@
 {
   "base": "2a1de7609843b095505274ad6fc811757210be80",
-  "staging": "913a352d775f3679d9c5333f8e5eba4c3ba6509c",
+  "staging": "a1c7fb43ff55be37dd20daaa6e917341dfbe45b6",
   "results": [
     {
       "pr": 506,
@@ -33,19 +33,6 @@
       "status": "merged"
     },
     {
-      "pr": 2599,
-      "sha": "83ee8eceaf9a2124cb8f6a02197bbfcfc7a5bf83",
-      "status": "conflict",
-      "files": [
-        "Tools/parity_ledger_baseline.json",
-        "Tools/parity_twin_map.json"
-      ],
-      "collides_with": [
-        2552,
-        2583
-      ]
-    },
-    {
       "pr": 2638,
       "sha": "db8972925e2b23ac1367aa83bdc3d64a30c658f9",
       "status": "merged"
@@ -56,32 +43,9 @@
       "status": "merged"
     },
     {
-      "pr": 2652,
-      "sha": "df2b0a3d887afb37038acb4332f6eb5b77a19c28",
-      "status": "conflict",
-      "files": [
-        "Tools/parity_ledger_baseline.json"
-      ],
-      "collides_with": [
-        2583
-      ]
-    },
-    {
       "pr": 2660,
       "sha": "e9ee598e1486fb7bfa9bf3f6b81f0115b7df8fd1",
       "status": "merged"
-    },
-    {
-      "pr": 2661,
-      "sha": "7f9fc7aac2eb1aafeff8f335e22cc4ea4fc87d66",
-      "status": "conflict",
-      "files": [
-        "Strand/Resources/Localizable.xcstrings"
-      ],
-      "collides_with": [
-        2512,
-        2660
-      ]
     },
     {
       "pr": 2691,
@@ -92,18 +56,6 @@
       "pr": 2693,
       "sha": "344815f118b8115ceee2be2c1c205a0c79e25e8c",
       "status": "merged"
-    },
-    {
-      "pr": 2700,
-      "sha": "847c7c60afa82fb75a6257543ce078b5182fd7d2",
-      "status": "conflict",
-      "files": [
-        "Strand/Resources/Localizable.xcstrings"
-      ],
-      "collides_with": [
-        2512,
-        2660
-      ]
     },
     {
       "pr": 2704,
@@ -146,17 +98,6 @@
       "status": "merged"
     },
     {
-      "pr": 2735,
-      "sha": "9ee3f30c9fb64c045ee40dea2d5ac7aa8dda369d",
-      "status": "conflict",
-      "files": [
-        "Tools/parity_twin_map.json"
-      ],
-      "collides_with": [
-        2552
-      ]
-    },
-    {
       "pr": 2750,
       "sha": "59adb90700c3ed9d25b71739ecc8580c0085bebb",
       "status": "merged"
@@ -192,17 +133,6 @@
       "status": "merged"
     },
     {
-      "pr": 2764,
-      "sha": "3b09b85fd264fa827fdb93ae56836631b5216db4",
-      "status": "conflict",
-      "files": [
-        "Strand/Screens/TrendsView.swift"
-      ],
-      "collides_with": [
-        2638
-      ]
-    },
-    {
       "pr": 2765,
       "sha": "3875c374ae30addc18e4cc4ce94342c11ce60045",
       "status": "merged"
@@ -218,31 +148,6 @@
       "status": "merged"
     },
     {
-      "pr": 2773,
-      "sha": "884dc13d61ab1007b4ef06c384c20240915e82f7",
-      "status": "conflict",
-      "files": [
-        "Tools/parity_dispositions.json",
-        "Tools/parity_ledger_baseline.json",
-        "Tools/parity_twin_map.json"
-      ],
-      "collides_with": [
-        2552,
-        2583
-      ]
-    },
-    {
-      "pr": 2774,
-      "sha": "a83e02b1a495e6f679d339a567e9d98202b21936",
-      "status": "conflict",
-      "files": [
-        "Strand/AI/Providers/Custom.swift"
-      ],
-      "collides_with": [
-        2754
-      ]
-    },
-    {
       "pr": 2776,
       "sha": "a821db67fe3061d80cd85b509ddf5da2b667dadb",
       "status": "merged"
@@ -251,18 +156,6 @@
       "pr": 2781,
       "sha": "e14392431ab8eab258a611f4cc757cd648c10bb0",
       "status": "merged"
-    },
-    {
-      "pr": 2784,
-      "sha": "a77c3c82cbc0bdd49bb918678481e6181bf4a647",
-      "status": "conflict",
-      "files": [
-        "android/app/src/main/res/values-pt-rPT/strings.xml"
-      ],
-      "collides_with": [
-        2776,
-        2781
-      ]
     },
     {
       "pr": 2787,
@@ -285,63 +178,75 @@
       "status": "merged"
     },
     {
-      "pr": 2832,
-      "sha": "c3fdab4189b43651e50a5ceb1b4988f4ca9e645c",
-      "status": "conflict",
-      "files": [
-        "Packages/WhoopStore/Sources/WhoopStore/Reads.swift"
-      ],
-      "collides_with": [
-        2705
-      ]
-    },
-    {
       "pr": 2833,
       "sha": "97979af18869a6cd2196309bbbbec5807673708a",
       "status": "merged"
     },
     {
-      "pr": 2904,
-      "sha": "2d4829193eb7376d18336f5e97293f3ccc5a6476",
-      "status": "conflict",
-      "files": [
-        "Strand/Resources/Localizable.xcstrings"
-      ],
-      "collides_with": [
-        2512,
-        2660,
-        2781
-      ]
-    },
-    {
-      "pr": 2905,
-      "sha": "a41d40d7387bc5297da6faf66307589e59af897e",
-      "status": "conflict",
-      "files": [
-        "Strand/Resources/Localizable.xcstrings"
-      ],
-      "collides_with": [
-        2512,
-        2660,
-        2781
-      ]
-    },
-    {
-      "pr": 2919,
-      "sha": "86ef95c881fefa52cdccb54a5a66c5e4ca635753",
-      "status": "conflict",
-      "files": [
-        "Strand/BLE/BLEManager.swift"
-      ],
-      "collides_with": [
-        2750,
-        2787,
-        2802
-      ]
-    },
-    {
       "pr": 2920,
       "sha": "506eb1efbd7a98986803fbab39f583aae47ce33f",
+      "status": "merged"
+    },
+    {
+      "lane": "parity",
+      "sha": "d99c922ce78598711abbab82cfcb74f68b4158c9",
+      "prs": [
+        2599,
+        2652,
+        2735,
+        2773
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "xcstrings",
+      "sha": "37450852674705d2c7d94e76f96dcdcaf08fbe99",
+      "prs": [
+        2661,
+        2700,
+        2904,
+        2905
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "trends",
+      "sha": "90053003c3ea089ea4f564e3721d94719c3a4a22",
+      "prs": [
+        2764
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "aiprov",
+      "sha": "88007f3c64da38c8ce79e167186298ac7ffd013b",
+      "prs": [
+        2774
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "ptpt",
+      "sha": "c06dc5d2b11ec4b7af150b1eebb7ce5591be99ab",
+      "prs": [
+        2784
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "reads",
+      "sha": "e63717b4cdf077d207bd82032fc01c2143ba0f16",
+      "prs": [
+        2832
+      ],
+      "status": "merged"
+    },
+    {
+      "lane": "ble",
+      "sha": "8ca33af02d34ef2e90fee0013200895e160d6fb4",
+      "prs": [
+        2919
+      ],
       "status": "merged"
     }
   ]
