@@ -157,6 +157,7 @@ struct CustomClient: AIProviderClient {
 
         var req = URLRequest(url: AIProvider.custom.endpoint)
         req.httpMethod = "POST"
+        req.timeoutInterval = 300   // reasoning models (GPT-5) can sit silent >60s before the first byte
         AIProvider.applyCustomAuthHeader(key, to: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
