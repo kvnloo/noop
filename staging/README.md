@@ -1,14 +1,15 @@
 # NOOP staging
 
-This branch (`staging-meta`) holds the tools that build `staging`. It shares no history with the app code.
+This branch (`staging-meta`) holds the tools that build the `stage/*` branches. The older `staging` branch is the fork's Sep 2026 base for early PRs and is untouched. It shares no history with the app code.
 
 ## Branches
 
 | Branch | Contents | Rule |
 |---|---|---|
 | `main` | Exact mirror of `ryanbr/noop` main | Fast-forward only. Upstream PRs branch from here |
-| `staging` | `main` plus open upstream PRs, each merged `--no-ff` at its pinned head | Rebuilt from `manifest.json`. Never edit it by hand |
-| `preview` | `staging` plus fork-only work (`fav/*`, `fork/*`) | What noop-channels builds for the phone |
+| `stage/<wave>-<stamp>` | `main` plus open upstream PRs, each merged `--no-ff` at its pinned head | Immutable snapshot rebuilt from `manifest.json`. Never force-pushed |
+| `stage/upstream` | The latest snapshot | Fast-forward only |
+| `preview` | `stage/upstream` plus fork-only work (`fav/*`, `fork/*`) | What noop-channels builds for the phone |
 
 ## Rebuild
 
@@ -32,4 +33,4 @@ Wave 1 is fixes, tests and translations of at most 600 changed lines. Wave 2 is 
 
 ## Build results
 
-`build` records each entry as `merged`, `landed` (upstream already merged it), `conflict` (files plus the earlier entries it collides with) or `moved` (the contributor pushed since it was pinned, so re-pin it deliberately). It never resolves a conflict. A resolution has to be its own reviewed entry.
+`build` records each entry as `merged`, `landed` (upstream already merged it), `resolved` (conflict settled by taking the files from the entry's `resolve_from` commit), `conflict` (files plus the earlier entries it collides with) or `moved` (the contributor pushed since it was pinned, so re-pin it deliberately). It never invents a resolution. A resolution is a reviewed commit on a `stage/fix-<pr>` branch, referenced by `resolve_from`.

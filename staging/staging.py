@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Rebuild kvnloo/noop `staging` = ryanbr/noop main + open upstream PRs at pinned heads.
+"""Rebuild kvnloo/noop `stage/*` = ryanbr/noop main + open upstream PRs at pinned heads.
 
     staging.py select  --wave N [--out manifest.json]   # propose entries from live GitHub state
-    staging.py build   manifest.json --repo PATH         # rebuild the `staging` branch locally
-    staging.py build   manifest.json --repo PATH --push  # ...and force-push it (it is a derived branch)
+    staging.py build   manifest.json --repo PATH         # rebuild into local branch stage-local
+    staging.py build   manifest.json --repo PATH --push  # ...and push snapshot stage/<label> (never forced)
 
 The manifest is the source of truth, and the branch can be rebuilt from it at any time.
 Each PR merges --no-ff at its exact pinned head, so contributor commits are never rewritten
@@ -107,10 +107,13 @@ def cmd_build(a):
     specs = [f"+refs/pull/{e['pr']}/head:refs/staging-pr/{e['pr']}" for e in m["entries"]]
     git("fetch", "-q", "upstream", f"+refs/heads/{m['base']}:refs/remotes/upstream/{m['base']}", *specs)
     base = git("rev-parse", f"upstream/{m['base']}").stdout.strip()
-    git("checkout", "-q", "-B", "staging", base)
+    git("checkout", "-q", "-B", "stage-local", base)
 
     results = []
-    for e in m["entries"]:
+    # Clean entries first, then entries with a resolution: each resolution was made on top of
+    # every clean merge, so it must be applied after them, in manifest order.
+    ordered = [e for e in m["entries"] if not e.get("resolve_from")] + [e for e in m["entries"] if e.get("resolve_from")]
+    for e in ordered:
         head = git("rev-parse", f"refs/staging-pr/{e['pr']}").stdout.strip()
         r = {"pr": e["pr"], "sha": e["sha"]}
         if head != e["sha"]:
@@ -123,19 +126,29 @@ def cmd_build(a):
                 r.update(status="merged")
             else:
                 files = git("diff", "--name-only", "--diff-filter=U").stdout.split()
-                git("merge", "--abort")
-                r.update(status="conflict", files=files)
+                fix = e.get("resolve_from")  # a reviewed commit holding the resolved versions of these files
+                if fix:
+                    git("fetch", "-q", "origin", fix, check=False)
+                    git("checkout", fix, "--", *files)
+                    git("commit", "-q", "--no-edit", "-m", f"{msg}\nresolved-from {fix}")
+                    r.update(status="resolved", files=files, resolve_from=fix)
+                else:
+                    git("merge", "--abort")
+                    r.update(status="conflict", files=files)
         results.append(r)
         print(f"#{e['pr']:<5} {r['status']}" + (f"  {r['files']}" if r.get("files") else ""))
 
     tip = git("rev-parse", "HEAD").stdout.strip()
     report = {"base": base, "staging": tip, "results": results}
     Path(a.report).write_text(json.dumps(report, indent=2) + "\n")
-    counts = {s: sum(r["status"] == s for r in results) for s in ("merged", "landed", "conflict", "moved")}
+    counts = {s: sum(r["status"] == s for r in results) for s in ("merged", "resolved", "landed", "conflict", "moved")}
     print(f"staging {tip[:10]} on {m['upstream']}@{base[:10]}: {counts}")
     if a.push:
-        git("push", "-q", "--force-with-lease", "origin", "staging")
-        print("pushed origin/staging")
+        # Never force: every rebuild is a new immutable snapshot; stage/upstream only fast-forwards.
+        snap = f"stage/{a.label}"
+        git("push", "-q", "origin", f"HEAD:refs/heads/{snap}")
+        ff = git("push", "-q", "origin", "HEAD:refs/heads/stage/upstream", check=False).returncode == 0
+        print(f"pushed {snap}; stage/upstream {'advanced' if ff else 'unchanged (not a fast-forward; point readers at the snapshot)'}")
 
 
 def main():
@@ -144,6 +157,7 @@ def main():
     s = sub.add_parser("select"); s.add_argument("--wave", type=int, default=1); s.add_argument("--out", default="manifest.json")
     b = sub.add_parser("build"); b.add_argument("manifest"); b.add_argument("--repo", required=True)
     b.add_argument("--report", default="report.json"); b.add_argument("--push", action="store_true")
+    b.add_argument("--label", default="snapshot", help="snapshot branch name under stage/, e.g. w1-20261120-0201")
     a = ap.parse_args()
     {"select": cmd_select, "build": cmd_build}[a.cmd](a)
 
