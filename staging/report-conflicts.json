@@ -1,0 +1,135 @@
+[
+  {
+    "pr": 2599,
+    "files": [
+      "Tools/parity_ledger_baseline.json",
+      "Tools/parity_twin_map.json"
+    ],
+    "collides_with": [
+      2552,
+      2583
+    ]
+  },
+  {
+    "pr": 2652,
+    "files": [
+      "Tools/parity_ledger_baseline.json"
+    ],
+    "collides_with": [
+      2583
+    ]
+  },
+  {
+    "pr": 2661,
+    "files": [
+      "Strand/Resources/Localizable.xcstrings"
+    ],
+    "collides_with": [
+      2512,
+      2660,
+      2781
+    ]
+  },
+  {
+    "pr": 2700,
+    "files": [
+      "Strand/Resources/Localizable.xcstrings"
+    ],
+    "collides_with": [
+      2512,
+      2660,
+      2781
+    ]
+  },
+  {
+    "pr": 2735,
+    "files": [
+      "Tools/parity_twin_map.json"
+    ],
+    "collides_with": [
+      2552
+    ]
+  },
+  {
+    "pr": 2764,
+    "files": [
+      "Strand/Screens/TrendsView.swift"
+    ],
+    "collides_with": [
+      2638
+    ]
+  },
+  {
+    "pr": 2773,
+    "files": [
+      "Tools/parity_dispositions.json",
+      "Tools/parity_ledger_baseline.json",
+      "Tools/parity_twin_map.json"
+    ],
+    "collides_with": [
+      2552,
+      2583
+    ]
+  },
+  {
+    "pr": 2774,
+    "files": [
+      "Strand/AI/Providers/Custom.swift"
+    ],
+    "collides_with": [
+      2754
+    ]
+  },
+  {
+    "pr": 2784,
+    "files": [
+      "android/app/src/main/res/values-pt-rPT/strings.xml"
+    ],
+    "collides_with": [
+      2776,
+      2781
+    ]
+  },
+  {
+    "pr": 2832,
+    "files": [
+      "Packages/WhoopStore/Sources/WhoopStore/Reads.swift"
+    ],
+    "collides_with": [
+      2705
+    ]
+  },
+  {
+    "pr": 2904,
+    "files": [
+      "Strand/Resources/Localizable.xcstrings"
+    ],
+    "collides_with": [
+      2512,
+      2660,
+      2781
+    ]
+  },
+  {
+    "pr": 2905,
+    "files": [
+      "Strand/Resources/Localizable.xcstrings"
+    ],
+    "collides_with": [
+      2512,
+      2660,
+      2781
+    ]
+  },
+  {
+    "pr": 2919,
+    "files": [
+      "Strand/BLE/BLEManager.swift"
+    ],
+    "collides_with": [
+      2750,
+      2787,
+      2802
+    ]
+  }
+]

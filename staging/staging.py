@@ -109,7 +109,7 @@ def cmd_build(a):
     ENV = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_COMMITTER_NAME": name, "GIT_AUTHOR_EMAIL": email.rstrip(">"),
            "GIT_COMMITTER_EMAIL": email.rstrip(">"), "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
     repo = a.repo
-    git = lambda *x, check=True: run("git", *x, cwd=repo, check=check)
+    git = lambda *x, check=True: run("git", "-c", "rerere.enabled=false", *x, cwd=repo, check=check)
     if git("status", "--porcelain").stdout.strip():
         sys.exit("working tree not clean")
     if git("remote", "get-url", "upstream", check=False).returncode:
@@ -181,7 +181,7 @@ def cmd_build(a):
 def cmd_verify(a):
     """The property the maintainer needs: every pinned PR head (and every lane) is in the tip's history."""
     m = json.loads(Path(a.manifest).read_text())
-    git = lambda *x, check=True: run("git", *x, cwd=a.repo, check=check)
+    git = lambda *x, check=True: run("git", "-c", "rerere.enabled=false", *x, cwd=a.repo, check=check)
     missing = [str(x) for x in [e["sha"] for e in m["entries"]] + [l["sha"] for l in m.get("lanes", [])]
                if git("merge-base", "--is-ancestor", x, a.tip, check=False).returncode]
     print(f"{len(m['entries'])} PR heads + {len(m.get('lanes', []))} lanes; missing from {a.tip}: {missing or 'none'}")
