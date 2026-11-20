@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Rebuild kvnloo/noop `staging` = ryanbr/noop main + open upstream PRs at pinned heads.
+
+    staging.py select  --wave N [--out manifest.json]   # propose entries from live GitHub state
+    staging.py build   manifest.json --repo PATH         # rebuild the `staging` branch locally
+    staging.py build   manifest.json --repo PATH --push  # ...and force-push it (it is a derived branch)
+
+The manifest is the source of truth, and the branch can be rebuilt from it at any time.
+Each PR merges --no-ff at its exact pinned head, so contributor commits are never rewritten
+and dropping a PR is deleting one manifest entry. Entries upstream has already merged report
+"landed" and add nothing. A conflict is recorded with its files and skipped. The builder never
+hand-resolves; a resolution would be its own reviewed `fixup` entry.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+UPSTREAM = "ryanbr/noop"
+UI_RESTYLES = {2892, 2902, 2903, 2907, 2918}  # competing redesigns: the maintainer's pick, not ours
+WAVE1_MAX_LINES = 600
+
+# Jobs upstream CI must have passed on the PR head, keyed by the paths that trigger them.
+REQUIRED_JOBS = [
+    (("android/",), "android", lambda n: n == "build-and-test"),
+    (("Strand/", "StrandTests/", "StrandiOS", "NOOPWatch", "project.yml", "Packages/"),
+     "app-build", lambda n: n.startswith("build (Strand")),
+    (("Packages/",), "swift-packages", lambda n: n.startswith("test (")),
+]
+
+QUERY = """query($c:String){repository(owner:"ryanbr",name:"noop"){pullRequests(states:OPEN,first:50,after:$c){
+pageInfo{hasNextPage endCursor}
+nodes{number title isDraft author{login} headRefOid additions deletions mergeable baseRefName
+commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:60){nodes{... on CheckRun{name conclusion}}}}}}}
+files(first:100){nodes{path}}}}}}"""
+
+
+def run(*cmd, cwd=None, check=True):
+    p = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
+    if check and p.returncode:
+        sys.exit(f"$ {' '.join(cmd)}\n{p.stdout}{p.stderr}")
+    return p
+
+
+def open_prs():
+    nodes, cursor = [], None
+    while True:
+        args = ["gh", "api", "graphql", "-f", f"query={QUERY}"] + (["-f", f"c={cursor}"] if cursor else [])
+        page = json.loads(run(*args).stdout)["data"]["repository"]["pullRequests"]
+        nodes += page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
+            return nodes
+        cursor = page["pageInfo"]["endCursor"]
+
+
+def gate(pr):
+    """Return None if the PR may enter staging, else the reason it may not."""
+    if pr["isDraft"]:
+        return "draft"
+    if pr["baseRefName"] != "main":
+        return f"base {pr['baseRefName']}"
+    if pr["mergeable"] != "MERGEABLE":
+        return f"upstream says {pr['mergeable'].lower()}"
+    rollup = pr["commits"]["nodes"][0]["commit"]["statusCheckRollup"]
+    if not rollup or rollup["state"] != "SUCCESS":
+        return f"ci {rollup['state'].lower() if rollup else 'none'}"
+    passed = [c["name"] for c in rollup["contexts"]["nodes"] if c and c.get("conclusion") == "SUCCESS"]
+    paths = [f["path"] for f in pr["files"]["nodes"]]
+    for prefixes, job, match in REQUIRED_JOBS:
+        if any(p.startswith(prefixes) for p in paths) and not any(match(n) for n in passed):
+            return f"{job} never ran"
+    return None
+
+
+def wave_of(pr):
+    if pr["number"] in UI_RESTYLES:
+        return None
+    small = pr["additions"] + pr["deletions"] <= WAVE1_MAX_LINES
+    return 1 if small and not pr["title"].lower().startswith("feat") else 2
+
+
+def cmd_select(a):
+    entries, held = [], []
+    for pr in sorted(open_prs(), key=lambda p: p["number"]):
+        reason = gate(pr) or (None if wave_of(pr) else "ui restyle (maintainer's choice)")
+        if reason:
+            held.append({"pr": pr["number"], "reason": reason})
+        elif wave_of(pr) <= a.wave:
+            entries.append({"pr": pr["number"], "sha": pr["headRefOid"], "author": pr["author"]["login"],
+                            "title": pr["title"], "wave": wave_of(pr)})
+    out = {"upstream": UPSTREAM, "base": "main", "entries": entries, "held": held}
+    Path(a.out).write_text(json.dumps(out, indent=2) + "\n")
+    print(f"{len(entries)} entries through wave {a.wave}, {len(held)} held -> {a.out}")
+
+
+def cmd_build(a):
+    m = json.loads(Path(a.manifest).read_text())
+    repo = a.repo
+    git = lambda *x, check=True: run("git", *x, cwd=repo, check=check)
+    if git("status", "--porcelain").stdout.strip():
+        sys.exit("working tree not clean")
+    if git("remote", "get-url", "upstream", check=False).returncode:
+        git("remote", "add", "upstream", f"https://github.com/{m['upstream']}")
+    specs = [f"+refs/pull/{e['pr']}/head:refs/staging-pr/{e['pr']}" for e in m["entries"]]
+    git("fetch", "-q", "upstream", f"+refs/heads/{m['base']}:refs/remotes/upstream/{m['base']}", *specs)
+    base = git("rev-parse", f"upstream/{m['base']}").stdout.strip()
+    git("checkout", "-q", "-B", "staging", base)
+
+    results = []
+    for e in m["entries"]:
+        head = git("rev-parse", f"refs/staging-pr/{e['pr']}").stdout.strip()
+        r = {"pr": e["pr"], "sha": e["sha"]}
+        if head != e["sha"]:
+            r.update(status="moved", now=head)  # contributor pushed; re-pin deliberately, never silently
+        elif git("merge-base", "--is-ancestor", e["sha"], base, check=False).returncode == 0:
+            r.update(status="landed")
+        else:
+            msg = f"staging: merge {m['upstream']}#{e['pr']} by @{e['author']}\n\n{e['title']}\nhead {e['sha']}"
+            if git("merge", "--no-ff", "-q", "-m", msg, e["sha"], check=False).returncode == 0:
+                r.update(status="merged")
+            else:
+                files = git("diff", "--name-only", "--diff-filter=U").stdout.split()
+                git("merge", "--abort")
+                r.update(status="conflict", files=files)
+        results.append(r)
+        print(f"#{e['pr']:<5} {r['status']}" + (f"  {r['files']}" if r.get("files") else ""))
+
+    tip = git("rev-parse", "HEAD").stdout.strip()
+    report = {"base": base, "staging": tip, "results": results}
+    Path(a.report).write_text(json.dumps(report, indent=2) + "\n")
+    counts = {s: sum(r["status"] == s for r in results) for s in ("merged", "landed", "conflict", "moved")}
+    print(f"staging {tip[:10]} on {m['upstream']}@{base[:10]}: {counts}")
+    if a.push:
+        git("push", "-q", "--force-with-lease", "origin", "staging")
+        print("pushed origin/staging")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("select"); s.add_argument("--wave", type=int, default=1); s.add_argument("--out", default="manifest.json")
+    b = sub.add_parser("build"); b.add_argument("manifest"); b.add_argument("--repo", required=True)
+    b.add_argument("--report", default="report.json"); b.add_argument("--push", action="store_true")
+    a = ap.parse_args()
+    {"select": cmd_select, "build": cmd_build}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    main()

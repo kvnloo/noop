@@ -1,0 +1,762 @@
+{
+  "upstream": "ryanbr/noop",
+  "base": "main",
+  "entries": [
+    {
+      "pr": 506,
+      "sha": "d55c40f8906a25efcd9c8716a8bee6fc0c9331ae",
+      "author": "kavemang",
+      "title": "Restore recognizable Android dashboard metric icons",
+      "wave": 1
+    },
+    {
+      "pr": 2512,
+      "sha": "5731c628f3c2ad253d89f90e17e3c3b6dea7a75c",
+      "author": "kavemang",
+      "title": "Localize Apple What\u2019s New headlines from release notes",
+      "wave": 1
+    },
+    {
+      "pr": 2532,
+      "sha": "565d47ff0fb305f653177696ec1c2dc85102fb15",
+      "author": "kavemang",
+      "title": "android: defer morning recap until recorded wake",
+      "wave": 1
+    },
+    {
+      "pr": 2552,
+      "sha": "272ee7b27addd04e2ce3fe28d8999cd3bdb00034",
+      "author": "kavemang",
+      "title": "Align Unicode numbers in Android lab marker keys",
+      "wave": 1
+    },
+    {
+      "pr": 2583,
+      "sha": "edf4db729818a400b76fda089e392312709235d3",
+      "author": "kavemang",
+      "title": "Separate WHOOP 5 HRV baseline at labelled R-R boundary",
+      "wave": 1
+    },
+    {
+      "pr": 2598,
+      "sha": "c43a09e42da3c74385134c0aa1e5c6e29bc69f85",
+      "author": "kavemang",
+      "title": "Android: restore Today recording status",
+      "wave": 1
+    },
+    {
+      "pr": 2599,
+      "sha": "83ee8eceaf9a2124cb8f6a02197bbfcfc7a5bf83",
+      "author": "kavemang",
+      "title": "Show connection diagnostics and classify strap clock faults",
+      "wave": 1
+    },
+    {
+      "pr": 2638,
+      "sha": "db8972925e2b23ac1367aa83bdc3d64a30c658f9",
+      "author": "AlexSchmidt1999",
+      "title": "Build Apple dashboard sections lazily without scroll entrance animations",
+      "wave": 1
+    },
+    {
+      "pr": 2649,
+      "sha": "daf0430a3d133c5d688c8cb732ff3c4775fa6281",
+      "author": "kavemang",
+      "title": "fix(day-cycle): recognize early bedtimes with the canonical sleep selector",
+      "wave": 1
+    },
+    {
+      "pr": 2652,
+      "sha": "df2b0a3d887afb37038acb4332f6eb5b77a19c28",
+      "author": "kavemang",
+      "title": "Android: show session and lifetime offload counts in Test Centre",
+      "wave": 1
+    },
+    {
+      "pr": 2660,
+      "sha": "e9ee598e1486fb7bfa9bf3f6b81f0115b7df8fd1",
+      "author": "UtkuDenizAltiok",
+      "title": "sleep: list deleted nights on iOS and macOS, with recompute and hide",
+      "wave": 1
+    },
+    {
+      "pr": 2661,
+      "sha": "7f9fc7aac2eb1aafeff8f335e22cc4ea4fc87d66",
+      "author": "UtkuDenizAltiok",
+      "title": "ios: a silent reminder when NOOP has not synced the strap for 3 hours",
+      "wave": 1
+    },
+    {
+      "pr": 2691,
+      "sha": "14abe9e228ed0f0d876e73713dd8048ca2c33288",
+      "author": "kavemang",
+      "title": "test(android): cover skipped-release Room upgrades with banked rows",
+      "wave": 1
+    },
+    {
+      "pr": 2693,
+      "sha": "344815f118b8115ceee2be2c1c205a0c79e25e8c",
+      "author": "kavemang",
+      "title": "Run Oura interrupted-drain source contract on Swift-only changes",
+      "wave": 1
+    },
+    {
+      "pr": 2700,
+      "sha": "847c7c60afa82fb75a6257543ce078b5182fd7d2",
+      "author": "rodrigosa7",
+      "title": "fix(alarm): move per-day wake times into alarm settings",
+      "wave": 1
+    },
+    {
+      "pr": 2704,
+      "sha": "a90989424ca85a0e15181c6bfbf33c2afb6c0b8c",
+      "author": "kavemang",
+      "title": "test(design): make recovery band assertions locale-independent",
+      "wave": 1
+    },
+    {
+      "pr": 2705,
+      "sha": "34042ba90029f7bf70522cc95a17c078956535b8",
+      "author": "kavemang",
+      "title": "perf(store): avoid per-row MAX work in the gravity witness",
+      "wave": 1
+    },
+    {
+      "pr": 2706,
+      "sha": "9d18ead5bcc89bee578faf5db862d668e21f713c",
+      "author": "kavemang",
+      "title": "fix(workouts): show saved edits before history rescoring",
+      "wave": 1
+    },
+    {
+      "pr": 2722,
+      "sha": "b6e53f382a156281d739c685ec47f1dc89a4889a",
+      "author": "UtkuDenizAltiok",
+      "title": "hrv: refuse daily SDNN from over-counted or banked beats",
+      "wave": 1
+    },
+    {
+      "pr": 2725,
+      "sha": "5f1efdd933bf41e05b82cbbd781fc5a5e23e0f6e",
+      "author": "kavemang",
+      "title": "fix(android): retry failed Stress detail reads",
+      "wave": 1
+    },
+    {
+      "pr": 2726,
+      "sha": "a2107caca036fd30ed3a808955bf64b56099a848",
+      "author": "kavemang",
+      "title": "test(sleep): cover the production bedtime resolver",
+      "wave": 1
+    },
+    {
+      "pr": 2727,
+      "sha": "136c7295dc7af352e36a491f28b361fbffa3553a",
+      "author": "kavemang",
+      "title": "fix(coach): refresh stale Android model lists on settings entry",
+      "wave": 1
+    },
+    {
+      "pr": 2728,
+      "sha": "f41eea12e47c0590ba099673c7133457a05f5b30",
+      "author": "kavemang",
+      "title": "Gate onboarding connection celebration on bond state",
+      "wave": 1
+    },
+    {
+      "pr": 2735,
+      "sha": "9ee3f30c9fb64c045ee40dea2d5ac7aa8dda369d",
+      "author": "kavemang",
+      "title": "test(analytics): cover the production recalibration fold",
+      "wave": 1
+    },
+    {
+      "pr": 2750,
+      "sha": "59adb90700c3ed9d25b71739ecc8580c0085bebb",
+      "author": "christophersarmiento",
+      "title": "fix(ble): stop labelling a WHOOP 5/MG as WHOOP 4.0",
+      "wave": 1
+    },
+    {
+      "pr": 2754,
+      "sha": "6be600c79c4f5a6f5bc11404a34bec87208844cd",
+      "author": "AlexSchmidt1999",
+      "title": "Fix Apple AI requests and refresh chat-capable model choices",
+      "wave": 1
+    },
+    {
+      "pr": 2755,
+      "sha": "7b32548a4f404ed32f8f9e3de5d11e52c911dcac",
+      "author": "AlexSchmidt1999",
+      "title": "Use the app language for Apple coach replies and briefs",
+      "wave": 1
+    },
+    {
+      "pr": 2756,
+      "sha": "4243fc158deacd42b6def23c42804f21ed24063c",
+      "author": "AlexSchmidt1999",
+      "title": "Keep Apple Today sync status from shifting the dashboard",
+      "wave": 1
+    },
+    {
+      "pr": 2757,
+      "sha": "32939b9a1d135fb5a158506a63a515adf8fca3e7",
+      "author": "AlexSchmidt1999",
+      "title": "Publish Today history results together after loading",
+      "wave": 1
+    },
+    {
+      "pr": 2762,
+      "sha": "711c2159565df4ab804f2b0240fb4c6be47bd9e7",
+      "author": "AlexSchmidt1999",
+      "title": "Use native vectorized plots for Apple line charts",
+      "wave": 1
+    },
+    {
+      "pr": 2763,
+      "sha": "9a7a373ed8e3c57bac3100d9b243db50a44e81c4",
+      "author": "AlexSchmidt1999",
+      "title": "Keep HR chart annotations stable while scrolling",
+      "wave": 1
+    },
+    {
+      "pr": 2764,
+      "sha": "3b09b85fd264fa827fdb93ae56836631b5216db4",
+      "author": "AlexSchmidt1999",
+      "title": "Reuse Trends calendar dates and heat-strip identities",
+      "wave": 1
+    },
+    {
+      "pr": 2765,
+      "sha": "3875c374ae30addc18e4cc4ce94342c11ce60045",
+      "author": "DX23876",
+      "title": "fix(today): start the journal card's load, so the card can appear",
+      "wave": 1
+    },
+    {
+      "pr": 2766,
+      "sha": "6226b3b08803d20f77843ec0599750baca1e870d",
+      "author": "DX23876",
+      "title": "fix(today): run the auto-detect scan, so \"looks like a workout?\" can appear",
+      "wave": 1
+    },
+    {
+      "pr": 2767,
+      "sha": "532e17a4901745b014d74a9c2f429e03ff8d3c1f",
+      "author": "kavemang",
+      "title": "fix(oura): refresh Last seen on authenticated ring sessions",
+      "wave": 1
+    },
+    {
+      "pr": 2773,
+      "sha": "884dc13d61ab1007b4ef06c384c20240915e82f7",
+      "author": "kavemang",
+      "title": "Test the production Android backup archive writer",
+      "wave": 1
+    },
+    {
+      "pr": 2774,
+      "sha": "a83e02b1a495e6f679d339a567e9d98202b21936",
+      "author": "midozy",
+      "title": "fix(ai): GPT-5 fails when streaming \u2014 retry with max_completion_tokens on 400",
+      "wave": 1
+    },
+    {
+      "pr": 2776,
+      "sha": "a821db67fe3061d80cd85b509ddf5da2b667dadb",
+      "author": "kavemang",
+      "title": "fix(android): report deleted sleep recompute scope accurately",
+      "wave": 1
+    },
+    {
+      "pr": 2781,
+      "sha": "e14392431ab8eab258a611f4cc757cd648c10bb0",
+      "author": "jvascopf",
+      "title": "fix(i18n): pt-PT translation corrections from a native speaker",
+      "wave": 1
+    },
+    {
+      "pr": 2784,
+      "sha": "a77c3c82cbc0bdd49bb918678481e6181bf4a647",
+      "author": "jvascopf",
+      "title": "fix(i18n): localize Android Explore window names",
+      "wave": 1
+    },
+    {
+      "pr": 2787,
+      "sha": "761278caa415a2fd4b9b0791a993385ee535fe9f",
+      "author": "matthiasthomas",
+      "title": "fix(ble): end the link when the Mac's Bluetooth powers off or resets",
+      "wave": 1
+    },
+    {
+      "pr": 2802,
+      "sha": "02b7bacc6f570a25b63325dc9421a294ce95d04e",
+      "author": "DX23876",
+      "title": "fix(ble): park the bond-loop pause's standing connect once the link is down",
+      "wave": 1
+    },
+    {
+      "pr": 2803,
+      "sha": "7ff61b6523c6010a4e503bc750d37d1fa0a59d59",
+      "author": "AlexSchmidt1999",
+      "title": "Limit Apple shell updates to displayed state",
+      "wave": 1
+    },
+    {
+      "pr": 2804,
+      "sha": "88fc778d77480380052952627a26cda48938d7f7",
+      "author": "AlexSchmidt1999",
+      "title": "Move day-cycle heart-rate processing off the main actor",
+      "wave": 1
+    },
+    {
+      "pr": 2832,
+      "sha": "c3fdab4189b43651e50a5ceb1b4988f4ca9e645c",
+      "author": "andremiliano",
+      "title": "perf(store): serve WhoopStore reads off the actor",
+      "wave": 1
+    },
+    {
+      "pr": 2833,
+      "sha": "97979af18869a6cd2196309bbbbec5807673708a",
+      "author": "andremiliano",
+      "title": "health: write each NOOP sport to Apple Health as its own activity type",
+      "wave": 1
+    },
+    {
+      "pr": 2904,
+      "sha": "2d4829193eb7376d18336f5e97293f3ccc5a6476",
+      "author": "UtkuDenizAltiok",
+      "title": "fix(charge): show skin temperature in the reader's unit in the Charge breakdown",
+      "wave": 1
+    },
+    {
+      "pr": 2905,
+      "sha": "a41d40d7387bc5297da6faf66307589e59af897e",
+      "author": "UtkuDenizAltiok",
+      "title": "fix(sleep): say when the Night detail sleep-debt tile shows WHOOP's figure",
+      "wave": 1
+    },
+    {
+      "pr": 2919,
+      "sha": "86ef95c881fefa52cdccb54a5a66c5e4ca635753",
+      "author": "matthiasthomas",
+      "title": "fix(ble): keep macOS App Nap from stalling a sync while the strap is connected",
+      "wave": 1
+    },
+    {
+      "pr": 2920,
+      "sha": "506eb1efbd7a98986803fbab39f583aae47ce33f",
+      "author": "matthiasthomas",
+      "title": "fix(trends): keep the 2W and 3W ranges from widening straight to ALL",
+      "wave": 1
+    }
+  ],
+  "held": [
+    {
+      "pr": 84,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 339,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 394,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 397,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 403,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 411,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 418,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 419,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 422,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 464,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 553,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 746,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 898,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 905,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 957,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 959,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 1078,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 1241,
+      "reason": "upstream says unknown"
+    },
+    {
+      "pr": 1256,
+      "reason": "upstream says unknown"
+    },
+    {
+      "pr": 1605,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 1630,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 1737,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2103,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2281,
+      "reason": "draft"
+    },
+    {
+      "pr": 2282,
+      "reason": "draft"
+    },
+    {
+      "pr": 2284,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2285,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2298,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2498,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2499,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2588,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2611,
+      "reason": "draft"
+    },
+    {
+      "pr": 2614,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2647,
+      "reason": "draft"
+    },
+    {
+      "pr": 2707,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2723,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2724,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2747,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2753,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2777,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2778,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2782,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2792,
+      "reason": "draft"
+    },
+    {
+      "pr": 2795,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2797,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2812,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2813,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2816,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2819,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2820,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2821,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2822,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2823,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2824,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2825,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2826,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2827,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2828,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2829,
+      "reason": "draft"
+    },
+    {
+      "pr": 2831,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2837,
+      "reason": "draft"
+    },
+    {
+      "pr": 2841,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2842,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2844,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2845,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2849,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2850,
+      "reason": "upstream says conflicting"
+    },
+    {
+      "pr": 2851,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2865,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2866,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2870,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2874,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2875,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2876,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2878,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2879,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2883,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2888,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2889,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2891,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2892,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2895,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2896,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2897,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2898,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2899,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2900,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2901,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2902,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2903,
+      "reason": "ui restyle (maintainer's choice)"
+    },
+    {
+      "pr": 2906,
+      "reason": "ci failure"
+    },
+    {
+      "pr": 2907,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2909,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2910,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2911,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2912,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2913,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2914,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2915,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2918,
+      "reason": "ci none"
+    },
+    {
+      "pr": 2921,
+      "reason": "draft"
+    }
+  ]
+}
