@@ -18,7 +18,10 @@ COMMANDS = [f"cd Packages/{p} && swift test" for p in PACKAGES] + [
 NAMES = PACKAGES + ["app-Strand"]
 IOS = ["brew install xcodegen >/dev/null && xcodegen generate && xcodebuild -scheme NOOPiOS -configuration Debug "
        "-destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build"]
-LANES = {"macos-15": (COMMANDS, NAMES), "macos-26": (IOS, ["app-NOOPiOS"])}
+LINUX = ['export JAVA_HOME="$JAVA_HOME_17_X64" && cd android && ./gradlew --no-daemon assembleFullDebug testFullDebugUnitTest',
+         "cd Tools && python3 -m unittest discover -p 'test_*.py'"]
+LANES = {"macos-15": (COMMANDS, NAMES), "macos-26": (IOS, ["app-NOOPiOS"]),
+         "ubuntu-latest": (LINUX, ["android", "tools-python"])}
 
 
 def gh(*a):
@@ -49,7 +52,7 @@ def dispatch_one(label, sha, runner):
 
 def collect(run, out):
     jobs = json.loads(gh("run", "view", str(run), "-R", "kvnloo/fleet-runner", "--json", "jobs,status,displayTitle"))
-    names = LANES["macos-26" if "macos-26" in jobs["displayTitle"] else "macos-15"][1]
+    names = LANES[next((r for r in LANES if r in jobs["displayTitle"]), "macos-15")][1]
     res = {}
     for j in jobs["jobs"]:
         if j["name"].startswith("verify-"):
