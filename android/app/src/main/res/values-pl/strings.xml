@@ -2473,6 +2473,7 @@
     <string name="today_driver_value_percent">%1$d%%</string>
     <string name="today_driver_value_br_min">%1$s oddechów/min</string>
     <string name="today_driver_value_temp_deviation">%1$s °C względem bazy</string>
+    <string name="today_driver_value_temp_deviation_fahrenheit">%1$s °F względem bazy</string>
     <string name="today_driver_baseline_ms">baza %1$d ms</string>
     <string name="today_driver_baseline_bpm">baza %1$d ud./min</string>
     <string name="today_driver_baseline_br_min">baza %1$s oddechów/min</string>
@@ -2880,4 +2881,5 @@
     <string name="test_centre_no_offload_yet">jeszcze nie przesłano danych</string>
     <string name="today_customize_live_session_availability">Pojawia się dzisiaj, gdy sesje na żywo są włączone w Ustawieniach lub trwa sesja.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Dziś po swojemu, tętno dostępne dla każdej aplikacji i język włoski</string>
+    <string name="sleep_debt_from_whoop">Z WHOOP</string>
 </resources>

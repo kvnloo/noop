@@ -2377,6 +2377,7 @@
     <string name="today_driver_value_percent">%1$d%%</string>
     <string name="today_driver_value_br_min">%1$s 次呼吸/分</string>
     <string name="today_driver_value_temp_deviation">相对基线 %1$s°C</string>
+    <string name="today_driver_value_temp_deviation_fahrenheit">相对基线 %1$s°F</string>
     <string name="today_driver_baseline_ms">基线 %1$d 毫秒</string>
     <string name="today_driver_baseline_bpm">基线 %1$d 次/分</string>
     <string name="today_driver_baseline_br_min">基线 %1$s 次呼吸/分</string>
@@ -2834,4 +2835,5 @@
     <string name="test_centre_no_offload_yet">尚未传输</string>
     <string name="today_customize_live_session_availability">在设置中启用Live Sessions 实时记录或有正在进行的训练时，今天会显示此部分。</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">自定义「今天」页面、任何应用都能读取的心率，以及意大利语</string>
+    <string name="sleep_debt_from_whoop">来自 WHOOP</string>
 </resources>

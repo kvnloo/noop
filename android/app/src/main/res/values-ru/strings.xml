@@ -2390,6 +2390,7 @@
     <string name="today_driver_value_bpm">%1$d уд/мин</string>
     <string name="today_driver_value_br_min">%1$s вд/мин</string>
     <string name="today_driver_value_temp_deviation">%1$s °C относительно нормы</string>
+    <string name="today_driver_value_temp_deviation_fahrenheit">%1$s °F относительно нормы</string>
     <string name="today_driver_baseline_ms">норма %1$d мс</string>
     <string name="today_driver_baseline_bpm">норма %1$d уд/мин</string>
     <string name="today_driver_baseline_br_min">норма %1$s вд/мин</string>
@@ -2759,4 +2760,5 @@
     <string name="test_centre_no_offload_yet">передачи ещё не было</string>
     <string name="today_customize_live_session_availability">Появляется сегодня, если сессии в реальном времени включены в Настройках или сеанс уже активен.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">«Сегодня» на ваш вкус, пульс для любого приложения и итальянский язык</string>
+    <string name="sleep_debt_from_whoop">Данные WHOOP</string>
 </resources>

@@ -2476,6 +2476,7 @@
     <string name="today_driver_value_percent">%1$d%%</string>
     <string name="today_driver_value_br_min">%1$s Atemz./Min.</string>
     <string name="today_driver_value_temp_deviation">%1$s °C gegenüber Basiswert</string>
+    <string name="today_driver_value_temp_deviation_fahrenheit">%1$s °F gegenüber Basiswert</string>
     <string name="today_driver_baseline_ms">Basiswert %1$d ms</string>
     <string name="today_driver_baseline_bpm">Basiswert %1$d bpm</string>
     <string name="today_driver_baseline_br_min">Basiswert %1$s Atemz./Min.</string>
@@ -2877,4 +2878,5 @@
     <string name="test_centre_no_offload_yet">noch keine Übertragung</string>
     <string name="today_customize_live_session_availability">Erscheint heute, wenn Live Sessions in den Einstellungen aktiviert sind oder eine Session aktiv ist.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today nach Ihren Wünschen, Herzfrequenz für jede App und Italienisch</string>
+    <string name="sleep_debt_from_whoop">Von WHOOP</string>
 </resources>

@@ -2463,6 +2463,7 @@
     <string name="today_driver_value_percent">%1$d%%</string>
     <string name="today_driver_value_br_min">%1$s resp./min</string>
     <string name="today_driver_value_temp_deviation">%1$s °C frente a la referencia</string>
+    <string name="today_driver_value_temp_deviation_fahrenheit">%1$s °F frente a la referencia</string>
     <string name="today_driver_baseline_ms">referencia de %1$d ms</string>
     <string name="today_driver_baseline_bpm">referencia de %1$d lpm</string>
     <string name="today_driver_baseline_br_min">referencia de %1$s resp./min</string>
@@ -2864,4 +2865,5 @@
     <string name="test_centre_no_offload_yet">aún no hay transferencia</string>
     <string name="today_customize_live_session_availability">Aparece hoy si Live Sessions está activado en Ajustes o hay una sesión activa.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Hoy a tu manera, frecuencia cardíaca para cualquier aplicación e italiano</string>
+    <string name="sleep_debt_from_whoop">De WHOOP</string>
 </resources>
