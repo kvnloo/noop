@@ -56,10 +56,24 @@ struct OpenAIClient: AIProviderClient {
 
         let req = try chatRequest(key: key, model: model, wire: wire, stream: true)
 
-        try await performStreamingRequest(req, session: session) { payload in
-            if let delta = SseDeltas.openAiDelta(payload) {
-                onDelta(delta)
+        do {
+            try await performStreamingRequest(req, session: session) { payload in
+                if let delta = SseDeltas.openAiDelta(payload) {
+                    onDelta(delta)
+                }
             }
+        } catch let AICoachError.server(code, detail) where code == 400 {
+            // A parameter or streaming rejection (e.g. a model the account may not stream) arrives
+            // before any delta, so fall back to the non-streaming `send` and emit the full reply as
+            // one delta.
+            let d = detail.lowercased()
+            guard d.contains("max_completion_tokens") || d.contains("max_tokens")
+                    || d.contains("temperature") || d.contains("unsupported") else {
+                throw AICoachError.server(code, detail)
+            }
+            let reply = try await send(key: key, model: model, systemPrompt: systemPrompt,
+                                       messages: messages, session: session)
+            onDelta(reply)
         }
     }
 
@@ -93,6 +107,7 @@ struct OpenAIClient: AIProviderClient {
     ) throws -> URLRequest {
         var req = URLRequest(url: AIProvider.openAI.endpoint)
         req.httpMethod = "POST"
+        req.timeoutInterval = 300   // reasoning models (GPT-5) can sit silent >60s before the first byte
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: openAIChatBody(model: model, messages: wire, stream: stream))
