@@ -34,7 +34,7 @@ internal data class TestCentreLiveSnapshot(
     val connected: Boolean = false,
     val strapNewestUnix: Long? = null,
     val lastFrameUnix: Long? = null,
-    val allTimeDrainedRows: Long = 0,
+    val cumulativeDrainedRows: Long = 0,
     val batteryPct: Double? = null,
     val currentLinkBatteryPct: Double? = null,
     val batteryEstimate: BatteryEstimator.Estimate? = null,
@@ -70,7 +70,7 @@ internal object TestCentreLiveReadouts {
     val mappedIds: Set<String> = setOf(
         "hrDensityNow", "gravityCoverageNow", "lastNightGateFired",
         "connectionUptime", "reconnectCount", "lastOffloadResult", "sessionRows",
-        "allTimeDrainedRows", "clockStatus", "lastFrame", "clockWarning",
+        "allTimeRows", "clockStatus", "lastFrame", "clockWarning",
         "lastSessionSummary", "deviceMetricsNow", "lastImportSummary",
         "stepsToday", "calibrationState",
         "currentSoc", "estimateDaysLeft", "slopeSource",
@@ -113,8 +113,8 @@ internal object TestCentreLiveReadouts {
                 "sessionRows" -> LiveReadoutRow(
                     id, "Rows drained (session)", ConnectionReadout.sessionRows(tail)?.toString() ?: "no offload yet",
                 )
-                "allTimeDrainedRows" -> LiveReadoutRow(
-                    id, "Rows drained (all time)", snapshot.allTimeDrainedRows.toString(),
+                "allTimeRows" -> LiveReadoutRow(
+                    id, "Rows drained (all time)", snapshot.cumulativeDrainedRows.toString(),
                 )
                 "clockStatus" -> LiveReadoutRow(
                     id, "Clock", ConnectionReadout.clockStatusLabel(

@@ -132,7 +132,8 @@ final class TestModeRegistryTests: XCTestCase {
 
     func testPhase2LiveReadoutIds() {
         XCTAssertEqual(TestModeRegistry.mode(.connection)?.liveReadout,
-                       ["connectionUptime", "reconnectCount", "lastOffloadResult"])
+                       ["connectionUptime", "reconnectCount", "lastOffloadResult", "sessionRows", "allTimeRows",
+                        "clockStatus", "lastFrame", "clockWarning"])
         XCTAssertEqual(TestModeRegistry.mode(.workouts)?.liveReadout, ["lastSessionSummary"])
         XCTAssertEqual(TestModeRegistry.mode(.display)?.liveReadout, ["deviceMetricsNow"])
         XCTAssertEqual(TestModeRegistry.mode(.dataImport)?.liveReadout, ["lastImportSummary"])

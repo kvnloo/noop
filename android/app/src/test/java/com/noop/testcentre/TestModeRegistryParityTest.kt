@@ -172,9 +172,10 @@ class TestModeRegistryParityTest {
     }
 
     @Test fun phase2LiveReadoutIds() {
-        assertEquals(listOf("connectionUptime", "reconnectCount", "lastOffloadResult",
-            "sessionRows", "allTimeDrainedRows", "clockStatus", "lastFrame", "clockWarning"),
-            TestModeRegistry.mode(TestDomain.CONNECTION)?.liveReadout)
+        // Verbatim stdout from optimized Swift TestDomain.swift + TestModeRegistry.swift,
+        // printing mode(.connection)!.liveReadout joined with newline separators.
+        assertEquals("connectionUptime\nreconnectCount\nlastOffloadResult\nsessionRows\nallTimeRows\nclockStatus\nlastFrame\nclockWarning\n",
+            TestModeRegistry.mode(TestDomain.CONNECTION)!!.liveReadout.joinToString("\n") + "\n")
         assertEquals(listOf("lastSessionSummary"),
             TestModeRegistry.mode(TestDomain.WORKOUTS)?.liveReadout)
         assertEquals(listOf("deviceMetricsNow"),

@@ -688,7 +688,7 @@ private fun TestCentreLiveReadoutPanel(
     vm: AppViewModel,
 ) {
     val context = LocalContext.current
-    val testCentre = remember { TestCentre.from(context) }
+    val testCentre = remember(context) { TestCentre.from(context) }
     var hrSamples by remember(mode.id) { mutableStateOf(emptyList<HrSample>()) }
     var gravitySamples by remember(mode.id) { mutableStateOf(emptyList<GravitySample>()) }
     var batteryEstimate by remember(mode.id) { mutableStateOf<BatteryEstimator.Estimate?>(null) }
@@ -752,7 +752,7 @@ private fun TestCentreLiveReadoutPanel(
             connected = live.connected,
             strapNewestUnix = live.strapNewestUnix.takeIf { live.connected },
             lastFrameUnix = vm.ble.lastInboundFrameUnix().takeIf { live.connected },
-            allTimeDrainedRows = testCentre.cumulativeDrainedRows(),
+            cumulativeDrainedRows = if (mode.domain == TestDomain.CONNECTION) testCentre.cumulativeDrainedRows() else 0,
             batteryPct = live.batteryPct,
             currentLinkBatteryPct = live.batteryPct.takeIf { live.connected && live.batterySeenThisLink },
             batteryEstimate = batteryEstimate,
@@ -766,9 +766,17 @@ private fun TestCentreLiveReadoutPanel(
                 Text(row.value, style = NoopType.footnote, color = Palette.textSecondary)
             } else if (row.id != "clockWarning") {
             Row(Modifier.fillMaxWidth()) {
-                Text(row.label, style = NoopType.footnote, color = Palette.textTertiary)
+                val label = when (row.id) {
+                    "sessionRows" -> stringResource(R.string.test_centre_rows_drained_session)
+                    "allTimeRows" -> stringResource(R.string.test_centre_rows_drained_all_time)
+                    else -> row.label
+                }
+                val value = if (row.id == "sessionRows" && row.value == "no offload yet") {
+                    stringResource(R.string.test_centre_no_offload_yet)
+                } else row.value
+                Text(label, style = NoopType.footnote, color = Palette.textTertiary)
                 Spacer(Modifier.weight(1f))
-                Text(row.value, style = NoopType.mono, color = Palette.textSecondary)
+                Text(value, style = NoopType.mono, color = Palette.textSecondary)
             }
             }
         }

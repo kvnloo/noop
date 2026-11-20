@@ -87,7 +87,7 @@ object TestModeRegistry {
             Question("otherDevicePaired", "Is another phone or the WHOOP app paired to the strap right now?", Question.Kind.YES_NO),
         ),
         liveReadout = listOf("connectionUptime", "reconnectCount", "lastOffloadResult",
-            "sessionRows", "allTimeDrainedRows", "clockStatus", "lastFrame", "clockWarning"),
+            "sessionRows", "allTimeRows", "clockStatus", "lastFrame", "clockWarning"),
         capture = CaptureKind.Toggle,
         includesScreenshot = false, requires5MG = false,
     )
