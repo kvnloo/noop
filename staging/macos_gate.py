@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Run upstream's macOS suites for one public kvnloo/noop commit on fleet-runner (free macos-14).
+"""Run upstream's macOS suites for one public kvnloo/noop commit on fleet-runner, on upstream's runners.
 
-    macos_gate.py dispatch <label> <sha>      # 9 parallel jobs: 8 Swift packages + Strand app test
+    macos_gate.py dispatch <label> <sha>      # macos-15: 8 Swift packages + Strand app test; macos-26: NOOPiOS build
     macos_gate.py collect  <run-id> <out-dir> # per-job conclusion -> <out-dir>/macos.json
-
-The iOS app leg needs the iOS 26 SDK (macos-26), which fleet-runner can't provide: NOT_EXECUTED.
 """
 import json
 import subprocess
@@ -18,6 +16,9 @@ COMMANDS = [f"cd Packages/{p} && swift test" for p in PACKAGES] + [
     "brew install xcodegen >/dev/null && xcodegen generate && xcodebuild -scheme Strand -configuration Debug "
     "-destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test"]
 NAMES = PACKAGES + ["app-Strand"]
+IOS = ["brew install xcodegen >/dev/null && xcodegen generate && xcodebuild -scheme NOOPiOS -configuration Debug "
+       "-destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build"]
+LANES = {"macos-15": (COMMANDS, NAMES), "macos-26": (IOS, ["app-NOOPiOS"])}
 
 
 def gh(*a):
@@ -25,31 +26,37 @@ def gh(*a):
 
 
 def dispatch(label, sha):
+    for runner in LANES:
+        dispatch_one(f"{label}-{runner}", sha, runner)
+
+
+def dispatch_one(label, sha, runner):
+    cmds = LANES[runner][0]
     rid = f"noop-{label}-{int(time.time())}"
     gh("workflow", "run", "verify.yml", "-R", "kvnloo/fleet-runner", "-f", "repository=kvnloo/noop",
-       "-f", f"sha={sha}", "-f", "runner=macos-14", "-f", "command=true", "-f", f"matrix={json.dumps(COMMANDS)}",
-       "-f", f"parallel={len(COMMANDS)}", "-f", "timeout_minutes=150", "-f", f"request_id={rid}")
+       "-f", f"sha={sha}", "-f", f"runner={runner}", "-f", "command=true", "-f", f"matrix={json.dumps(cmds)}",
+       "-f", f"parallel={len(cmds)}", "-f", "timeout_minutes=150", "-f", f"request_id={rid}")
     for _ in range(30):
         time.sleep(4)
         runs = json.loads(gh("run", "list", "-R", "kvnloo/fleet-runner", "--workflow", "verify.yml", "-L", "20",
                              "--json", "databaseId,displayTitle"))
         hit = [r["databaseId"] for r in runs if r["displayTitle"] == f"fleet-{rid}"]
         if hit:
-            print(json.dumps({"label": label, "sha": sha, "run": hit[0]}))
+            print(json.dumps({"label": label, "sha": sha, "runner": runner, "run": hit[0]}))
             return
     sys.exit(f"dispatched {rid} but no run appeared")
 
 
 def collect(run, out):
-    jobs = json.loads(gh("run", "view", str(run), "-R", "kvnloo/fleet-runner", "--json", "jobs,status"))
+    jobs = json.loads(gh("run", "view", str(run), "-R", "kvnloo/fleet-runner", "--json", "jobs,status,displayTitle"))
+    names = LANES["macos-26" if "macos-26" in jobs["displayTitle"] else "macos-15"][1]
     res = {}
     for j in jobs["jobs"]:
         if j["name"].startswith("verify-"):
             i = int(j["name"].split("-")[1])
-            res[NAMES[i]] = j["conclusion"] or j["status"]
-    res["app-NOOPiOS"] = "NOT_EXECUTED (needs macos-26)"
+            res[names[i]] = j["conclusion"] or j["status"]
     Path(out).mkdir(parents=True, exist_ok=True)
-    Path(out, "macos.json").write_text(json.dumps({"run": run, "status": jobs["status"], "jobs": res}, indent=2))
+    Path(out, f"macos-{run}.json").write_text(json.dumps({"run": run, "status": jobs["status"], "jobs": res}, indent=2))
     print(json.dumps(res))
 
 
