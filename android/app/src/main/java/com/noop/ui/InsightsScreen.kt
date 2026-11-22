@@ -62,6 +62,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import com.noop.analytics.BehaviorEffect
 import com.noop.analytics.EffectRanker
+import com.noop.analytics.PersonalExperiment
 
 // MARK: - Insights
 //
@@ -421,10 +422,9 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
             val candidates = experimentCandidates(behaviours, importedQuestions, hiddenQuestions, experimentBehaviour)
             val expOutcome = Outcome.entries.firstOrNull { it.outcomeName == experimentOutcomeName } ?: Outcome.Recovery
             val resolvedBehaviour = resolveExperimentBehaviour(candidates, experimentBehaviour)
-            val snapshot = remember(model, behaviours, experimentStartedDay, experimentOutcomeName, experimentDurationDays, experimentBaselineDays, experimentSeq) {
+            val snapshot = remember(model, experimentStartedDay, experimentOutcomeName, experimentDurationDays, experimentBaselineDays, experimentSeq) {
                 buildExperimentSnapshot(
                     model = model,
-                    behaviours = behaviours,
                     startedDay = experimentStartedDay,
                     outcome = expOutcome,
                     behaviour = resolvedBehaviour,
@@ -898,26 +898,26 @@ private data class ExperimentSnapshot(
     val behavior: String,
     val outcome: Outcome,
     val startDay: String,
-    val durationDays: Int,
-    val daysElapsed: Int,
-    val baselineMean: Double?,
-    val baselineCount: Int,
-    val interventionMean: Double?,
-    val interventionCount: Int,
-    val loggedToday: Boolean,
-    /** 0…100 percent. */
-    val compliance: Double,
-    val confidence: ExperimentConfidence,
+    val stats: PersonalExperiment.Snapshot,
 ) {
+    val durationDays get() = stats.durationDays
+    val daysElapsed get() = stats.daysElapsed
+    val baselineMean get() = stats.baselineMean
+    val baselineCount get() = stats.baselineCount
+    val interventionMean get() = stats.interventionMean
+    val interventionCount get() = stats.interventionCount
+    val loggedToday get() = stats.loggedToday
+    val compliance get() = stats.compliance
     val progress: Float get() = (daysElapsed.toFloat() / durationDays.coerceAtLeast(1)).coerceIn(0f, 1f)
     val phaseLabel: String get() =
         if (daysElapsed >= durationDays) "COMPLETE" else "DAY $daysElapsed/$durationDays"
     val phaseTone: StrandTone get() =
         if (daysElapsed >= durationDays) StrandTone.Positive else StrandTone.Accent
-    val delta: Double? get() {
-        val i = interventionMean ?: return null
-        val b = baselineMean ?: return null
-        return i - b
+    val delta get() = stats.delta
+    val confidence: ExperimentConfidence get() = when (stats.confidence) {
+        PersonalExperiment.Confidence.Stronger -> ExperimentConfidence("STRONGER SIGNAL", StrandTone.Positive)
+        PersonalExperiment.Confidence.Early -> ExperimentConfidence("EARLY SIGNAL", StrandTone.Accent)
+        PersonalExperiment.Confidence.Low -> ExperimentConfidence("LOW SIGNAL", StrandTone.Warning)
     }
     val deltaCaption: String get() =
         if (delta == null) "needs baseline + logged days" else "vs behaviour-free baseline"
@@ -1313,7 +1313,6 @@ private fun resolveExperimentBehaviour(candidates: List<String>, saved: String):
 
 private fun buildExperimentSnapshot(
     model: InsightModel,
-    behaviours: Map<String, Set<String>>,
     startedDay: String,
     outcome: Outcome,
     behaviour: String?,
@@ -1323,58 +1322,17 @@ private fun buildExperimentSnapshot(
     if (startedDay.isEmpty() || behaviour == null) return null
 
     val today = journalDayKey(0L)
-    val duration = durationDays.coerceAtLeast(1)
-    val outcomeDays = model.outcomeByDay[outcome] ?: emptyMap()
-    val loggedDays = behaviours[behaviour] ?: emptySet()
-
-    // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
-    // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
-    // "Intervention" is an honest present-vs-absent contrast, not a raw pre/post window.
-    val baselineKeys = outcomeDays.keys
-        .filter { it < startedDay && it !in loggedDays }
-        .sorted()
-        .takeLast(baselineDays.coerceAtLeast(1))
-    // Intervention = the first `duration` outcome days from the start where the
-    // behaviour WAS logged.
-    val interventionWindow = outcomeDays.keys
-        .filter { it >= startedDay && it <= today }
-        .sorted()
-        .take(duration)
-    val interventionKeys = interventionWindow.filter { it in loggedDays }
-
-    val baselineValues = baselineKeys.mapNotNull { outcomeDays[it] }
-    val interventionValues = interventionKeys.mapNotNull { outcomeDays[it] }
-    val daysElapsed = (dayDistance(startedDay, today) + 1).coerceIn(1, duration)
-    val complianceFraction = interventionKeys.size.toDouble() / daysElapsed.coerceAtLeast(1)
-    val confidence = experimentConfidence(baselineValues.size, interventionValues.size, complianceFraction)
-
-    return ExperimentSnapshot(
-        behavior = behaviour,
-        outcome = outcome,
-        startDay = startedDay,
-        durationDays = duration,
-        daysElapsed = daysElapsed,
-        baselineMean = mean(baselineValues),
-        baselineCount = baselineValues.size,
-        interventionMean = mean(interventionValues),
-        interventionCount = interventionValues.size,
-        loggedToday = today in loggedDays,
-        compliance = complianceFraction * 100,
-        confidence = confidence,
+    val stats = PersonalExperiment.snapshot(
+        outcomeDays = model.outcomeByDay[outcome].orEmpty(),
+        loggedDays = model.behaviours[behaviour].orEmpty(),
+        controlDays = model.controls[behaviour].orEmpty(),
+        startedDay = startedDay,
+        today = today,
+        daysSinceStart = dayDistance(startedDay, today),
+        durationDays = durationDays,
+        baselineDays = baselineDays,
     )
-}
-
-private fun experimentConfidence(
-    baselineCount: Int,
-    interventionCount: Int,
-    compliance: Double,
-): ExperimentConfidence {
-    val paired = minOf(baselineCount, interventionCount)
-    return when {
-        paired >= 10 && compliance >= 0.65 -> ExperimentConfidence("STRONGER SIGNAL", StrandTone.Positive)
-        paired >= 5 -> ExperimentConfidence("EARLY SIGNAL", StrandTone.Accent)
-        else -> ExperimentConfidence("LOW SIGNAL", StrandTone.Warning)
-    }
+    return ExperimentSnapshot(behavior = behaviour, outcome = outcome, startDay = startedDay, stats = stats)
 }
 
 private fun experimentReading(s: ExperimentSnapshot): String {
@@ -1416,9 +1374,6 @@ private fun dayDistance(start: String, end: String): Int {
         0
     }
 }
-
-private fun mean(values: List<Double>): Double? =
-    if (values.isEmpty()) null else values.sum() / values.size
 
 // MARK: - Experiment persistence (SharedPreferences, parity with Swift @AppStorage keys)
 

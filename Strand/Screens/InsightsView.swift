@@ -803,47 +803,17 @@ struct InsightsView: View {
         else { return nil }
 
         let today = Repository.localDayKey(Date())
-        let duration = max(1, experimentDurationDays)
-        let outcomeDays = outcomeByKey[outcome.key] ?? [:]
-        let loggedDays = behaviours[behavior] ?? []
-
-        // Baseline = behaviour-ABSENT days BEFORE the start (with/without model, matching
-        // Behaviour Effects). Restricting to absent days is triage fix (c): "Baseline" vs
-        // "Intervention" is now an honest present-vs-absent contrast, not a raw pre/post window.
-        let baselineDays = outcomeDays.keys
-            .filter { $0 < experimentStartedDay && !loggedDays.contains($0) }
-            .sorted()
-            .suffix(max(1, experimentBaselineDays))
-        // Intervention = the first `duration` outcome days in the window where the behaviour
-        // WAS logged.
-        let interventionWindow = outcomeDays.keys
-            .filter { $0 >= experimentStartedDay && $0 <= today }
-            .sorted()
-            .prefix(duration)
-        let interventionDays = interventionWindow.filter { loggedDays.contains($0) }
-
-        let baselineValues = baselineDays.compactMap { outcomeDays[$0] }
-        let interventionValues = interventionDays.compactMap { outcomeDays[$0] }
-        let daysElapsed = max(1, min(duration, dayDistance(from: experimentStartedDay, to: today) + 1))
-        let complianceFraction = Double(interventionDays.count) / Double(max(daysElapsed, 1))
-        let confidence = experimentConfidence(baselineCount: baselineValues.count,
-                                              interventionCount: interventionValues.count,
-                                              compliance: complianceFraction)
-
-        return ExperimentSnapshot(
-            behavior: behavior,
-            outcome: outcome,
-            startDay: experimentStartedDay,
-            durationDays: duration,
-            daysElapsed: daysElapsed,
-            baselineMean: Self.mean(baselineValues),
-            baselineCount: baselineValues.count,
-            interventionMean: Self.mean(interventionValues),
-            interventionCount: interventionValues.count,
-            loggedToday: loggedDays.contains(today),
-            compliance: complianceFraction * 100,
-            confidence: confidence
+        let stats = PersonalExperiment.snapshot(
+            outcomeDays: outcomeByKey[outcome.key] ?? [:],
+            loggedDays: behaviours[behavior] ?? [],
+            controlDays: controls[behavior] ?? [],
+            startedDay: experimentStartedDay,
+            today: today,
+            daysSinceStart: dayDistance(from: experimentStartedDay, to: today),
+            durationDays: experimentDurationDays,
+            baselineDays: experimentBaselineDays
         )
+        return ExperimentSnapshot(behavior: behavior, outcome: outcome, startDay: experimentStartedDay, stats: stats)
     }
 
     private func startExperiment() {
@@ -869,19 +839,6 @@ struct InsightsView: View {
                                      question: behavior,
                                      answeredYes: answeredYes)
         await load()
-    }
-
-    private func experimentConfidence(baselineCount: Int,
-                                      interventionCount: Int,
-                                      compliance: Double) -> ExperimentConfidence {
-        let pairedCount = min(baselineCount, interventionCount)
-        if pairedCount >= 10, compliance >= 0.65 {
-            return .init(label: String(localized: "STRONGER SIGNAL"), tone: .positive)
-        }
-        if pairedCount >= 5 {
-            return .init(label: String(localized: "EARLY SIGNAL"), tone: .accent)
-        }
-        return .init(label: String(localized: "LOW SIGNAL"), tone: .warning)
     }
 
     private func experimentReading(_ snapshot: ExperimentSnapshot) -> String {
@@ -946,11 +903,6 @@ struct InsightsView: View {
         return components.date
     }
 
-    private static func mean(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        return values.reduce(0, +) / Double(values.count)
-    }
-
     /// The namespaced outcome key a numeric journal item's series is folded under (#322). Prefixed so
     /// it can never collide with a fixed metric outcome key. Pure + tested (mirrors Android).
     static func numericJournalKey(_ question: String) -> String { "journal.numeric:" + question }
@@ -959,26 +911,30 @@ struct InsightsView: View {
         let behavior: String
         let outcome: Outcome
         let startDay: String
-        let durationDays: Int
-        let daysElapsed: Int
-        let baselineMean: Double?
-        let baselineCount: Int
-        let interventionMean: Double?
-        let interventionCount: Int
-        let loggedToday: Bool
-        let compliance: Double
-        let confidence: ExperimentConfidence
+        let stats: PersonalExperiment.Snapshot
 
+        var durationDays: Int { stats.durationDays }
+        var daysElapsed: Int { stats.daysElapsed }
+        var baselineMean: Double? { stats.baselineMean }
+        var baselineCount: Int { stats.baselineCount }
+        var interventionMean: Double? { stats.interventionMean }
+        var interventionCount: Int { stats.interventionCount }
+        var loggedToday: Bool { stats.loggedToday }
+        var compliance: Double { stats.compliance }
+        var confidence: ExperimentConfidence {
+            switch stats.confidence {
+            case .stronger: return .init(label: String(localized: "STRONGER SIGNAL"), tone: .positive)
+            case .early: return .init(label: String(localized: "EARLY SIGNAL"), tone: .accent)
+            case .low: return .init(label: String(localized: "LOW SIGNAL"), tone: .warning)
+            }
+        }
         var progress: Double { min(1, Double(daysElapsed) / Double(max(durationDays, 1))) }
         var phaseLabel: String {
             daysElapsed >= durationDays ? String(localized: "COMPLETE")
                                         : String(localized: "DAY \(daysElapsed)/\(durationDays)")
         }
         var phaseTone: StrandTone { daysElapsed >= durationDays ? .positive : .accent }
-        var delta: Double? {
-            guard let interventionMean, let baselineMean else { return nil }
-            return interventionMean - baselineMean
-        }
+        var delta: Double? { stats.delta }
         var deltaCaption: String {
             guard delta != nil else { return String(localized: "needs baseline + logged days") }
             return String(localized: "vs behaviour-free baseline")
