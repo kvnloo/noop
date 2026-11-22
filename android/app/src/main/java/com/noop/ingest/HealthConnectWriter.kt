@@ -228,22 +228,7 @@ object HealthConnectWriter {
         val floor = now - WINDOW_DAYS * 86_400
         val frontier = maxOf(NoopPrefs.hcHrFrontier(context), floor)
 
-        val samples = repo.hrSamplesForDevice(deviceId, from = frontier + 1, to = now, limit = 200_000)
-            .map { HealthExportPlan.HrPoint(it.ts, it.bpm) }
-        if (samples.isEmpty()) return 0
-
-        // Locally computed nights live under the "-noop" sibling, not the raw strap id.
-        // Use the same merged view as writeSleep, or a strap-only night's HR is decimated
-        // even though NOOP has a completed sleep session (#1525). A night may start before
-        // the last writeback frontier; look back one day to recover its window for NEW HR.
-        val sleepInputs = repo.sleepSessionsMerged(deviceId, maxOf(floor, frontier - 86_400L), now)
-            .map { HealthExportPlan.SleepInput(it.startTs, it.effectiveStartTs, it.endTs, it.stagesJSON) }
-        val windows = buildList {
-            repo.workouts(deviceId, frontier, now).forEach { add(HealthExportPlan.Window(it.startTs, it.endTs)) }
-            addAll(HealthExportPlan.finalizedSleepWindows(sleepInputs, now))
-        }
-
-        val plan = HealthExportPlan.heartRate(samples, windows, frontier)
+        val plan = planHeartRate(repo, deviceId, floor, frontier, now)
         if (plan.chunks.isEmpty()) {
             if (plan.newFrontierSec > frontier) NoopPrefs.setHcHrFrontier(context, plan.newFrontierSec)
             return 0
@@ -267,6 +252,33 @@ object HealthConnectWriter {
         val n = insertChunked(client, records)
         NoopPrefs.setHcHrFrontier(context, plan.newFrontierSec)
         return n
+    }
+
+    internal suspend fun planHeartRate(
+        repo: WhoopRepository,
+        deviceId: String,
+        floor: Long,
+        frontier: Long,
+        now: Long,
+    ): HealthExportPlan.HrPlan {
+        val samples = repo.hrSamplesForDevice(deviceId, from = frontier + 1, to = now, limit = 200_000)
+            .map { HealthExportPlan.HrPoint(it.ts, it.bpm) }
+        if (samples.isEmpty()) return HealthExportPlan.HrPlan(emptyList(), frontier)
+
+        // Locally computed nights live under the "-noop" sibling, not the raw strap id.
+        // Keep the merged source preference for overlapping windows, but retain disjoint raw naps
+        // even when a computed night wins the wake day. Look back one day for sessions that started
+        // before the frontier but still contain NEW HR.
+        val sleepInputs = repo.sleepSessionsMerged(
+            deviceId, maxOf(floor, frontier - 86_400L), now, keepDisjointRawForHr = true,
+        )
+            .map { HealthExportPlan.SleepInput(it.startTs, it.effectiveStartTs, it.endTs, it.stagesJSON) }
+        val windows = buildList {
+            repo.workouts(deviceId, frontier, now).forEach { add(HealthExportPlan.Window(it.startTs, it.endTs)) }
+            addAll(HealthExportPlan.finalizedSleepWindows(sleepInputs, now))
+        }
+
+        return HealthExportPlan.heartRate(samples, windows, frontier)
     }
 
     /**

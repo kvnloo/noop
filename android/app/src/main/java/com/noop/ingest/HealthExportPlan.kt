@@ -83,8 +83,8 @@ object HealthExportPlan {
 
     /**
      * Full-resolution HR applies to completed sleep sessions only, from the effective (possibly
-     * user-edited) onset. The caller uses the merged raw + computed "-noop" sleep view, matching
-     * the sleep writer; an unfinished or inverted session must not widen HR export resolution.
+     * user-edited) onset. The caller uses the merged raw + computed "-noop" view plus disjoint
+     * raw windows; an unfinished or inverted session must not widen HR export resolution.
      */
     fun finalizedSleepWindows(sessions: List<SleepInput>, nowSec: Long): List<Window> =
         sessions.filter { it.endTs > it.startTs && it.endTs <= nowSec }
