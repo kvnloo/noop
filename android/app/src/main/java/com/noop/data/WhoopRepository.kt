@@ -2182,10 +2182,25 @@ class WhoopRepository(
         from: Long,
         to: Long,
         limit: Int = DEFAULT_LIMIT,
-    ): List<SleepSession> = mergeSleep(
-        imported = importedSourceIds(deviceId).reversed().flatMap { dao.sleepSessions(it, from, to, limit) },
-        computed = computedSourceIds(deviceId).reversed().flatMap { dao.sleepSessions(it, from, to, limit) },
-    )
+        keepDisjointRawForHr: Boolean = false,
+    ): List<SleepSession> {
+        val imported = importedSourceIds(deviceId).reversed().flatMap { dao.sleepSessions(it, from, to, limit) }
+        val computed = computedSourceIds(deviceId).reversed().flatMap { dao.sleepSessions(it, from, to, limit) }
+        val merged = mergeSleep(imported, computed)
+        if (!keepDisjointRawForHr) return merged
+
+        // The wake-day winner still supplies overlapping windows. For HR only, a separate raw nap
+        // must not disappear just because a richer computed night wins its day. Use effective
+        // bounds and ignore unfinished/inverted windows, just as the writer does.
+        fun finalized(s: SleepSession) = s.endTs > s.effectiveStartTs && s.endTs <= to
+        val preferred = merged.filter(::finalized)
+        val disjointRaw = imported.filter { raw ->
+            finalized(raw) && preferred.none {
+                raw.effectiveStartTs <= it.endTs && it.effectiveStartTs <= raw.endTs
+            }
+        }
+        return (merged + disjointRaw).sortedBy { it.startTs }
+    }
 
     /** ALL imported sleep BLOCKS across every registered WHOOP (active first, archived included,
      *  canonical last), keeping every session
