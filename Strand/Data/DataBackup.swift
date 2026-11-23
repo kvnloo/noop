@@ -585,8 +585,8 @@ enum DataBackup {
     }
 
     /// Copy a consistent SQLite snapshot while the app's GRDB pool is still open.
-    /// SQLite's backup API reads committed WAL frames as well as main-file pages and
-    /// produces one standalone database. A busy or failed copy must never be used for
+    /// SQLite's backup API reads committed WAL frames as well as main-file pages without
+    /// checkpointing the live database. A busy or failed copy must never be used for
     /// rollback; its caller leaves the original database and WAL in place.
     private static func snapshotDatabase(from sourceURL: URL, to destinationURL: URL) throws {
         var sourceHandle: OpaquePointer?
@@ -616,6 +616,22 @@ enum DataBackup {
         guard stepStatus == SQLITE_DONE, finishStatus == SQLITE_OK else {
             throw NSError(domain: "DataBackup.SQLiteSnapshot",
                           code: Int(stepStatus == SQLITE_DONE ? finishStatus : stepStatus))
+        }
+
+        // The backup can inherit the source's WAL header even though all pages are in
+        // the destination. Require DELETE mode so read-only opens don't need a WAL/SHM.
+        var journalMode: OpaquePointer?
+        let prepareStatus = sqlite3_prepare_v2(destination, "PRAGMA journal_mode=DELETE", -1, &journalMode, nil)
+        guard prepareStatus == SQLITE_OK, let journalMode else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(prepareStatus))
+        }
+        defer { sqlite3_finalize(journalMode) }
+        let modeStatus = sqlite3_step(journalMode)
+        guard modeStatus == SQLITE_ROW else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(modeStatus))
+        }
+        guard let mode = sqlite3_column_text(journalMode, 0), String(cString: mode) == "delete" else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(SQLITE_ERROR))
         }
     }
 

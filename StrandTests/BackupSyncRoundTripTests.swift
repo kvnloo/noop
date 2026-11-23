@@ -82,6 +82,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
             return XCTFail("Restore must succeed while the current store has a WAL, got \(result)")
         }
 
+        try assertStandaloneSQLite(at: sidecar)
         XCTAssertEqual(try deviceRows(in: sidecar), ["original", "wal-only"],
                        "The user's rollback snapshot must include both committed rows")
         XCTAssertEqual(try deviceRows(in: liveDB), ["replacement"],
@@ -105,6 +106,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
         guard case .failure = result else {
             return XCTFail("The deliberately missing copy source must force rollback, got \(result)")
         }
+        try assertStandaloneSQLite(at: liveDB)
         XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"],
                        "Rollback must recover the row that existed only in the WAL")
 
@@ -112,7 +114,9 @@ final class BackupSyncRoundTripTests: XCTestCase {
             at: tmp, includingPropertiesForKeys: nil
         ).filter { $0.lastPathComponent.hasPrefix("whoop-replaced-") && $0.pathExtension == "sqlite" }
         XCTAssertEqual(snapshots.count, 1)
-        XCTAssertEqual(try deviceRows(in: XCTUnwrap(snapshots.first)), ["original", "wal-only"],
+        let snapshot = try XCTUnwrap(snapshots.first)
+        try assertStandaloneSQLite(at: snapshot)
+        XCTAssertEqual(try deviceRows(in: snapshot), ["original", "wal-only"],
                        "The saved pre-import snapshot must also be a complete standalone database")
     }
 
@@ -348,6 +352,14 @@ final class BackupSyncRoundTripTests: XCTestCase {
     }
 
     // MARK: - SQLite fixtures (system SQLite3)
+
+    private func assertStandaloneSQLite(at url: URL) throws {
+        let header = try XCTUnwrap(FileHandle(forReadingFrom: url).read(upToCount: 20))
+        // SQLite header write/read versions are 1 for rollback journaling and 2 for WAL.
+        XCTAssertEqual(Array(header.dropFirst(18)), [1, 1], "Snapshot must not require WAL/SHM")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-wal"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-shm"))
+    }
 
     /// Leave an uncheckpointed commit in a live WAL while restore takes its snapshot.
     private func openWalWriter(at url: URL) throws -> OpaquePointer {
