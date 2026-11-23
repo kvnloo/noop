@@ -60,6 +60,55 @@ final class BackupSyncRoundTripTests: XCTestCase {
                        "Restored DB should hold exactly the backed-up rows")
     }
 
+    // MARK: - #2877: the pre-import snapshot must include committed WAL pages
+
+    func testPreImportSnapshotIncludesCommittedWalRows() throws {
+        let liveDB = tmp.appendingPathComponent("live.sqlite")
+        try stageUncheckpointedWal(at: liveDB)
+        XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"])
+
+        let replacement = tmp.appendingPathComponent("replacement.sqlite")
+        try makeNoopDatabase(at: replacement, deviceRows: ["replacement"])
+        let result = DataBackup.restore(from: replacement, toDatabaseAt: liveDB.path,
+                                        settingsDefaults: try freshDefaults())
+        guard case .imported(let sidecar) = result else {
+            return XCTFail("Restore must succeed while the current store has a WAL, got \(result)")
+        }
+
+        try assertStandaloneSQLite(at: sidecar)
+        XCTAssertEqual(try deviceRows(in: sidecar), ["original", "wal-only"],
+                       "The user's rollback snapshot must include both committed rows")
+        XCTAssertEqual(try deviceRows(in: liveDB), ["replacement"],
+                       "The selected backup must still become the new live database")
+    }
+
+    func testFailedRestoreRollsBackCommittedWalRows() throws {
+        let liveDB = tmp.appendingPathComponent("live.sqlite")
+        try stageUncheckpointedWal(at: liveDB)
+        XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"])
+
+        // Using the live file as the picked source forces the replacement copy to fail:
+        // the restore removes that source path immediately before copyItem. Unlike a
+        // corrupt staged backup, this reaches the REAL post-snapshot rollback branch.
+        let result = DataBackup.restore(from: liveDB, toDatabaseAt: liveDB.path,
+                                        settingsDefaults: try freshDefaults())
+        guard case .failure = result else {
+            return XCTFail("The deliberately missing copy source must force rollback, got \(result)")
+        }
+        try assertStandaloneSQLite(at: liveDB)
+        XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"],
+                       "Rollback must recover the row that existed only in the WAL")
+
+        let snapshots = try FileManager.default.contentsOfDirectory(
+            at: tmp, includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.hasPrefix("whoop-replaced-") && $0.pathExtension == "sqlite" }
+        XCTAssertEqual(snapshots.count, 1)
+        let snapshot = try XCTUnwrap(snapshots.first)
+        try assertStandaloneSQLite(at: snapshot)
+        XCTAssertEqual(try deviceRows(in: snapshot), ["original", "wal-only"],
+                       "The saved pre-import snapshot must also be a complete standalone database")
+    }
+
     // MARK: - Settings round trip (#1000: restore brings back weight/height/settings)
 
     func testBackupWithSettingsRestoresSettingsAfterDbSwap() throws {
@@ -292,6 +341,55 @@ final class BackupSyncRoundTripTests: XCTestCase {
     }
 
     // MARK: - SQLite fixtures (system SQLite3)
+
+    private func assertStandaloneSQLite(at url: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let header = try XCTUnwrap(handle.read(upToCount: 20), file: file, line: line)
+        // SQLite header write/read versions are 1 for rollback journaling and 2 for WAL.
+        let name = url.lastPathComponent
+        XCTAssertEqual(Array(header.dropFirst(18)), [1, 1], "\(name) must not require WAL/SHM",
+                       file: file, line: line)
+        for suffix in ["-wal", "-shm"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + suffix),
+                           "Unexpected sibling: \(name)\(suffix)", file: file, line: line)
+        }
+    }
+
+    /// Stage a main/WAL pair that needs recovery, without holding the file restore will replace open.
+    private func stageUncheckpointedWal(at url: URL) throws {
+        let fixture = tmp.appendingPathComponent("wal-fixture.sqlite")
+        try makeNoopDatabase(at: fixture, deviceRows: ["original"])
+        let writer = try openWalWriter(at: fixture)
+        defer { sqlite3_close(writer) }
+
+        let mainBeforeInsert = try Data(contentsOf: fixture)
+        try exec(writer, "INSERT INTO device (id) VALUES ('wal-only')")
+        XCTAssertEqual(try Data(contentsOf: fixture), mainBeforeInsert,
+                       "The committed row must still be in the WAL, not the main file")
+
+        // The fixture has no other connections or writers. Do not copy its transient SHM:
+        // SQLite can rebuild the WAL index when it opens the staged pair.
+        let fm = FileManager.default
+        try fm.copyItem(at: fixture, to: url)
+        try fm.copyItem(atPath: fixture.path + "-wal", toPath: url.path + "-wal")
+    }
+
+    private func openWalWriter(at url: URL) throws -> OpaquePointer {
+        var handle: OpaquePointer?
+        guard sqlite3_open(url.path, &handle) == SQLITE_OK, let writer = handle else {
+            sqlite3_close(handle)
+            throw TestError("open WAL writer failed")
+        }
+        do {
+            try exec(writer, "PRAGMA journal_mode=WAL")
+            try exec(writer, "PRAGMA wal_autocheckpoint=0")
+            return writer
+        } catch {
+            sqlite3_close(writer)
+            throw error
+        }
+    }
 
     /// Build a minimal valid GRDB-origin NOOP DB: a `grdb_migrations` bookkeeping table (so the origin
     /// gate accepts it as this app's backup) plus a `device` table holding the given identifiers.
