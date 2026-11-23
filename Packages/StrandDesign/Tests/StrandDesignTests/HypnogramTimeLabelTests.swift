@@ -54,4 +54,60 @@ final class HypnogramTimeLabelTests: XCTestCase {
         XCTAssertEqual(h.timeLabel(ordinary[0].start), "0:00",
                        "a few seconds of slack must still round to the start of the night")
     }
+    private func scrubFixture() -> Hypnogram {
+        // A partial night with a two-minute hole. Actual onset offset is nonzero.
+        Hypnogram(intervals: [
+            SleepInterval(stage: .light, start: 29_411, end: 30_011),
+            SleepInterval(stage: .rem, start: 30_131, end: 30_611),
+        ], smoothingSeconds: 0)
+    }
+
+    func testTouchScrubUsesExactPositionNotStageMidpoint() {
+        let chart = scrubFixture()
+        guard let light = chart.scrubHit(atX: 30, in: CGSize(width: 120, height: 180)),
+              let rem = chart.scrubHit(atX: 95, in: CGSize(width: 120, height: 180)) else {
+            return XCTFail("expected time-coordinate hits")
+        }
+        // 1200 seconds / 120 points = 10 seconds per point.
+        XCTAssertEqual(light.offset, 29_711, accuracy: 0.001) // 29411 + 30 * 10
+        XCTAssertEqual(light.intervalIndex, 0)
+        XCTAssertEqual(chart.timeLabel(light.offset), "8:15")
+        XCTAssertEqual(rem.offset, 30_361, accuracy: 0.001) // 29411 + 95 * 10
+        XCTAssertEqual(rem.intervalIndex, 1)
+    }
+
+    func testTouchScrubRetainsTimeInHoleWithoutInventingStage() {
+        let chart = scrubFixture()
+        guard let gap = chart.scrubHit(atX: 65, in: CGSize(width: 120, height: 180)) else {
+            return XCTFail("expected time at the gap")
+        }
+        XCTAssertEqual(gap.offset, 30_061, accuracy: 0.001) // inside (30011, 30131)
+        XCTAssertNil(gap.intervalIndex)
+        XCTAssertEqual(chart.timeLabel(gap.offset), "8:21")
+    }
+
+    func testTouchScrubReportsNoStageInGapCoveredByDefaultSmoothing() {
+        let chart = Hypnogram(intervals: [
+            SleepInterval(stage: .light, start: 0, end: 600),
+            SleepInterval(stage: .awake, start: 720, end: 750),
+            SleepInterval(stage: .rem, start: 750, end: 1100),
+        ])
+        XCTAssertEqual(chart.intervals.first?.end, 750, "the display still bridges the gap")
+
+        guard let gap = chart.scrubHit(atX: 66, in: CGSize(width: 110, height: 180)) else {
+            return XCTFail("expected time at the gap")
+        }
+        XCTAssertEqual(gap.offset, 660, accuracy: 0.001)
+        XCTAssertNil(gap.intervalIndex)
+    }
+
+    func testTouchScrubClampsEdgesAndRejectsMissingGeometry() {
+        let chart = scrubFixture()
+        XCTAssertEqual(chart.scrubHit(atX: -5, in: CGSize(width: 120, height: 180))?.offset, 29_411)
+        XCTAssertEqual(chart.scrubHit(atX: 150, in: CGSize(width: 120, height: 180))?.offset, 30_611)
+        XCTAssertNil(chart.scrubHit(atX: 20, in: CGSize(width: 0, height: 180)))
+        XCTAssertNil(chart.scrubHit(atX: .nan, in: CGSize(width: 120, height: 180)))
+        XCTAssertNil(Hypnogram(intervals: []).scrubHit(atX: 20, in: CGSize(width: 120, height: 180)))
+    }
+
 }

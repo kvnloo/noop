@@ -87,7 +87,7 @@ struct StageDetailView: View {
                 case .classic:
                     stageTimelineCard(s, subtitle: subtitle, intervals: intervals, night: night)
                 case .filled, .garminFilled, .ribbon:
-                    steppedHypnogramCard(s, subtitle: subtitle, intervals: intervals, style: chartStyle)
+                    steppedHypnogramCard(s, subtitle: subtitle, intervals: intervals, night: night, style: chartStyle)
                 }
             } else {
                 ChartCard(
@@ -165,11 +165,11 @@ struct StageDetailView: View {
 
     /// #sleep-chart-style — the WHOOP-style stepped hypnogram (Filled = each stage banded to the baseline,
     /// Ribbon = a slim band) for the read-only Today host card, with the per-stage breakdown as the legend.
-    /// Matches Android `StagesHostCard`: no clock axis (this card carries no session window). Only routed
-    /// here when the night has ≥2 real segments; the stages/totals are identical to Classic.
+    /// The existing night supplies absolute clock time to the readout; the compact host omits the axis.
+    /// Only routed here when the night has ≥2 real segments; stages/totals match Classic.
     @ViewBuilder
     private func steppedHypnogramCard(_ s: Stages, subtitle: String, intervals: [SleepInterval],
-                                      style: SleepChartStyle) -> some View {
+                                      night: Night, style: SleepChartStyle) -> some View {
         ChartCard(
             title: "Stage breakdown",
             subtitle: subtitle,
@@ -182,7 +182,7 @@ struct StageDetailView: View {
                     height: NoopMetrics.chartHeight,
                     showsStageAxis: false,
                     showsHover: true,
-                    nightStart: nil,
+                    nightStart: night.onsetDate,
                     showsTimeAxis: false,
                     filled: style.isFilled,
                     stagePalette: style.stagePalette
