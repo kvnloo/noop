@@ -86,6 +86,21 @@ final class HypnogramTimeLabelTests: XCTestCase {
         XCTAssertEqual(chart.timeLabel(gap.offset), "8:21")
     }
 
+    func testTouchScrubReportsNoStageInGapCoveredByDefaultSmoothing() {
+        let chart = Hypnogram(intervals: [
+            SleepInterval(stage: .light, start: 0, end: 600),
+            SleepInterval(stage: .awake, start: 720, end: 750),
+            SleepInterval(stage: .rem, start: 750, end: 1100),
+        ])
+        XCTAssertEqual(chart.intervals.first?.end, 750, "the display still bridges the gap")
+
+        guard let gap = chart.scrubHit(atX: 66, in: CGSize(width: 110, height: 180)) else {
+            return XCTFail("expected time at the gap")
+        }
+        XCTAssertEqual(gap.offset, 660, accuracy: 0.001)
+        XCTAssertNil(gap.intervalIndex)
+    }
+
     func testTouchScrubClampsEdgesAndRejectsMissingGeometry() {
         let chart = scrubFixture()
         XCTAssertEqual(chart.scrubHit(atX: -5, in: CGSize(width: 120, height: 180))?.offset, 29_411)

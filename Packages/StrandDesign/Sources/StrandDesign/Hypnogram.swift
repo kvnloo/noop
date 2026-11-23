@@ -44,6 +44,7 @@ struct HypnogramTouchHit: Equatable {
 public struct Hypnogram: View {
 
     public var intervals: [SleepInterval]
+    private let rawIntervals: [SleepInterval]
     /// Height of the plotting band.
     public var height: CGFloat
     /// Whether to draw the stage labels down the left edge.
@@ -83,6 +84,7 @@ public struct Hypnogram: View {
         stagePalette: SleepStagePalette = .noop
     ) {
         let sorted = intervals.sorted { $0.start < $1.start }
+        self.rawIntervals = sorted
         self.intervals = smoothingSeconds > 0
             ? Hypnogram.displaySmoothed(sorted, minDuration: smoothingSeconds)
             : sorted
@@ -427,6 +429,10 @@ public struct Hypnogram: View {
         guard !intervals.isEmpty, size.width.isFinite, size.width > 0, x.isFinite else { return nil }
         let fraction = min(1.0, max(0.0, Double(x / size.width)))
         let offset = origin + fraction * span
+        // Smoothing can bridge a recording gap. Check raw coverage before selecting a drawn band.
+        guard rawIntervals.contains(where: { offset >= $0.start && offset <= $0.end }) else {
+            return HypnogramTouchHit(offset: offset, intervalIndex: nil)
+        }
         let index = intervals.firstIndex { offset >= $0.start && offset <= $0.end }
         return HypnogramTouchHit(offset: offset, intervalIndex: index)
     }
