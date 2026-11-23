@@ -208,7 +208,11 @@ fun AddDeviceWizard(
     // A scan is started only after permission AND the system radio-enable consent have completed.
     // Preserve the chosen device family across both dialogs, including rescan and Oura's own flow.
     var pendingScanType by remember { mutableStateOf<DeviceType?>(null) }
-    val requestBluetoothScan = rememberRequestScan {
+    var enableHint by remember { mutableStateOf<String?>(null) }
+    val requestBluetoothScan = rememberRequestScan(onEnableHint = { hint ->
+        enableHint = hint
+        if (hint != null) pendingScanType = null
+    }) {
         pendingScanType?.let { t ->
             pendingScanType = null
             startScan(t)
@@ -233,6 +237,7 @@ fun AddDeviceWizard(
     DisposableEffect(Unit) { onDispose { stopAllScans() } }
 
     fun goBack() {
+        enableHint = null
         // The Oura type runs its own step machine; back walks that, falling out to the type list from Gate.
         if (type == DeviceType.Oura) {
             when (ouraStep) {
@@ -467,7 +472,7 @@ fun AddDeviceWizard(
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(hTitle, style = NoopType.title2, color = Palette.textPrimary)
-                    hSub?.let {
+                    (enableHint ?: hSub)?.let {
                         Text(it, style = NoopType.caption, color = Palette.textTertiary)
                     }
                 }

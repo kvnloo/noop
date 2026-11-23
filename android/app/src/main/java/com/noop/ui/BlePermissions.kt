@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.noop.R
 
 /**
  * The runtime permissions a BLE scan needs on this OS version. Android 12+ (API 31) uses the
@@ -48,19 +49,34 @@ internal fun bleScanAction(
 internal fun shouldResumeBleScan(accepted: Boolean, bluetoothEnabled: Boolean): Boolean =
     accepted && bluetoothEnabled
 
+internal fun handleBluetoothEnableResult(
+    accepted: Boolean,
+    bluetoothEnabled: Boolean,
+    onReady: () -> Unit,
+    onDenied: () -> Unit,
+) {
+    if (shouldResumeBleScan(accepted, bluetoothEnabled)) {
+        onReady()
+    } else if (!accepted) {
+        onDenied()
+    }
+}
+
 /**
  * Requests runtime BLE permissions, then the Android system Bluetooth-enable prompt if necessary,
- * before invoking [onGranted]. A denial/cancel never starts a scan; a later tap can retry.
+ * before invoking [onGranted]. A denial/cancel reports through [onEnableHint] without starting a
+ * scan. A later tap clears the hint and can retry.
  *
  * Keep this at the Compose boundary so every caller (including the Add Device wizard) can use the
  * ActivityResult launchers. The BLE client and ViewModel must not switch the radio on themselves.
  */
 @SuppressLint("MissingPermission")
 @Composable
-fun rememberRequestScan(onGranted: () -> Unit): () -> Unit {
+fun rememberRequestScan(onEnableHint: (String?) -> Unit, onGranted: () -> Unit): () -> Unit {
     val context = LocalContext.current
     val perms = remember { blePermissions() }
     val onReady = rememberUpdatedState(onGranted)
+    val updateEnableHint = rememberUpdatedState(onEnableHint)
     val adapter = remember(context) {
         (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     }
@@ -73,9 +89,14 @@ fun rememberRequestScan(onGranted: () -> Unit): () -> Unit {
     val enableBluetooth = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        if (shouldResumeBleScan(result.resultCode == Activity.RESULT_OK, radioEnabled())) {
-            onReady.value()
-        }
+        handleBluetoothEnableResult(
+            accepted = result.resultCode == Activity.RESULT_OK,
+            bluetoothEnabled = radioEnabled(),
+            onReady = onReady.value,
+            onDenied = {
+                updateEnableHint.value(uiString(R.string.ble_enable_scan_denied))
+            },
+        )
     }
 
     fun proceedAfterPermissions() {
@@ -95,6 +116,7 @@ fun rememberRequestScan(onGranted: () -> Unit): () -> Unit {
     }
 
     return {
+        updateEnableHint.value(null)
         if (perms.all {
                 ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
             }) {

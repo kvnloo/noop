@@ -126,7 +126,8 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
     // The runtime Bluetooth permission gates scanning. If it isn't granted, the Connect button
     // REQUESTS it (rather than silently doing nothing), then connects once allowed. Shared with
     // Settings → Re-scan via rememberRequestScan so no entry point can forget the gate (issue #1).
-    val requestConnect = rememberRequestScan { viewModel.connect() }
+    var enableHint by remember { mutableStateOf<String?>(null) }
+    val requestConnect = rememberRequestScan(onEnableHint = { enableHint = it }) { viewModel.connect() }
 
     // Keep the realtime HR stream on while this screen is visible (ref-counted in the ViewModel, so
     // navigating to Health Monitor — which also wants it — doesn't stop it). Refresh battery on bond.
@@ -266,7 +267,7 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
         }
 
         // Why it's in this state and what to try (permission, strap busy, not found…).
-        live.statusNote?.let { note ->
+        (enableHint ?: live.statusNote)?.let { note ->
             item {
             Text(
                 note,

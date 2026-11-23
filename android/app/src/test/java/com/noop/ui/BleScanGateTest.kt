@@ -46,4 +46,25 @@ class BleScanGateTest {
         assertFalse(shouldResumeBleScan(accepted = true, bluetoothEnabled = false))
         assertTrue(shouldResumeBleScan(accepted = true, bluetoothEnabled = true))
     }
+
+    @Test
+    fun cancelledEnable_showsReasonWithoutScanningOrRetrying() {
+        val reason = "Bluetooth is off. Turn it on to scan."
+        val actions = mutableListOf<String>()
+        val onUserScan = {
+            if (bleScanAction(true, true, false) == BleScanAction.REQUEST_ENABLE) actions.add("prompt")
+        }
+
+        onUserScan()
+        handleBluetoothEnableResult(
+            accepted = false,
+            bluetoothEnabled = false,
+            onReady = { actions.add("scan") },
+            onDenied = { actions.add(reason) },
+        )
+        assertEquals(listOf("prompt", reason), actions)
+
+        onUserScan()
+        assertEquals(listOf("prompt", reason, "prompt"), actions)
+    }
 }
