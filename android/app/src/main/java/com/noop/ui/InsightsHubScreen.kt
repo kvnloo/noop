@@ -80,21 +80,17 @@ import kotlin.math.roundToInt
 //     Charge tomorrow" — driven by a small dose stepper on the latest Charge. Never a nudge
 //     to drink or abstain.
 //
-// SELF-CONTAINED: owns its own InsightsHubViewModel (constructed from vm.repo + cached days);
-// does NOT edit AppViewModel / AppRoot / the central nav. Wave 3 surfaces it at the head of the
-// Insights hub. All maths is in com.noop.analytics (EffectRanker / DoseResponseEngine).
+// Owns its InsightsHubViewModel, fed by the repository and AppViewModel's daily snapshot.
+// Wave 3 surfaces it at the head of the Insights hub. All maths is in com.noop.analytics
+// (EffectRanker / DoseResponseEngine).
 
 @Composable
 fun InsightsHubScreen(vm: AppViewModel) {
-    val days by vm.recentDays.collectAsState()
-    val activeStrap by vm.activeStrapIdFlow.collectAsState()
-    val strapId = activeStrap ?: vm.activeStrapId
+    val daily by vm.insightsDays.collectAsState(initial = InsightsDailySnapshot())
     val hub = remember { InsightsHubViewModel() }
     val state by hub.state.collectAsState()
 
-    // A strap re-pair can change where Rest was banked without changing the
-    // visible daily rows. Reload with an explicit active id in either case.
-    androidx.compose.runtime.LaunchedEffect(days, strapId) { hub.load(vm, days, strapId) }
+    androidx.compose.runtime.LaunchedEffect(daily) { hub.load(vm, daily) }
 
     var outcome by remember { mutableStateOf(InsightsOutcome.Recovery) }
     val ranked = remember(state, outcome) { hub.rankFor(state, outcome) }
@@ -490,7 +486,7 @@ internal enum class InsightsOutcome(
     Recovery("Charge", "Charge", "recovery", true, DomainTheme.Charge, { it.recovery }, { "${it.roundToInt()}%" }),
     Hrv("HRV", "HRV", "hrv", true, DomainTheme.Rest, { it.avgHrv }, { "${it.roundToInt()} ms" }),
     // The Rest score is the 0..100 sleep_performance COMPOSITE, not the raw
-    // DailyMetric.efficiency (0..1). load() obtains it via resolvedSeries.
+    // DailyMetric.efficiency (0..1). It comes from the daily snapshot's resolved series.
     Sleep("Rest", "Rest", "sleep_performance", true, DomainTheme.Rest, { null }, { "${it.roundToInt()}%" }),
     Rhr("RHR", "Resting HR", "rhr", false, DomainTheme.Stress, { it.restingHr?.toDouble() }, { "${it.roundToInt()} bpm" }),
 }
@@ -603,7 +599,7 @@ internal class InsightsHubViewModel {
         }
     }
 
-    suspend fun load(vm: AppViewModel, days: List<DailyMetric>, strapDeviceId: String) {
+    suspend fun load(vm: AppViewModel, daily: InsightsDailySnapshot) {
         // Drop the previous device/window's readout while async resolution
         // runs, rather than displaying a stale score from another strap.
         _state.value = Snapshot()
@@ -623,19 +619,7 @@ internal class InsightsHubViewModel {
         val behaviours = byBehaviour.mapValues { it.value.toSet() }
         val controls = controlsByBehaviour.mapValues { it.value.toSet() }
 
-        // Rest is not a daily column. Read the canonical 0..100 composite from
-        // the SAME imported > computed > daily-fallback resolver as Today/Explore.
-        // Bound the query to the cached day window; do not scan all history.
-        val restByDay = if (days.isEmpty()) emptyMap() else {
-            vm.repo.resolvedSeries(
-                key = InsightsOutcome.Sleep.key,
-                preferredSource = "my-whoop",
-                from = days.minOf { it.day },
-                to = days.maxOf { it.day },
-                strapDeviceId = strapDeviceId,
-            ).points.associate { it.day to it.value }
-        }
-        val outcomeByKey = insightOutcomeSeries(days, restByDay)
+        val outcomeByKey = insightOutcomeSeries(daily.days, daily.restByDay)
 
         // Dose rows per dosed behaviour, under the dedicated dose source; logged "yes" days
         // back-fill dose = 1, explicit dose rows override (matches the Swift contract).
