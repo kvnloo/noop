@@ -12,6 +12,10 @@ class SleepWearHistoryWindowTest {
         assertTrue(IntelligencePersistence.historyRepairIsPending(effortDone = true, sleepWearDone = false))
         assertTrue(IntelligencePersistence.historyRepairIsPending(effortDone = false, sleepWearDone = true))
         assertFalse(IntelligencePersistence.historyRepairIsPending(effortDone = true, sleepWearDone = true))
+        assertTrue(IntelligencePersistence.historyRepairIsPending(
+            effortDone = true, sleepWearDone = true, watchRecoveryDone = false))
+        assertFalse(IntelligencePersistence.historyRepairIsPending(
+            effortDone = true, sleepWearDone = true, watchRecoveryDone = true))
     }
 
     @Test fun repairNeverWidensWritesAcrossUnscoredHistory() {

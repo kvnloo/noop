@@ -1201,11 +1201,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         !IntelligencePersistence.historyRepairIsPending(
                             effortDone = NoopPrefs.effortRescoreDone(appContext),
                             sleepWearDone = NoopPrefs.sleepWearRescoreDone(appContext),
+                            watchRecoveryDone = NoopPrefs.watchRecoveryRescoreDone(appContext),
                         )
                     },
                     flagSet = {
                         NoopPrefs.setEffortRescoreDone(appContext)
                         NoopPrefs.setSleepWearRescoreDone(appContext)
+                        NoopPrefs.setWatchRecoveryRescoreDone(appContext)
                     },
                     // #1567: this rewrites the FULL history once, so a missing owner source would bake the
                     // WHOOP5 skin-temp scale into every day of it.

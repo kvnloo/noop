@@ -76,6 +76,19 @@ final class IntelligenceWatchRecoveryTests: XCTestCase {
         XCTAssertNotNil(scored.last!.recovery)
     }
 
+    /// #1987: the original usable-RHR gate did not revise previously stored source-only Charge.
+    /// An old 98.57 stored value must not influence the repaired calculation: nine valid HRV
+    /// nights at 45 ms, no prior RHR, and today's 52 bpm yield the HRV-only 57.9324252.
+    func testLegacyInflatedWatchChargeReplaysFromSource() {
+        let prior = (1...9).map {
+            appleRow(day: String(format: "2026-06-%02d", $0), hrv: 45, rhr: nil)
+        }
+        let old = appleRow(day: "2026-06-10", hrv: 45, rhr: 52)
+            .with(recovery: 98.57, skinTempDevC: nil, skinTempC: nil)
+        let rescored = IntelligenceEngine.watchRecoveries(appleRows: prior + [old])
+        XCTAssertEqual(rescored.last?.recovery ?? -1, 57.932425214874954, accuracy: 1e-12)
+    }
+
     /// #823: the SAME source-only fold the wearable-import (Oura/Fitbit/Garmin/Health Connect) lane now uses
     /// to score Charge for an import-only day. The rows are import DailyMetric rows (HRV + RHR, recovery nil);
     /// with enough trailing history the latest import-only day comes out with a real Charge, so an
