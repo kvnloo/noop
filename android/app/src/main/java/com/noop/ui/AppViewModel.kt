@@ -769,6 +769,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         repository.recentDaysMergedFlow(deviceId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    // Insights reads the bounded day window and resolved Rest for the same strap.
+    internal val insightsDays = insightsDailySnapshots(
+        activeStrapIds = activeStrapIdFlow.map { it ?: noopApp.activeDeviceId }.distinctUntilChanged(),
+        daysFor = repository::recentDaysMergedFlow,
+    ) { id, from, to ->
+        repository.resolvedSeries(
+            key = "sleep_performance",
+            preferredSource = "my-whoop",
+            from = from,
+            to = to,
+            strapDeviceId = id,
+        ).points.associate { it.day to it.value }
+    }
+
     /**
      * #2525: the Charge baselines (HRV, resting HR, respiration) resolved with the engine's own rule from the
      * imported and own daily rows, read apart because the rule needs to know which nights are imported. The
