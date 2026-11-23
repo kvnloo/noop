@@ -9612,13 +9612,16 @@ class WhoopBleClient(
         reconcileRealtime()
     }
 
-    /** Explicit wake stops this overnight-only window, across relaunch/reconnect.
+    /** Explicit wake stops a running overnight capture for this window, across relaunch/reconnect.
      *  The foreground Live screen retains its separate stream want. */
     fun stopOvernightCaptureOnManualWake() {
-        if (!keepStreamForData || !NoopPrefs.continuousHrvOvernight(context)) return
+        if (!_state.value.connected || !realtimeArmed || !NoopPrefs.continuousHrvOvernight(context)) return
+        val now = java.util.Calendar.getInstance()
+        // The Live screen can keep realtime armed even when low battery pauses overnight capture.
+        if (!continuousCaptureWantsNow(now)) return
         val start = NotifPrefs.getInt(context, NotifPrefs.QUIET_START, 22 * 60)
         val end = NotifPrefs.getInt(context, NotifPrefs.QUIET_END, 7 * 60)
-        val id = activeOvernightWindowId(java.util.Calendar.getInstance(), start, end) ?: return
+        val id = activeOvernightWindowId(now, start, end) ?: return
         NoopPrefs.of(context).edit().putInt(WAKE_SUPPRESSED_WINDOW_KEY, id).apply()
         reconcileRealtime()
     }
@@ -9629,7 +9632,7 @@ class WhoopBleClient(
      *  default). RE-DERIVED at every arm site (reconcile / keep-alive tick / post-bond arm) instead of
      *  precomputed, so a reconnect outside the window can never arm the stream from a stale value.
      *  Mirrors the Swift `continuousCaptureWantsNow`. */
-    private fun continuousCaptureWantsNow(): Boolean {
+    private fun continuousCaptureWantsNow(cal: java.util.Calendar = java.util.Calendar.getInstance()): Boolean {
         if (!keepStreamForData) return false
         // #477: optional power-saving pause — while power saving is ACTIVE (battery ≤ threshold or Battery
         // Saver, discharging), release the held-open continuous-capture stream (its own toggle, default
@@ -9641,7 +9644,6 @@ class WhoopBleClient(
             val (batteryPct, charging) = batteryPctAndCharging()
             if (idleThrottleActive(batteryPct, charging, pauseCaptureBatteryPct)) return false
         }
-        val cal = java.util.Calendar.getInstance()
         val minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
         val start = NotifPrefs.getInt(context, NotifPrefs.QUIET_START, 22 * 60)
         val end = NotifPrefs.getInt(context, NotifPrefs.QUIET_END, 7 * 60)
