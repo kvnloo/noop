@@ -104,4 +104,42 @@ final class ContinuousHrvScheduleTests: XCTestCase {
         XCTAssertFalse(ContinuousHrvSchedule.windowContains(0, startMin: 9 * 60, endMin: 17 * 60))
         XCTAssertFalse(ContinuousHrvSchedule.windowContains(1439, startMin: 9 * 60, endMin: 17 * 60))
     }
+    /// A 05:48 mark belongs to yesterday's 22:00 start, but cannot block tonight.
+    func testManualWakeStopsCurrentNightButNotNextNight() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        func stamp(_ hour: Int, _ minute: Int) -> Date {
+            utc.date(from: DateComponents(year: 2026, month: 10, day: 16,
+                                          hour: hour, minute: minute))!
+        }
+        let wakeId = ContinuousHrvSchedule.windowId(at: stamp(5, 48),
+                                                      startMin: start, endMin: end, calendar: utc)
+        XCTAssertEqual(wakeId, 20261015)
+        XCTAssertEqual(ContinuousHrvSchedule.windowId(at: stamp(6, 59),
+                                                       startMin: start, endMin: end, calendar: utc), wakeId)
+        XCTAssertNil(ContinuousHrvSchedule.windowId(at: stamp(7, 0),
+                                                     startMin: start, endMin: end, calendar: utc))
+        XCTAssertFalse(ContinuousHrvSchedule.streamWanted(
+            continuousHrv: true, overnightOnly: true, minuteOfDay: 5 * 60 + 48,
+            startMin: start, endMin: end, suppressedWindowId: wakeId, windowId: wakeId))
+        let nextId = ContinuousHrvSchedule.windowId(at: stamp(22, 0),
+                                                      startMin: start, endMin: end, calendar: utc)
+        XCTAssertEqual(nextId, 20261016)
+        XCTAssertTrue(ContinuousHrvSchedule.streamWanted(
+            continuousHrv: true, overnightOnly: true, minuteOfDay: 22 * 60,
+            startMin: start, endMin: end, suppressedWindowId: wakeId, windowId: nextId))
+    }
+
+    func testWakeSuppressionNeverDisablesAlwaysModeOrOtherDates() {
+        XCTAssertTrue(ContinuousHrvSchedule.streamWanted(
+            continuousHrv: true, overnightOnly: false, minuteOfDay: 5 * 60 + 48,
+            startMin: start, endMin: end, suppressedWindowId: 20261015, windowId: 20261015))
+        XCTAssertFalse(ContinuousHrvSchedule.streamWanted(
+            continuousHrv: false, overnightOnly: true, minuteOfDay: 5 * 60 + 48,
+            startMin: start, endMin: end, suppressedWindowId: 20261015, windowId: 20261015))
+        XCTAssertTrue(ContinuousHrvSchedule.streamWanted(
+            continuousHrv: true, overnightOnly: true, minuteOfDay: 6 * 60 + 59,
+            startMin: start, endMin: end, suppressedWindowId: 20261014, windowId: 20261015))
+    }
+
 }

@@ -2509,10 +2509,11 @@ private struct SleepPerformanceNightScene: View {
 struct SleepMarkCard: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var model: AppModel
 
     /// The most recent sleep-mark the user tapped, shown as a transient confirmation line under the
-    /// two buttons. Drives the SwiftUI haptic landing too. LOGGING-ONLY: a mark never feeds the sleep
-    /// detector — it's persisted to the metric series + strap log. (#461)
+    /// two buttons. A mark never changes detected sleep; wake also ends the active
+    /// overnight-only HRV capture window. Both marks still persist to the series and log. (#461)
     @State private var lastMark: SleepMark?
 
     var body: some View {
@@ -2559,6 +2560,7 @@ struct SleepMarkCard: View {
         withAnimation(.easeOut(duration: 0.2)) { lastMark = mark }
         // The shareable strap log is the human-readable surface that lands in a debug export.
         live.append(log: mark.logLine)
+        if type == .wake { model.ble.stopOvernightCaptureOnManualWake(at: mark.date) }
         Task {
             guard let store = await repo.storeHandle() else { return }
             try? await store.upsertMetricSeries([mark.metricPoint], deviceId: repo.deviceId)

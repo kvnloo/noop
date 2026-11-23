@@ -501,6 +501,22 @@ struct ContinuousHrvSchedule {
     static let quietEndKey = "notif.quietEndMinutes"
     static let defaultStartMinutes = 22 * 60
     static let defaultEndMinutes = 7 * 60
+    /// Persisted local night start date ended by an explicit wake mark.
+    static let wakeSuppressedWindowKey = "noopContinuousHrvWakeSuppressedWindow"
+
+    /// yyyyMMdd of the active window's LOCAL starting date. Early morning on a
+    /// cross-midnight window belongs to the preceding evening.
+    static func windowId(at now: Date, startMin: Int, endMin: Int,
+                         calendar: Calendar = .current) -> Int? {
+        let clock = calendar.dateComponents([.hour, .minute], from: now)
+        let minute = (clock.hour ?? 0) * 60 + (clock.minute ?? 0)
+        guard windowContains(minute, startMin: startMin, endMin: endMin) else { return nil }
+        let anchor = startMin > endMin && minute < endMin
+            ? (calendar.date(byAdding: .day, value: -1, to: now) ?? now) : now
+        let day = calendar.dateComponents([.year, .month, .day], from: anchor)
+        guard let year = day.year, let month = day.month, let date = day.day else { return nil }
+        return year * 10_000 + month * 100 + date
+    }
 
     /// Wrap-aware membership: is `minuteOfDay` inside `[startMin, endMin)`, where the window may cross
     /// midnight? Byte-for-byte the quiet-hours semantics (SedentaryDetector.windowContains / the Android
@@ -514,10 +530,12 @@ struct ContinuousHrvSchedule {
     /// `minuteOfDay`? False when the feature is off; true 24/7 in ALWAYS mode (overnightOnly false, the
     /// pre-#927 behaviour every existing user reads with no migration); window-gated in OVERNIGHT mode.
     static func streamWanted(continuousHrv: Bool, overnightOnly: Bool,
-                             minuteOfDay: Int, startMin: Int, endMin: Int) -> Bool {
+                             minuteOfDay: Int, startMin: Int, endMin: Int,
+                             suppressedWindowId: Int? = nil, windowId: Int? = nil) -> Bool {
         guard continuousHrv else { return false }
         guard overnightOnly else { return true }
-        return windowContains(minuteOfDay, startMin: startMin, endMin: endMin)
+        let inWindow = windowContains(minuteOfDay, startMin: startMin, endMin: endMin)
+        return inWindow && (windowId == nil || suppressedWindowId != windowId)
     }
 }
 
@@ -3329,6 +3347,24 @@ public final class BLEManager: NSObject, ObservableObject {
         reconcileRealtime()
     }
 
+    /// An explicit wake stops only this overnight-only capture window, across reconnects
+    /// and relaunches. Foreground Live retains its separate realtime want.
+    public func stopOvernightCaptureOnManualWake(at now: Date = Date()) {
+        guard keepRealtimeForData, PuffinExperiment.continuousHrvOvernightOnlyEnabled else { return }
+        let d = UserDefaults.standard
+        let start = d.object(forKey: ContinuousHrvSchedule.quietStartKey) as? Int
+            ?? ContinuousHrvSchedule.defaultStartMinutes
+        let end = d.object(forKey: ContinuousHrvSchedule.quietEndKey) as? Int
+            ?? ContinuousHrvSchedule.defaultEndMinutes
+        guard let id = ContinuousHrvSchedule.windowId(at: now, startMin: start, endMin: end)
+            else { return }
+        d.set(id, forKey: ContinuousHrvSchedule.wakeSuppressedWindowKey)
+        if wantsRealtime && !screenWantsRealtime {
+            send(.sendR10R11Realtime, payload: [0x00])
+        }
+        reconcileRealtime()
+    }
+
     /// #477 (Settings): battery-% at/below which the offload cadence stretches while discharging (0 = off).
     /// Applies on the next re-arm; a live sync in flight is never interrupted.
     public func setLowBatteryOffloadThrottle(_ thresholdPct: Int) {
@@ -3411,12 +3447,17 @@ public final class BLEManager: NSObject, ObservableObject {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: now)
         let minuteOfDay = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
         let d = UserDefaults.standard
+        let start = d.object(forKey: ContinuousHrvSchedule.quietStartKey) as? Int
+            ?? ContinuousHrvSchedule.defaultStartMinutes
+        let end = d.object(forKey: ContinuousHrvSchedule.quietEndKey) as? Int
+            ?? ContinuousHrvSchedule.defaultEndMinutes
         return ContinuousHrvSchedule.streamWanted(
             continuousHrv: true,
             overnightOnly: PuffinExperiment.continuousHrvOvernightOnlyEnabled,
             minuteOfDay: minuteOfDay,
-            startMin: d.object(forKey: ContinuousHrvSchedule.quietStartKey) as? Int ?? ContinuousHrvSchedule.defaultStartMinutes,
-            endMin: d.object(forKey: ContinuousHrvSchedule.quietEndKey) as? Int ?? ContinuousHrvSchedule.defaultEndMinutes)
+            startMin: start, endMin: end,
+            suppressedWindowId: d.object(forKey: ContinuousHrvSchedule.wakeSuppressedWindowKey) as? Int,
+            windowId: ContinuousHrvSchedule.windowId(at: now, startMin: start, endMin: end))
     }
 
     /// Single reconciler for the realtime-HR TOGGLE. The stream should be armed while EITHER a screen
