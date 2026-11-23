@@ -490,7 +490,10 @@ private fun ConnectStep(viewModel: AppViewModel) {
     // The Scan button goes through the same shared gate as Live/Settings (requests the permission
     // if missing, then connects). Onboarding connects without promoting the foreground service —
     // OnboardingScreen promotes it on completion. See AppViewModel.connect(promoteService).
-    val requestConnect = rememberRequestScan { viewModel.connect(promoteService = false) }
+    var enableHint by remember { mutableStateOf<String?>(null) }
+    val requestConnect = rememberRequestScan(onEnableHint = { enableHint = it }) {
+        viewModel.connect(promoteService = false)
+    }
     var autoConnectStarted by rememberSaveable { mutableStateOf(false) }
 
     val bleGranted = blePerms.all {
@@ -534,7 +537,7 @@ private fun ConnectStep(viewModel: AppViewModel) {
             }
             StatePill(label, tone = tone, pulsing = pulsing, showsDot = true)
 
-            live.statusNote?.let {
+            (enableHint ?: live.statusNote)?.let {
                 Text(
                     it,
                     style = NoopType.footnote,

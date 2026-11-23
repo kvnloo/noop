@@ -372,9 +372,8 @@ fun TodayScreen(
     // straight away, when the permission is already held, or after the system dialog closes; timing the
     // reply from the tap instead would start a clock while that dialog was still open and then answer a
     // press that was proceeding perfectly well, with whatever stale note happened to be lying around.
-    // A permanently denied permission still lands here, the launcher's callback firing either way, so
-    // the case most worth explaining is the one this keeps.
-    val requestScan = rememberRequestScan {
+    var enableHint by remember { mutableStateOf<String?>(null) }
+    val requestScan = rememberRequestScan(onEnableHint = { enableHint = it }) {
         scanTapAt = System.currentTimeMillis()
         viewModel.connect()
     }
@@ -1488,9 +1487,8 @@ fun TodayScreen(
                 }
                 CustomizeDisc(onClick = { showLayoutEditor = true })
             }
-            // The reply to a tap that went nowhere. Wording comes from the BLE layer, the same text
-            // Live and Onboarding show, so this adds no copy of its own.
-            scanHint?.let { hint ->
+            // Reuse the scan feedback line whether the request stopped at consent or in the BLE layer.
+            (enableHint ?: scanHint)?.let { hint ->
                 Text(
                     hint,
                     style = NoopType.footnote,

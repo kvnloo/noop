@@ -607,7 +607,8 @@ fun SettingsScreen(
     // Re-scan must request the runtime Bluetooth permission before scanning — without this the
     // button calls connect() directly and silently no-ops on Android 12+ when the permission was
     // denied/revoked (issue #1). Shared with Live's Connect via the one rememberRequestScan gate.
-    val requestScan = rememberRequestScan { vm.connect() }
+    var enableHint by remember { mutableStateOf<String?>(null) }
+    val requestScan = rememberRequestScan(onEnableHint = { enableHint = it }) { vm.connect() }
 
     // "What's New" changelog sheet, reachable any time from About (mirrors the macOS
     // Settings → About "What's new" button). Persistence/gating lives in NoopRoot; this
@@ -2123,7 +2124,7 @@ fun SettingsScreen(
                     }
                 }
                 Text(
-                    strapStatusDetail(live.encryptedBond, live.bonded, live.connected, live.scanning),
+                    enableHint ?: strapStatusDetail(live.encryptedBond, live.bonded, live.connected, live.scanning),
                     style = NoopType.subhead,
                     color = Palette.textSecondary,
                 )
