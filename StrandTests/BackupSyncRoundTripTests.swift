@@ -64,14 +64,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
 
     func testPreImportSnapshotIncludesCommittedWalRows() throws {
         let liveDB = tmp.appendingPathComponent("live.sqlite")
-        try makeNoopDatabase(at: liveDB, deviceRows: ["original"])
-        let writer = try openWalWriter(at: liveDB)
-        defer { sqlite3_close(writer) }
-        try exec(writer, "INSERT INTO device (id) VALUES ('wal-only')")
-
-        // The writer is still open, and auto-checkpoint is off: the second committed row
-        // is in the WAL, not a safe main-file-only copy.
-        XCTAssertTrue(FileManager.default.fileExists(atPath: liveDB.path + "-wal"))
+        try stageUncheckpointedWal(at: liveDB)
         XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"])
 
         let replacement = tmp.appendingPathComponent("replacement.sqlite")
@@ -91,11 +84,7 @@ final class BackupSyncRoundTripTests: XCTestCase {
 
     func testFailedRestoreRollsBackCommittedWalRows() throws {
         let liveDB = tmp.appendingPathComponent("live.sqlite")
-        try makeNoopDatabase(at: liveDB, deviceRows: ["original"])
-        let writer = try openWalWriter(at: liveDB)
-        defer { sqlite3_close(writer) }
-        try exec(writer, "INSERT INTO device (id) VALUES ('wal-only')")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: liveDB.path + "-wal"))
+        try stageUncheckpointedWal(at: liveDB)
         XCTAssertEqual(try deviceRows(in: liveDB), ["original", "wal-only"])
 
         // Using the live file as the picked source forces the replacement copy to fail:
@@ -353,15 +342,39 @@ final class BackupSyncRoundTripTests: XCTestCase {
 
     // MARK: - SQLite fixtures (system SQLite3)
 
-    private func assertStandaloneSQLite(at url: URL) throws {
-        let header = try XCTUnwrap(FileHandle(forReadingFrom: url).read(upToCount: 20))
+    private func assertStandaloneSQLite(at url: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let header = try XCTUnwrap(handle.read(upToCount: 20), file: file, line: line)
         // SQLite header write/read versions are 1 for rollback journaling and 2 for WAL.
-        XCTAssertEqual(Array(header.dropFirst(18)), [1, 1], "Snapshot must not require WAL/SHM")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-wal"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-shm"))
+        let name = url.lastPathComponent
+        XCTAssertEqual(Array(header.dropFirst(18)), [1, 1], "\(name) must not require WAL/SHM",
+                       file: file, line: line)
+        for suffix in ["-wal", "-shm"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + suffix),
+                           "Unexpected sibling: \(name)\(suffix)", file: file, line: line)
+        }
     }
 
-    /// Leave an uncheckpointed commit in a live WAL while restore takes its snapshot.
+    /// Stage a main/WAL pair that needs recovery, without holding the file restore will replace open.
+    private func stageUncheckpointedWal(at url: URL) throws {
+        let fixture = tmp.appendingPathComponent("wal-fixture.sqlite")
+        try makeNoopDatabase(at: fixture, deviceRows: ["original"])
+        let writer = try openWalWriter(at: fixture)
+        defer { sqlite3_close(writer) }
+
+        let mainBeforeInsert = try Data(contentsOf: fixture)
+        try exec(writer, "INSERT INTO device (id) VALUES ('wal-only')")
+        XCTAssertEqual(try Data(contentsOf: fixture), mainBeforeInsert,
+                       "The committed row must still be in the WAL, not the main file")
+
+        // The fixture has no other connections or writers. Do not copy its transient SHM:
+        // SQLite can rebuild the WAL index when it opens the staged pair.
+        let fm = FileManager.default
+        try fm.copyItem(at: fixture, to: url)
+        try fm.copyItem(atPath: fixture.path + "-wal", toPath: url.path + "-wal")
+    }
+
     private func openWalWriter(at url: URL) throws -> OpaquePointer {
         var handle: OpaquePointer?
         guard sqlite3_open(url.path, &handle) == SQLITE_OK, let writer = handle else {

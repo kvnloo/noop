@@ -605,7 +605,7 @@ enum DataBackup {
             sqlite3_close(destinationHandle)
             throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(destinationStatus))
         }
-        defer { sqlite3_close(destination) }
+        defer { if let destinationHandle { sqlite3_close(destinationHandle) } }
 
         guard let backup = sqlite3_backup_init(destination, "main", source, "main") else {
             throw NSError(domain: "DataBackup.SQLiteSnapshot",
@@ -620,18 +620,35 @@ enum DataBackup {
 
         // The backup can inherit the source's WAL header even though all pages are in
         // the destination. Require DELETE mode so read-only opens don't need a WAL/SHM.
-        var journalMode: OpaquePointer?
-        let prepareStatus = sqlite3_prepare_v2(destination, "PRAGMA journal_mode=DELETE", -1, &journalMode, nil)
-        guard prepareStatus == SQLITE_OK, let journalMode else {
-            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(prepareStatus))
+        do {
+            var journalMode: OpaquePointer?
+            let prepareStatus = sqlite3_prepare_v2(destination, "PRAGMA journal_mode=DELETE", -1, &journalMode, nil)
+            guard prepareStatus == SQLITE_OK, let journalMode else {
+                throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(prepareStatus))
+            }
+            defer { sqlite3_finalize(journalMode) }
+            let modeStatus = sqlite3_step(journalMode)
+            guard modeStatus == SQLITE_ROW else {
+                throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(modeStatus))
+            }
+            guard let mode = sqlite3_column_text(journalMode, 0), String(cString: mode) == "delete" else {
+                throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(SQLITE_ERROR))
+            }
         }
-        defer { sqlite3_finalize(journalMode) }
-        let modeStatus = sqlite3_step(journalMode)
-        guard modeStatus == SQLITE_ROW else {
-            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(modeStatus))
+
+        let closeStatus = sqlite3_close(destination)
+        guard closeStatus == SQLITE_OK else {
+            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(closeStatus))
         }
-        guard let mode = sqlite3_column_text(journalMode, 0), String(cString: mode) == "delete" else {
-            throw NSError(domain: "DataBackup.SQLiteSnapshot", code: Int(SQLITE_ERROR))
+        destinationHandle = nil
+
+        // Some SQLite builds leave a SHM behind after the DELETE transition. The
+        // closed destination is a standalone file now; never clean up the live WAL.
+        for suffix in ["-wal", "-shm"] {
+            let sibling = URL(fileURLWithPath: destinationURL.path + suffix)
+            if FileManager.default.fileExists(atPath: sibling.path) {
+                try FileManager.default.removeItem(at: sibling)
+            }
         }
     }
 
