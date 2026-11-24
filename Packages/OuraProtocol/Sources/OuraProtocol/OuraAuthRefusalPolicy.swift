@@ -16,9 +16,7 @@ public struct OuraAuthRefusalPolicy {
     /// Observe the resulting phase after an authenticating step. A successful auth replenishes the retry allowance.
     public mutating func observe(_ phase: OuraDriverPhase) -> Action? {
         switch phase {
-        case .retryableAuthFailure:
-            return .reconnect
-        case .authFailed:
+        case .authFailed, .retryableAuthFailure:
             guard !retryUsed else { return .needsPairing }
             retryUsed = true
             return .reconnect

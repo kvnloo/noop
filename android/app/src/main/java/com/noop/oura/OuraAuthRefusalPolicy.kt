@@ -14,8 +14,7 @@ class OuraAuthRefusalPolicy {
     /** Observe the resulting phase after an authenticating step. A successful auth replenishes the retry allowance. */
     @Synchronized
     fun observe(phase: OuraDriverPhase): Action? = when (phase) {
-        OuraDriverPhase.RetryableAuthFailure -> Action.RECONNECT
-        is OuraDriverPhase.AuthFailed -> {
+        is OuraDriverPhase.AuthFailed, OuraDriverPhase.RetryableAuthFailure -> {
             if (retryUsed) {
                 Action.NEEDS_PAIRING
             } else {
