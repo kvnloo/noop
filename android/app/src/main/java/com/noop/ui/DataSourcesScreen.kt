@@ -80,6 +80,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Known Health Connect WRITER applications, not inferred watches or direct device pairing. */
+internal val healthConnectWriterAppLabels: Map<String, String> = mapOf(
+    "com.sec.android.app.shealth" to "Samsung Health",
+    "com.fitbit.FitbitMobile" to "Fitbit",
+    "com.garmin.android.apps.connectmobile" to "Garmin Connect",
+    "com.google.android.apps.fitness" to "Google Fit",
+    "com.ouraring.oura" to "Oura",
+    "com.strava" to "Strava",
+)
+
 /**
  * Data Sources — ports the macOS DataSourcesView (Strand/Screens/DataSourcesView.swift)
  * onto the locked Android component system (ScreenScaffold / NoopCard / StatePill /
@@ -151,6 +161,8 @@ fun DataSourcesScreen(vm: AppViewModel) {
     // export so each card reflects its own data rather than both showing under Apple Health (issue #34).
     var hcDays by remember { mutableStateOf<Int?>(null) }
     var hcWorkouts by remember { mutableStateOf<Int?>(null) }
+    // Last completed Health Connect import: recording apps, not detected hardware.
+    var hcOriginApps by remember { mutableStateOf<List<String>>(emptyList()) }
     // Nutrition CSV writes long-format metricSeries rows under its own source ("nutrition-csv"),
     // so its card counts days-with-calories and weigh-ins straight off that table.
     var nutritionDays by remember { mutableStateOf<Int?>(null) }
@@ -182,6 +194,15 @@ fun DataSourcesScreen(vm: AppViewModel) {
         appleWorkouts = vm.repo.workoutsCount("apple-health", 0L, nowS)
         hcDays = vm.repo.appleDailyCount("health-connect", "0000-01-01", "9999-12-31")
         hcWorkouts = vm.repo.workoutsCount("health-connect", 0L, nowS)
+        hcOriginApps = context.getSharedPreferences(NoopPrefs.NAME, Context.MODE_PRIVATE)
+            .getStringSet("hc.lastImportOriginPackages", emptySet()).orEmpty()
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { pkg -> healthConnectWriterAppLabels[pkg] ?: pkg }
+            .distinct()
+            .sorted()
+            .toList()
         nutritionDays = vm.repo.metricSeriesKeyCount(NutritionCsvImporter.SOURCE_ID, "calories_in")
         nutritionWeighIns = vm.repo.metricSeriesKeyCount(NutritionCsvImporter.SOURCE_ID, "weight")
         liftingWorkouts = vm.repo.workoutsCount(LiftingImporter.SOURCE_ID, 0L, nowS)
@@ -506,6 +527,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
                 CountLine(
                     primary = hcDays?.let { "$it days" } ?: "—",
                     secondary = hcWorkouts?.let { "$it workouts" } ?: "Counting…",
+                )
+            }
+            if (hcOriginApps.isNotEmpty()) {
+                // Health Connect names only the writing apps; no watch is inferred.
+                val shown = hcOriginApps.take(4).joinToString(", ")
+                val remaining = hcOriginApps.size - 4
+                Text(
+                    stringResource(R.string.health_connect_writer_apps) + ": " + shown +
+                        (if (remaining > 0) " " + stringResource(R.string.health_connect_writer_more, remaining) else ""),
+                    style = NoopType.footnote,
+                    color = Palette.textSecondary,
                 )
             }
             if (healthConnectAvailable) {

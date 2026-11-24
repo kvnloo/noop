@@ -269,6 +269,16 @@ object HealthConnectImporter {
     private fun prefs(context: Context) =
         context.getSharedPreferences(NoopPrefs.NAME, Context.MODE_PRIVATE)
 
+    private fun recordWriterSnapshot(context: Context, seen: Set<String>, allReadsOk: Boolean) {
+        runCatching {
+            val preferences = prefs(context)
+            val key = "hc.lastImportOriginPackages"
+            val previous = preferences.getStringSet(key, null).orEmpty()
+            val next = nextWriterSnapshot(previous, seen, allReadsOk)
+            if (next != previous) preferences.edit().putStringSet(key, next).apply()
+        }
+    }
+
     /** #1735: stamp a COMPLETED import run so the diagnostics header can say when data last moved, not
      *  merely how many rows exist. Raw keys written inline, read back by AndroidDiagnostics - the same
      *  shape `sync.lastWriteOkAt` uses. Guarded: a stamp is never worth failing an import over. */
@@ -314,7 +324,16 @@ object HealthConnectImporter {
         if (sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
             return ImportSummary.failure(SOURCE, "Health Connect is not available on this device.")
         }
+        return importFromClient(context, repo, heightCm, categories) { client(context) }
+    }
 
+    internal suspend fun importFromClient(
+        context: Context,
+        repo: WhoopRepository,
+        heightCm: Double,
+        categories: Set<ImportCategory>?,
+        createClient: () -> HealthConnectClient,
+    ): ImportSummary {
         // Refile any legacy Health Connect data that landed in the shared "apple-health" bucket before
         // #34 BEFORE importing, so a re-import refiles cleanly instead of duplicating across both sources.
         try { repo.refileLegacyHealthConnect() } catch (_: Exception) { /* best-effort */ }
@@ -325,7 +344,7 @@ object HealthConnectImporter {
         // like the refile above.
         try { repo.purgeHcShadowedStrapDays() } catch (_: Exception) { /* best-effort */ }
 
-        val client = client(context)
+        val client = createClient()
 
         // Verify the permissions really are granted (the UI may have been dismissed).
         val granted = try {
@@ -359,6 +378,10 @@ object HealthConnectImporter {
         // #528: skip our own writes on import (see readAll / isSelfWritten).
         val selfPackage = context.packageName
         val selectedRecordTypes = readableRecordTypes(effectiveCategories, granted)
+        // Health Connect exposes the app that wrote each record, not the wearable model.
+        // Capture only selected, non-self-authored records; no import or scoring changes.
+        val observedOriginPackages = linkedSetOf<String>()
+        var allReadsOk = true
 
         // A granted permission can outlive the category selection that originally requested it. Gate
         // on BOTH here so switching a category off stops its reads immediately without requiring the
@@ -369,7 +392,16 @@ object HealthConnectImporter {
             onRecord: (T) -> Unit,
         ): Boolean {
             if (type !in selectedRecordTypes) return false
-            return readAll(client, type, range, selfPackage, onRecord)
+            val readOk = readAll(client, type, range, selfPackage) { record ->
+                record.metadata.dataOrigin.packageName.takeIf { it.isNotBlank() }?.let {
+                    observedOriginPackages.add(it)
+                }
+                onRecord(record)
+            }
+            // Skipping an unselected/ungranted type is not a failure. An attempted read can
+            // fail after yielding records, so its partial results cannot replace the snapshot.
+            if (!readOk) allReadsOk = false
+            return readOk
         }
 
         // Per-day accumulators. Keyed by "YYYY-MM-DD" (local).
@@ -733,6 +765,8 @@ object HealthConnectImporter {
         // strap-write path already uses. Best-effort - a stamp failure must not sink a good import.
             // Stamped on the EMPTY path too, deliberately: "ran and found nothing" and "never ran" are
             // different diagnoses and this is the only line that separates them.
+
+            recordWriterSnapshot(context, observedOriginPackages, allReadsOk)
             recordImportRun(context, rows = 0, throughDay = null)
             return ImportSummary(
                 source = SOURCE,
@@ -893,6 +927,7 @@ object HealthConnectImporter {
         // there" cannot be told from "Health Connect never imported it" without this: the log had per-source
         // row counts but nothing about WHEN they last moved. Mirrors the sync.lastWriteOkAt pattern the
         // strap-write path already uses. Best-effort - a stamp failure must not sink a good import.
+        recordWriterSnapshot(context, observedOriginPackages, allReadsOk)
         recordImportRun(context, rows = total, throughDay = lastDay)
         return ImportSummary(
             source = SOURCE,
@@ -985,10 +1020,8 @@ object HealthConnectImporter {
      * Loops on the response page token so we never miss records past the first page.
      *
      * Returns TRUE when the type was read to completion, FALSE when it was skipped by the catch below.
-     * Every accumulating caller ignores this: for them a failed type is simply absent, which costs that
-     * type's contribution and nothing else. It matters for a caller whose write REPLACES rather than adds
-     * (#949 hydration), because there "read nothing" and "there is nothing" are the same empty map — and
-     * treating a swallowed error as an authoritative zero would wipe the stored figure.
+     * Aggregates can still use the records that were read. A caller whose write REPLACES rather than
+     * adds (#949 hydration and the writer-app snapshot) must not treat a failed read as authoritative.
      */
     private suspend fun <T : Record> readAll(
         client: HealthConnectClient,
