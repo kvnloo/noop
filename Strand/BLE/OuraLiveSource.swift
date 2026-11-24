@@ -38,35 +38,41 @@ func ouraAdvertisedLabel(_ advertisedName: String, fallback: String) -> String {
     advertisedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : advertisedName
 }
 
-/// Admits history only while this NOOP connection has a GetEvents request in flight.
-///
-/// The ring shares its notification stream with the official Oura app. That app can start its own
-/// history drain while NOOP is idle; those records must not reach the store (#2523). A final 0x11
-/// summary is sent before the last TLVs, so admission remains open until batch-quiet completion.
-struct OuraHistoryAdmission {
-    private(set) var fetchOutstanding = false
-    private(set) var finalSummaryPending = false
+/// Admits records only during our GetEvents drain (#2523). The shared 0x11 summary has no request
+/// identifier: a zero bytes_left cannot end our request. Close on our own inactivity timer instead.
+final class OuraHistoryAdmission {
+    // Deliberately longer than the 1.5 s inter-batch debounce; this ends admission, not a batch.
+    private static let idleTimeout: TimeInterval = 10
+    private let restartIdleTimeout: (TimeInterval) -> Void
+    private var fetchOutstanding = false
 
-    mutating func startRequest() {
+    init(restartIdleTimeout: @escaping (TimeInterval) -> Void = { _ in }) {
+        self.restartIdleTimeout = restartIdleTimeout
+    }
+
+    func startRequest() {
         fetchOutstanding = true
-        finalSummaryPending = false
+        restartIdleTimeout(Self.idleTimeout)
     }
 
-    mutating func noteFinalSummary() {
-        if fetchOutstanding { finalSummaryPending = true }
+    func handleSummary(moreData: Bool, whileFetching: Bool) -> Bool {
+        fetchOutstanding && whileFetching && moreData
     }
 
-    mutating func noteContinuationSummary() {
-        finalSummaryPending = false
+    func takeIdleTimeout(whileFetching: Bool) -> Bool {
+        guard fetchOutstanding, whileFetching else { return false }
+        endRequest()
+        return true
     }
 
-    mutating func endRequest() {
+    func endRequest() {
         fetchOutstanding = false
-        finalSummaryPending = false
     }
 
     func admit<Record>(_ records: [Record], whileFetching: Bool) -> [Record] {
-        fetchOutstanding && whileFetching ? records : []
+        guard fetchOutstanding, whileFetching, !records.isEmpty else { return [] }
+        restartIdleTimeout(Self.idleTimeout)
+        return records
     }
 }
 
@@ -716,7 +722,9 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// persistence, logging, and the `historyCursorAdvanced` emit — and delegates every decision here so
     /// they can't silently regress in a refactor again (they did once: #91 → #291). See OuraHistoryDrainTests.
     private var drain = OuraHistoryDrain()
-    private var historyAdmission = OuraHistoryAdmission()
+    private lazy var historyAdmission = OuraHistoryAdmission { [weak self] delay in
+        self?.restartHistoryIdleTimeout(after: delay)
+    }
     private var loggedUnsolicitedHistory = false
     /// The cursor we resumed FROM at the start of the current fetch — passed into `drain.noteStoredRingTime`
     /// so a real stored sample OLDER than it flags a genuine ring reboot (clock reset / seek ignored).
@@ -748,6 +756,23 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// pending; fires = the ring finished streaming the batch and the next request can go out.
     private var batchQuietTimer: Timer?
     private let batchQuietInterval: TimeInterval = 1.5
+    private var historyIdleTask: Task<Void, Never>?
+
+    private func restartHistoryIdleTimeout(after delay: TimeInterval) {
+        historyIdleTask?.cancel()
+        historyIdleTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, let self,
+                  historyAdmission.takeIdleTimeout(whileFetching: driver?.phase == .fetchingHistory) else { return }
+            finishDrain(idleTimeout: true, resumeBacklog: false)
+        }
+    }
+
+    private func cancelHistoryIdleTimeout() {
+        historyAdmission.endRequest()
+        historyIdleTask?.cancel()
+        historyIdleTask = nil
+    }
     /// Self-chained drain passes: when a drain ends with KNOWN remaining work — a detected ring reboot
     /// (cursor honestly reset to 0, full pull pending) or a deadline-guard stop with banked progress —
     /// the next pass starts itself a few seconds later instead of waiting for a manual reconnect or the
@@ -807,8 +832,8 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         historyFetchTimer = nil
     }
 
-    /// Handle a `0x11` GetEvents summary (open_oura `EventBatchSummary`): the drain continues while
-    /// `bytes_left > 0` and is complete at `bytes_left == 0`. The response's byte-count is NEVER persisted
+    /// Handle a `0x11` GetEvents summary (open_oura `EventBatchSummary`): only non-final summaries
+    /// drive continuation. A final summary can be from a different BLE client. The byte-count is NEVER persisted
     /// — persisting it and comparing byte-counts across sessions as clocks was the #91 re-dump loop.
     ///
     /// The durable resume point (open_oura `nextEventToSync`) is the newest STORED history sample's
@@ -818,36 +843,27 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// now-stale ring-time. Stall/deadline guards are backstops only; they force-stop the drain but keep
     /// whatever forward progress was banked (never reset to 0 — that re-arms the loop).
     private func handleHistorySummary(_ summary: (eventsReceived: UInt8, bytesLeft: UInt32, moreData: Bool)) {
-        guard historyAdmission.fetchOutstanding, driver?.phase == .fetchingHistory else { return }
-        // Stall + deadline backstops (a healthy drain ends at bytes_left 0, where moreData is false).
+        guard historyAdmission.handleSummary(moreData: summary.moreData,
+                                             whileFetching: driver?.phase == .fetchingHistory) else { return }
+        // Stall + deadline backstops.
         let elapsed = drainStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-        let continueDrain = drain.onSummary(bytesLeft: summary.bytesLeft, moreData: summary.moreData,
+        let continueDrain = drain.onSummary(bytesLeft: summary.bytesLeft, moreData: true,
                                             elapsedSeconds: elapsed)
-        if summary.moreData, !continueDrain {
+        guard continueDrain else {
             let reason = elapsed > OuraHistoryDrain.maxDrainSeconds
                 ? "exceeded \(Int(OuraHistoryDrain.maxDrainSeconds))s deadline"
                 : "bytes_left stalled"
             log("Oura: history drain force-stopped - \(reason) at bytes_left \(summary.bytesLeft) (guard)")
-        }
-        guard continueDrain else {
-            if !summary.moreData {
-                // The final 0x11 summary precedes the batch tail: keep accepting until quiet.
-                pendingContinuation = false
-                historyAdmission.noteFinalSummary()
-                restartBatchQuietTimer()
-                return
-            }
             // A deadline stop with more data behind it is resumable backlog (progress banked, the ring
             // is healthy — we just chose to breathe); a STALL stop is the ring looping and must not chain.
-            let deadlineBacklog = summary.moreData && elapsed > OuraHistoryDrain.maxDrainSeconds
-            finishDrain(completed: !summary.moreData, resumeBacklog: deadlineBacklog)
+            let deadlineBacklog = elapsed > OuraHistoryDrain.maxDrainSeconds
+            finishDrain(resumeBacklog: deadlineBacklog)
             return
         }
         // More data behind this batch. Do NOT re-request yet: the ring emits the 0x11 summary EARLY
         // (observed arriving before its batch finished streaming), and a mid-stream request at a stale
         // cursor restarts the serve from that cursor (the 5x same-window re-serve, 2026-07-12). Wait for
         // the batch to go quiet, then continue from max-seen-ring-time + 1 (open_oura drain_events).
-        historyAdmission.noteContinuationSummary()
         pendingContinuation = true
         restartBatchQuietTimer()
     }
@@ -857,20 +873,17 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// non-advancing cursor is exactly what loops the ring).
     private func continueDrainAfterQuiet() {
         stopBatchQuietTimer()
-        if historyAdmission.finalSummaryPending {
-            finishDrain(completed: true, resumeBacklog: false)
-            return
-        }
         guard pendingContinuation else { return }
         pendingContinuation = false
         guard let driver, driver.phase == .fetchingHistory else { return }
         if let next = drain.continuationCursor(lastRequestCursor: lastRequestCursor) {
             lastRequestCursor = next
             log("Oura: history batch done - continuing from cursor \(next) [\(describeCursor(next))]")
+            historyAdmission.startRequest()
             advance(.historyCursorAdvanced(cursor: next, moreData: true))
         } else {
             log("Oura: history batch made no cursor progress - stopping drain (ring would re-serve)")
-            finishDrain(completed: false, resumeBacklog: false)
+            finishDrain(resumeBacklog: false)
         }
     }
 
@@ -880,8 +893,8 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// reboot (`sawPreResumeData` just reset the cursor to 0; the full pull is pending) or a deadline stop
     /// with backlog (`resumeBacklog`) — the next pass self-schedules a few seconds later, so catching up
     /// never needs a manual reconnect (progress banks between passes).
-    private func finishDrain(completed: Bool, resumeBacklog: Bool) {
-        historyAdmission.endRequest()
+    private func finishDrain(idleTimeout: Bool = false, resumeBacklog: Bool) {
+        cancelHistoryIdleTimeout()
         pendingContinuation = false
         stopBatchQuietTimer()
         if let burst = hypnogramAssembler.flush() {
@@ -893,7 +906,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         // reboot" and answers by keeping the cursor. Snapshotting the flag here (as this did until
         // 2026-09-13) had the scheduler print "ring reboot detected - starting the honest full re-pull"
         // two lines after "not a reboot (#2097)" and burn a chained pass that only re-read the kept cursor.
-        let rebootFullPullPending = commitResumeCursor(drainCompleted: completed)
+        let rebootFullPullPending = commitResumeCursor(idleTimeout: idleTimeout)
         logActivityEstimateSummary()
         advance(.historyCursorAdvanced(cursor: historyCursor, moreData: false))
         if rebootFullPullPending || resumeBacklog {
@@ -910,13 +923,13 @@ public final class OuraLiveSource: NSObject, ObservableObject {
                 Task { @MainActor in self?.fetchHistoryIfIdle() }
             }
             chainedDrainTimer = t
-        } else if completed {
-            chainedDrainPasses = 0   // healthy full completion re-arms the cap for future backlogs
-            noteCompletedOffload()
+        } else if idleTimeout {
+            chainedDrainPasses = 0
+            noteSettledOffload()
         }
     }
 
-    /// Stamp `LiveState.lastSyncedAt` after a drain that COMPLETED and actually banked something, so the
+    /// Stamp `LiveState.lastSyncedAt` after an idle timeout if the drain actually banked something, so the
     /// ring's freshly-offloaded history gets scored now instead of waiting on the 15-minute periodic tick.
     ///
     /// WHY THIS EXISTS: `AppModel` re-scores off a debounced `live.$lastSyncedAt` sink
@@ -932,15 +945,15 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// GATES, so this cannot become a refresh storm:
     /// - `feedsLive` — the discovery-only wizard scanner must never touch `LiveState` at all.
     /// - `drain.maxStoredRingTime > 0` — only a drain that BANKED a record counts. A reconnect that
-    ///   completes instantly at `bytes_left 0` with nothing new (the common case on repeated connects)
+    ///   times out with nothing new (the common case on repeated connects)
     ///   banks nothing, so it does not stamp and does not trigger a re-score.
-    private func noteCompletedOffload() {
+    private func noteSettledOffload() {
         guard feedsLive, drain.maxStoredRingTime > 0 else { return }
         let now = Date().timeIntervalSince1970
         // Logged because a BLE-path change is only verifiable on real hardware: this line appearing AFTER
         // the night's `sleep-phase record` lines, followed by a fresh `sleep day=` with a non-nil
         // totalSleepMin, is exactly the sequence that was missing.
-        log("Oura: offload complete - marking synced so the new history is scored now (not at the next periodic tick)")
+        log("Oura: offload idle - marking banked history synced so the new history is scored now (not at the next periodic tick)")
         live.lastSyncedAt = now
         // Mirrors BLEManager: persisted so "last offload completed" survives a relaunch. Before this, a
         // ring-only install had no completed-offload timestamp at all and read "No completed offload yet"
@@ -990,7 +1003,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     private func commitInterruptedDrainCursor() {
         guard let driver, driver.phase == .fetchingHistory, drain.maxStoredRingTime > 0,
               !drain.sawPreResumeData else { return }
-        _ = commitResumeCursor(drainCompleted: false)
+        _ = commitResumeCursor(idleTimeout: false)
     }
 
 
@@ -1004,8 +1017,8 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     ///
     /// Returns `true` only when the cursor WAS reset to 0 for a reboot — the one outcome that leaves a
     /// full re-pull pending for `finishDrain` to chain. A stale replay the judge rejected returns `false`.
-    private func commitResumeCursor(drainCompleted: Bool) -> Bool {
-        let how = drainCompleted ? "caught up (bytes_left 0)" : "stopped early"
+    private func commitResumeCursor(idleTimeout: Bool) -> Bool {
+        let how = idleTimeout ? "ended after request inactivity" : "stopped early"
         let resolves = drain.maxStoredRingTime > 0
             && (driver?.unixSeconds(forRingTimestamp: drain.maxStoredRingTime) != nil)
         let anchorConfirmsContinuity = drain.sawPreResumeData && syncAnchorsConfirmContinuity()
@@ -1808,6 +1821,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         drainStartedAt = nil
         lastRequestCursor = 0
         pendingContinuation = false
+        cancelHistoryIdleTimeout()
         stopBatchQuietTimer()
         chainedDrainPasses = 0
         chainedDrainTimer?.invalidate()
@@ -2125,7 +2139,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         // may be resolvable. Retry BEFORE `ingest`, so this batch anchors straight away instead of parking
         // into `pendingAnchorEvents` and being drained a moment later (2026-09-02/03 captures).
         retryPendingSyncTimeAnchor()
-        if pendingContinuation || historyAdmission.finalSummaryPending { restartBatchQuietTimer() }
+        if pendingContinuation { restartBatchQuietTimer() }
         ingest(admitted)
     }
 
@@ -3072,6 +3086,7 @@ extension OuraLiveSource: @preconcurrency CBCentralManagerDelegate {
         drainStartedAt = nil
         lastRequestCursor = 0
         pendingContinuation = false
+        cancelHistoryIdleTimeout()
         stopBatchQuietTimer()
         chainedDrainPasses = 0
         chainedDrainTimer?.invalidate()
@@ -3121,6 +3136,7 @@ extension OuraLiveSource: @preconcurrency CBCentralManagerDelegate {
         }
         stopReengageTimer()
         stopHistoryFetchTimer()
+        cancelHistoryIdleTimeout()
         stopBatchQuietTimer()
         pendingContinuation = false
         chainedDrainPasses = 0

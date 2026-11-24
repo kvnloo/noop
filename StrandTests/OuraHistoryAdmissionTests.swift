@@ -2,12 +2,12 @@ import XCTest
 @testable import Strand
 
 /// Regressions for the #2523 shared Oura notification stream: unsolicited replays cannot double-store
-/// a night, while NOOP's own batch tail must survive the ring's early final-summary notification.
+/// a night while NOOP is idle, and a shared final summary must not cut off an owned batch tail.
 final class OuraHistoryAdmissionTests: XCTestCase {
     private let replay = ["night 0x60 +1s", "night 0x60 +2s", "night 0x60 +3s"]
 
     func testUnsolicitedReplayAfterOurDrainIsIgnored() {
-        var admission = OuraHistoryAdmission()
+        let admission = OuraHistoryAdmission()
         admission.startRequest()
         admission.endRequest()
         XCTAssertEqual(admission.admit(replay, whileFetching: false), [])
@@ -16,42 +16,54 @@ final class OuraHistoryAdmissionTests: XCTestCase {
     }
 
     func testOwnedDrainAcceptsAllRecordsInOrder() {
-        var admission = OuraHistoryAdmission()
+        let admission = OuraHistoryAdmission()
         admission.startRequest()
         XCTAssertEqual(admission.admit(replay, whileFetching: true), replay)
         XCTAssertEqual(admission.admit(replay, whileFetching: false), [],
                        "a streaming/unauthenticated phase cannot persist banked history")
     }
 
-    func testEarlyFinalSummaryKeepsBatchTailUntilQuiet() {
-        var admission = OuraHistoryAdmission()
-        admission.startRequest()
-        admission.noteFinalSummary()
-        XCTAssertTrue(admission.finalSummaryPending)
-        XCTAssertEqual(admission.admit(replay, whileFetching: true), replay,
-                       "the final summary precedes valid tail records")
-        admission.endRequest()
-        XCTAssertFalse(admission.finalSummaryPending)
-        XCTAssertEqual(admission.admit(replay, whileFetching: false), [])
-    }
+    func testForeignFinalDoesNotCutOffDelayedOwnedTail() {
+        var now = 0.0
+        var timer: TimeInterval?
+        var timedOut = false
+        let admission = OuraHistoryAdmission { delay in timer = now + delay }
+        func advance(to time: TimeInterval) {
+            now = time
+            if let deadline = timer, deadline <= now {
+                timer = nil
+                timedOut = admission.takeIdleTimeout(whileFetching: true)
+            }
+        }
 
-    func testNewRequestClearsStaleFinalSummary() {
-        var admission = OuraHistoryAdmission()
         admission.startRequest()
-        admission.noteFinalSummary()
-        admission.startRequest()
-        XCTAssertFalse(admission.finalSummaryPending)
         XCTAssertEqual(admission.admit(replay, whileFetching: true), replay)
-        admission.noteFinalSummary()
-        admission.noteContinuationSummary()
-        XCTAssertFalse(admission.finalSummaryPending)
+        XCTAssertFalse(admission.handleSummary(moreData: false, whileFetching: true))
+        advance(to: 1.501)
+        let tail = ["tail"]
+        XCTAssertEqual(admission.admit(tail, whileFetching: true), tail)
+        advance(to: 10)
+        XCTAssertFalse(timedOut)
+        XCTAssertEqual(admission.admit([] as [String], whileFetching: true), [])
+        advance(to: 11.501)
+        XCTAssertTrue(timedOut)
+        XCTAssertEqual(admission.admit(tail, whileFetching: true), [])
     }
 
-    func testForeignFinalSummaryCannotOpenAdmission() {
-        var admission = OuraHistoryAdmission()
-        admission.noteFinalSummary()
-        XCTAssertFalse(admission.fetchOutstanding)
-        XCTAssertFalse(admission.finalSummaryPending)
-        XCTAssertEqual(admission.admit(replay, whileFetching: true), [])
+    func testFinalBeforeAnyRecordsDoesNotRescheduleRequestTimeout() {
+        var delays: [TimeInterval] = []
+        let admission = OuraHistoryAdmission { delays.append($0) }
+        admission.startRequest()
+        XCTAssertFalse(admission.handleSummary(moreData: false, whileFetching: true))
+        XCTAssertEqual(delays, [10])
+    }
+
+    func testOnlyMoreDataSummaryDuringOwnedFetchCanContinue() {
+        let admission = OuraHistoryAdmission()
+        XCTAssertFalse(admission.handleSummary(moreData: true, whileFetching: true))
+        admission.startRequest()
+        XCTAssertFalse(admission.handleSummary(moreData: true, whileFetching: false))
+        XCTAssertTrue(admission.handleSummary(moreData: true, whileFetching: true))
+        XCTAssertFalse(admission.handleSummary(moreData: false, whileFetching: true))
     }
 }

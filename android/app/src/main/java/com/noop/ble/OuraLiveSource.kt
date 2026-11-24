@@ -81,37 +81,41 @@ internal fun ouraAdvertisedLabel(advertisedName: String, fallback: String): Stri
 
 
 /**
- * Only store history requested by THIS NOOP GetEvents, not TLVs emitted by another BLE client (#2523).
- * The ring sends the final 0x11 summary ahead of its last records, so a request stays open until the
- * same batch-quiet interval already used for continuation.
- * Twin of Swift OuraHistoryAdmission; this lives in the BLE app layer, not the protocol decoder.
+ * Admit records only during our GetEvents drain (#2523). The shared 0x11 summary has no request
+ * identifier: a zero bytes_left cannot end our request. Close on our own inactivity timer instead.
+ * Twin of Swift OuraHistoryAdmission.
  */
-internal class OuraHistoryAdmission {
-    var fetchOutstanding = false
-        private set
-    var finalSummaryPending = false
-        private set
+internal class OuraHistoryAdmission(private val restartIdleTimeout: (Long) -> Unit = {}) {
+    private var fetchOutstanding = false
 
     fun startRequest() {
         fetchOutstanding = true
-        finalSummaryPending = false
+        restartIdleTimeout(IDLE_TIMEOUT_MS)
     }
 
-    fun noteFinalSummary() {
-        if (fetchOutstanding) finalSummaryPending = true
-    }
+    fun handleSummary(moreData: Boolean, whileFetching: Boolean): Boolean =
+        fetchOutstanding && whileFetching && moreData
 
-    fun noteContinuationSummary() {
-        finalSummaryPending = false
+    fun takeIdleTimeout(whileFetching: Boolean): Boolean {
+        if (!fetchOutstanding || !whileFetching) return false
+        endRequest()
+        return true
     }
 
     fun endRequest() {
         fetchOutstanding = false
-        finalSummaryPending = false
     }
 
-    fun <T> admit(records: List<T>, whileFetching: Boolean): List<T> =
-        if (fetchOutstanding && whileFetching) records else emptyList()
+    fun <T> admit(records: List<T>, whileFetching: Boolean): List<T> {
+        if (!fetchOutstanding || !whileFetching || records.isEmpty()) return emptyList()
+        restartIdleTimeout(IDLE_TIMEOUT_MS)
+        return records
+    }
+
+    private companion object {
+        // Deliberately longer than the 1.5 s inter-batch debounce; this ends admission, not a batch.
+        const val IDLE_TIMEOUT_MS = 10_000L
+    }
 }
 
 /**
@@ -596,7 +600,10 @@ class OuraLiveSource(
      * see [OuraHistoryDrain] for the two-cursor model (seen = in-session continuation, stored = durable).
      */
     private val drain = OuraHistoryDrain()
-    private val historyAdmission = OuraHistoryAdmission()
+    private val historyAdmission = OuraHistoryAdmission { delayMs ->
+        handler.removeCallbacks(historyIdleRunnable)
+        handler.postDelayed(historyIdleRunnable, delayMs)
+    }
     private var loggedUnsolicitedHistory = false
 
     /** Where this fetch sought from (reboot detection floor); armed per drain. */
@@ -642,6 +649,19 @@ class OuraLiveSource(
     private var pendingContinuation = false
     private val batchQuietMs = 1_500L
     private val batchQuietRunnable = Runnable { continueDrainAfterQuiet() }
+    private val historyIdleRunnable = Runnable { finishHistoryAfterIdleTimeout() }
+
+    private fun finishHistoryAfterIdleTimeout(): Unit = guardedCallback("history-idle-timeout") {
+        if (!historyAdmission.takeIdleTimeout(driver?.phase == OuraDriverPhase.FetchingHistory)) {
+            return@guardedCallback
+        }
+        finishDrain(idleTimeout = true, resumeBacklog = false)
+    }
+
+    private fun cancelHistoryIdleTimeout() {
+        historyAdmission.endRequest()
+        handler.removeCallbacks(historyIdleRunnable)
+    }
 
     /**
      * Self-chained drain passes: a drain that ends with KNOWN remaining work (ring reboot → full pull
@@ -723,45 +743,36 @@ class OuraLiveSource(
     }
 
     /**
-     * Handle a `0x11` GetEvents summary (open_oura `EventBatchSummary`): the drain continues while
-     * `bytes_left > 0` and is complete at `bytes_left == 0`. The response's byte-count is NEVER
+     * Handle a `0x11` GetEvents summary (open_oura `EventBatchSummary`): only non-final summaries
+     * drive continuation. A final summary can be from a different BLE client. The byte-count is NEVER
      * persisted — persisting it and comparing byte-counts across sessions as clocks was the #91
      * re-dump loop. The durable resume point is the newest STORED sample's ring-time, committed at
      * drain end. Kotlin twin of Swift's `handleHistorySummary` (2bbdaa42).
      */
     private fun handleHistorySummary(summary: com.noop.oura.GetEventsSummary): Unit = guardedCallback("history-summary") {
         val d = driver ?: return@guardedCallback
-        if (!historyAdmission.fetchOutstanding || d.phase != OuraDriverPhase.FetchingHistory) return@guardedCallback
+        if (!historyAdmission.handleSummary(summary.moreData, d.phase == OuraDriverPhase.FetchingHistory)) {
+            return@guardedCallback
+        }
         val elapsed = drainStartedAtMs?.let { (System.currentTimeMillis() - it) / 1000.0 } ?: 0.0
-        val continueDrain = drain.onSummary(summary.bytesLeft, summary.moreData, elapsed)
-        if (summary.moreData && !continueDrain) {
+        val continueDrain = drain.onSummary(summary.bytesLeft, moreData = true, elapsedSeconds = elapsed)
+        if (!continueDrain) {
             val reason = if (elapsed > OuraHistoryDrain.MAX_DRAIN_SECONDS) {
                 "exceeded ${OuraHistoryDrain.MAX_DRAIN_SECONDS.toInt()}s deadline"
             } else {
                 "bytes_left stalled"
             }
             log("Oura: history drain force-stopped - $reason at bytes_left ${summary.bytesLeft} (guard)")
-        }
-        if (!continueDrain) {
-            if (!summary.moreData) {
-                // A final summary can precede the last TLVs; close only after batch quiet.
-                pendingContinuation = false
-                historyAdmission.noteFinalSummary()
-                handler.removeCallbacks(batchQuietRunnable)
-                handler.postDelayed(batchQuietRunnable, batchQuietMs)
-                return@guardedCallback
-            }
             // A deadline stop with more data behind it is resumable backlog (progress banked); a STALL
             // stop is the ring looping and must not chain.
-            val deadlineBacklog = summary.moreData && elapsed > OuraHistoryDrain.MAX_DRAIN_SECONDS
-            finishDrain(completed = !summary.moreData, resumeBacklog = deadlineBacklog)
+            val deadlineBacklog = elapsed > OuraHistoryDrain.MAX_DRAIN_SECONDS
+            finishDrain(resumeBacklog = deadlineBacklog)
             return@guardedCallback
         }
         // More data behind this batch. Do NOT re-request yet: the ring emits the 0x11 summary EARLY
         // (observed arriving before its batch finished streaming), and a mid-stream request at a stale
         // cursor restarts the serve from that cursor (the 5x same-window re-serve, 2026-07-12). Wait
         // for the batch to go quiet, then continue from max-seen-ring-time + 1 (open_oura drain_events).
-        historyAdmission.noteContinuationSummary()
         pendingContinuation = true
         handler.removeCallbacks(batchQuietRunnable)
         handler.postDelayed(batchQuietRunnable, batchQuietMs)
@@ -773,10 +784,6 @@ class OuraLiveSource(
      * non-advancing cursor is exactly what loops the ring).
      */
     private fun continueDrainAfterQuiet(): Unit = guardedCallback("batch-quiet") {
-        if (historyAdmission.finalSummaryPending) {
-            finishDrain(completed = true, resumeBacklog = false)
-            return@guardedCallback
-        }
         if (!pendingContinuation) return@guardedCallback
         pendingContinuation = false
         val d = driver ?: return@guardedCallback
@@ -785,10 +792,11 @@ class OuraLiveSource(
         if (next != null) {
             lastRequestCursor = next
             log("Oura: history batch done - continuing from cursor $next")
+            historyAdmission.startRequest()
             advance(OuraTransition.HistoryCursorAdvanced(cursor = next, moreData = true))
         } else {
             log("Oura: history batch made no cursor progress - stopping drain (ring would re-serve)")
-            finishDrain(completed = false, resumeBacklog = false)
+            finishDrain(resumeBacklog = false)
         }
     }
 
@@ -799,8 +807,8 @@ class OuraLiveSource(
      * (cursor honestly reset to 0; full pull pending) or a deadline stop with backlog — the next pass
      * self-schedules 5 s later, so catching up never needs a manual reconnect.
      */
-    private fun finishDrain(completed: Boolean, resumeBacklog: Boolean) {
-        historyAdmission.endRequest()
+    private fun finishDrain(idleTimeout: Boolean = false, resumeBacklog: Boolean) {
+        cancelHistoryIdleTimeout()
         pendingContinuation = false
         handler.removeCallbacks(batchQuietRunnable)
         hypnogramAssembler.flush()?.let { persistHypnogramBurst(it) }
@@ -810,7 +818,7 @@ class OuraLiveSource(
         // reboot" and answers by keeping the cursor. Snapshotting the flag here (as this did until
         // 2026-09-13) had the scheduler print "ring reboot detected - starting the honest full re-pull"
         // two lines after "not a reboot (#2097)" and burn a chained pass that only re-read the kept cursor.
-        val rebootFullPullPending = commitResumeCursor(completed)
+        val rebootFullPullPending = commitResumeCursor(idleTimeout)
         advance(OuraTransition.HistoryCursorAdvanced(cursor = historyCursor, moreData = false))
         if (rebootFullPullPending || resumeBacklog) {
             if (chainedDrainPasses >= MAX_CHAINED_DRAIN_PASSES) {
@@ -826,8 +834,8 @@ class OuraLiveSource(
             }
             log("Oura: $why; next drain pass in 5 s ($chainedDrainPasses/$MAX_CHAINED_DRAIN_PASSES)")
             handler.postDelayed(chainedDrainRunnable, 5_000L)
-        } else if (completed) {
-            chainedDrainPasses = 0   // healthy full completion re-arms the cap for future backlogs
+        } else if (idleTimeout) {
+            chainedDrainPasses = 0
         }
     }
     /**
@@ -867,7 +875,7 @@ class OuraLiveSource(
         if (drain.maxStoredRingTime <= 0) return
         // Never make the #2097 REBOOT judgement here; see the note above.
         if (drain.sawPreResumeData) return
-        commitResumeCursor(drainCompleted = false)
+        commitResumeCursor(idleTimeout = false)
     }
 
 
@@ -883,8 +891,8 @@ class OuraLiveSource(
      * Returns `true` only when the cursor WAS reset to 0 for a reboot — the one outcome that leaves a
      * full re-pull pending for [finishDrain] to chain. A stale replay the judge rejected returns `false`.
      */
-    private fun commitResumeCursor(drainCompleted: Boolean): Boolean {
-        val how = if (drainCompleted) "caught up (bytes_left 0)" else "stopped early"
+    private fun commitResumeCursor(idleTimeout: Boolean): Boolean {
+        val how = if (idleTimeout) "ended after request inactivity" else "stopped early"
         val resolves = drain.maxStoredRingTime > 0 &&
             driver?.unixSeconds(forRingTimestamp = drain.maxStoredRingTime) != null
         val anchorConfirmsContinuity = drain.sawPreResumeData && syncAnchorsConfirmContinuity()
@@ -1308,6 +1316,7 @@ class OuraLiveSource(
         loggedFeatureStatuses.clear()
         loggedProductInfo.clear()
         pendingAnchorEvents.clear()
+        cancelHistoryIdleTimeout()
         // Per-drain / per-session protocol state starts clean (twin of Swift's connect-setup reset).
         drain.reset()
         resumeCursorAtFetchStart = 0
@@ -1373,6 +1382,7 @@ class OuraLiveSource(
         _linkPhase.value = LinkPhase.DISCONNECTED
         cancelReengage()
         cancelHistoryFetch()
+        cancelHistoryIdleTimeout()
         handler.removeCallbacks(batchQuietRunnable)
         handler.removeCallbacks(chainedDrainRunnable)
         pendingContinuation = false
@@ -1546,6 +1556,7 @@ class OuraLiveSource(
                     clearAuthWatchdog()     // a link that drops mid-handshake takes this path, never the escalation
                     authToggleCccdPending = 0
                     cancelHistoryFetch()
+                    cancelHistoryIdleTimeout()
                     handler.removeCallbacks(batchQuietRunnable)
                     handler.removeCallbacks(chainedDrainRunnable)
                     pendingContinuation = false
@@ -1987,7 +1998,7 @@ class OuraLiveSource(
                 // connect may be resolvable. Retry BEFORE emit, so this batch anchors straight away
                 // instead of parking into pendingAnchorEvents and being drained a moment later (2026-09-02/03 captures).
                 retryPendingSyncTimeAnchor(d)
-                if (pendingContinuation || historyAdmission.finalSummaryPending) {
+                if (pendingContinuation) {
                     handler.removeCallbacks(batchQuietRunnable)
                     handler.postDelayed(batchQuietRunnable, batchQuietMs)
                 }

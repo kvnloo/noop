@@ -10,6 +10,34 @@ class OuraHistoryAdmissionTest {
     private val replay = listOf("night 0x60 +1s", "night 0x60 +2s", "night 0x60 +3s")
 
     @Test
+    fun testForeignFinalDoesNotCutOffDelayedOwnedTail() {
+        var now = 0L
+        var timer: Long? = null
+        var timedOut = false
+        val admission = OuraHistoryAdmission { delay -> timer = now + delay }
+        fun advanceTo(time: Long) {
+            now = time
+            if (timer?.let { it <= now } == true) {
+                timer = null
+                timedOut = admission.takeIdleTimeout(whileFetching = true)
+            }
+        }
+
+        admission.startRequest()
+        assertEquals(replay, admission.admit(replay, whileFetching = true))
+        assertFalse(admission.handleSummary(moreData = false, whileFetching = true)) // foreign final
+        advanceTo(1_501)
+        val tail = listOf("tail")
+        assertEquals(tail, admission.admit(tail, whileFetching = true))
+        advanceTo(10_000) // the original timeout was extended by the admitted tail
+        assertFalse(timedOut)
+        assertEquals(emptyList<String>(), admission.admit(emptyList<String>(), whileFetching = true))
+        advanceTo(11_501)
+        assertTrue(timedOut)
+        assertEquals(emptyList<String>(), admission.admit(tail, whileFetching = true))
+    }
+
+    @Test
     fun testUnsolicitedReplayAfterOurDrainIsIgnored() {
         val admission = OuraHistoryAdmission()
         admission.startRequest()
@@ -27,36 +55,21 @@ class OuraHistoryAdmissionTest {
     }
 
     @Test
-    fun testEarlyFinalSummaryKeepsBatchTailUntilQuiet() {
-        val admission = OuraHistoryAdmission()
+    fun testFinalBeforeAnyRecordsDoesNotRescheduleRequestTimeout() {
+        val delays = mutableListOf<Long>()
+        val admission = OuraHistoryAdmission { delays.add(it) }
         admission.startRequest()
-        admission.noteFinalSummary()
-        assertTrue(admission.finalSummaryPending)
-        assertEquals(replay, admission.admit(replay, whileFetching = true))
-        admission.endRequest()
-        assertFalse(admission.finalSummaryPending)
-        assertEquals(emptyList<String>(), admission.admit(replay, whileFetching = false))
+        assertFalse(admission.handleSummary(moreData = false, whileFetching = true))
+        assertEquals(listOf(10_000L), delays)
     }
 
     @Test
-    fun testNewRequestClearsStaleFinalSummary() {
+    fun testOnlyMoreDataSummaryDuringOwnedFetchCanContinue() {
         val admission = OuraHistoryAdmission()
+        assertFalse(admission.handleSummary(moreData = true, whileFetching = true))
         admission.startRequest()
-        admission.noteFinalSummary()
-        admission.startRequest()
-        assertFalse(admission.finalSummaryPending)
-        assertEquals(replay, admission.admit(replay, whileFetching = true))
-        admission.noteFinalSummary()
-        admission.noteContinuationSummary()
-        assertFalse(admission.finalSummaryPending)
-    }
-
-    @Test
-    fun testForeignFinalSummaryCannotOpenAdmission() {
-        val admission = OuraHistoryAdmission()
-        admission.noteFinalSummary()
-        assertFalse(admission.fetchOutstanding)
-        assertFalse(admission.finalSummaryPending)
-        assertEquals(emptyList<String>(), admission.admit(replay, whileFetching = true))
+        assertFalse(admission.handleSummary(moreData = true, whileFetching = false))
+        assertTrue(admission.handleSummary(moreData = true, whileFetching = true))
+        assertFalse(admission.handleSummary(moreData = false, whileFetching = true))
     }
 }
