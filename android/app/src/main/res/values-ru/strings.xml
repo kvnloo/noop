@@ -2756,7 +2756,11 @@
     <string name="today_customize_live_session_availability">Появляется сегодня, если сессии в реальном времени включены в Настройках или сеанс уже активен.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">«Сегодня» на ваш вкус, пульс для любого приложения и итальянский язык</string>
     <string name="auto_workout_minimum_average_hr">Минимальная средняя ЧСС</string>
+    <string name="auto_workout_minimum_average_hr_a11y" formatted="true">Минимальная средняя ЧСС: %1$d bpm</string>
+    <string name="auto_workout_minimum_average_hr_no_limit_a11y" formatted="true">Минимальная средняя ЧСС: %1$s</string>
     <string name="auto_workout_maximum_suggestion_length">Максимальная длительность предложения</string>
+    <string name="auto_workout_maximum_suggestion_length_a11y" formatted="true">Максимальная длительность предложения: %1$d min</string>
+    <string name="auto_workout_maximum_suggestion_length_no_limit_a11y" formatted="true">Максимальная длительность предложения: %1$s</string>
     <string name="auto_workout_no_limit">Без ограничений</string>
     <string name="auto_workout_limits_note">Эти ограничения лишь скрывают предложения; сохранённые тренировки и оценки не меняются.</string>
 </resources>

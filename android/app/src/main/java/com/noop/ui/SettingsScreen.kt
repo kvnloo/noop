@@ -3389,9 +3389,14 @@ fun SettingsScreen(
                             value = if (autoDetectMinAverageBpm == 0) uiString(R.string.auto_workout_no_limit)
                                     else autoDetectMinAverageBpm.toString(),
                             unit = if (autoDetectMinAverageBpm == 0) null else "bpm",
-                            accessibility = uiString(R.string.auto_workout_minimum_average_hr) + ": " +
-                                if (autoDetectMinAverageBpm == 0) uiString(R.string.auto_workout_no_limit)
-                                else autoDetectMinAverageBpm.toString() + " bpm",
+                            accessibility = if (autoDetectMinAverageBpm == 0) {
+                                stringResource(
+                                    R.string.auto_workout_minimum_average_hr_no_limit_a11y,
+                                    stringResource(R.string.auto_workout_no_limit),
+                                )
+                            } else {
+                                stringResource(R.string.auto_workout_minimum_average_hr_a11y, autoDetectMinAverageBpm)
+                            },
                             onMinus = {
                                 autoDetectMinAverageBpm = if (autoDetectMinAverageBpm <= 80) 0
                                     else autoDetectMinAverageBpm - 10
@@ -3411,9 +3416,14 @@ fun SettingsScreen(
                             value = if (autoDetectMaxDurationMin == 0) uiString(R.string.auto_workout_no_limit)
                                     else autoDetectMaxDurationMin.toString(),
                             unit = if (autoDetectMaxDurationMin == 0) null else "min",
-                            accessibility = uiString(R.string.auto_workout_maximum_suggestion_length) + ": " +
-                                if (autoDetectMaxDurationMin == 0) uiString(R.string.auto_workout_no_limit)
-                                else autoDetectMaxDurationMin.toString() + " min",
+                            accessibility = if (autoDetectMaxDurationMin == 0) {
+                                stringResource(
+                                    R.string.auto_workout_maximum_suggestion_length_no_limit_a11y,
+                                    stringResource(R.string.auto_workout_no_limit),
+                                )
+                            } else {
+                                stringResource(R.string.auto_workout_maximum_suggestion_length_a11y, autoDetectMaxDurationMin)
+                            },
                             onMinus = {
                                 val index = choices.indexOf(autoDetectMaxDurationMin).coerceAtLeast(0)
                                 autoDetectMaxDurationMin = choices[(index - 1).coerceAtLeast(0)]

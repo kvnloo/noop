@@ -2874,7 +2874,11 @@
     <string name="today_customize_live_session_availability">Erscheint heute, wenn Live Sessions in den Einstellungen aktiviert sind oder eine Session aktiv ist.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today nach Ihren Wünschen, Herzfrequenz für jede App und Italienisch</string>
     <string name="auto_workout_minimum_average_hr">Minimale durchschnittliche HF</string>
+    <string name="auto_workout_minimum_average_hr_a11y" formatted="true">Minimale durchschnittliche HF: %1$d bpm</string>
+    <string name="auto_workout_minimum_average_hr_no_limit_a11y" formatted="true">Minimale durchschnittliche HF: %1$s</string>
     <string name="auto_workout_maximum_suggestion_length">Maximale Vorschlagsdauer</string>
+    <string name="auto_workout_maximum_suggestion_length_a11y" formatted="true">Maximale Vorschlagsdauer: %1$d min</string>
+    <string name="auto_workout_maximum_suggestion_length_no_limit_a11y" formatted="true">Maximale Vorschlagsdauer: %1$s</string>
     <string name="auto_workout_no_limit">Kein Limit</string>
     <string name="auto_workout_limits_note">Diese Grenzen blenden nur Vorschläge aus; gespeicherte Workouts und Bewertungen bleiben unverändert.</string>
 </resources>
