@@ -1,5 +1,6 @@
 package com.noop.ui
 
+import com.noop.analytics.Baselines
 import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -16,6 +17,8 @@ import org.junit.Test
  * StressModelCarryTests.
  */
 class StressModelTest {
+
+    private val july19Midnight = 1_784_419_200.0
 
     private fun day(d: String, rhr: Int?, hrv: Double?) =
         DailyMetric(deviceId = "my-whoop", day = d, restingHr = rhr, avgHrv = hrv)
@@ -52,6 +55,35 @@ class StressModelTest {
         assertNotNull(model)
         assertEquals("the latest day's stored stress must win over a carry", 2.5, model!!.score, 0.001)
     }
+    @Test
+    fun resetDayAfterUtcMidnightDoesNotUsePreResetHrv() {
+        val days = listOf(
+            day("2026-07-18", rhr = 55, hrv = 90.0),
+            day("2026-07-19", rhr = 56, hrv = 78.0),
+        )
+        val epoch = july19Midnight + 1
+        val charge = Baselines.foldHistory(
+            days.map { it.avgHrv }, days.map { it.day }, Baselines.metricCfg.getValue("hrv"), epoch,
+        )
+        assertEquals(0, charge.nValid)
+        val model = StressModel.build(days, emptyMap(), hrvBaselineEpoch = epoch)!!
+        assertNull(model.hrvDelta)
+        assertEquals(1.0, model.rhrDelta!!, 1e-9)
+    }
+
+    @Test
+    fun preCutStoredStressDoesNotCarryIntoFirstKeptDay() {
+        val old = day("2026-07-19", rhr = null, hrv = null)
+        val kept = day("2026-07-20", rhr = null, hrv = null)
+        val stored = mapOf(old.day to 2.5)
+        val epoch = july19Midnight + 1
+        assertNull(StressModel.build(listOf(old, kept), stored, recoveryBaselineEpoch = epoch))
+        val current = StressModel.build(
+            listOf(old, kept), stored + (kept.day to 1.5), recoveryBaselineEpoch = epoch,
+        )!!
+        assertEquals(1.5, current.score, 1e-9)
+    }
+
     /** #2818: independent Charge epoch cuts and historical readback parity with Swift. */
     @Test
     fun epochCutsAreIndependentAndKeepHistoricalDayContext() {

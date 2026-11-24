@@ -1722,6 +1722,21 @@ internal class StressModel private constructor(
             hrvBaselineEpoch: Double = 0.0,
             recoveryBaselineEpoch: Double = 0.0,
         ): StressModel? {
+            val displayDay = days.lastOrNull()?.day ?: return null
+            val displayDayEnd = runCatching { (LocalDate.parse(displayDay).toEpochDay() + 1) * 86_400.0 }
+                .getOrNull()
+            // Activate on the reset's UTC date, even when Charge first keeps the next date.
+            fun activeCut(epoch: Double): String? =
+                if (displayDayEnd != null && epoch < displayDayEnd) Baselines.firstCountedDay(epoch) else null
+            val rhrCut = activeCut(recoveryBaselineEpoch)
+            val hrvCut = activeCut(hrvBaselineEpoch)
+
+            // Stored scores combine the vitals, so the later active cut governs the headline.
+            // The trend still shows historical stored values under their original dates.
+            val storedCut = listOfNotNull(rhrCut, hrvCut).maxOrNull()
+            fun eligibleStored(day: String): Double? =
+                if (storedCut == null || day >= storedCut) stored[day] else null
+
             // Carry (#543): today's own row is often vitals-less until the overnight is analyzed —
             // especially right after an app update relaunches and re-runs the pass — so score the NEWEST
             // day that actually carries usable signal (RHR/HRV, or a stored/imported stress value) instead
@@ -1729,24 +1744,19 @@ internal class StressModel private constructor(
             // the storedToday||derived gate below, so an imported stress-only latest day is still honored
             // (not skipped). Falls back to the last row when no day has any signal (cold start).
             val idx = days.indexOfLast {
-                it.restingHr != null || it.avgHrv != null || stored.containsKey(it.day)
+                it.restingHr != null || it.avgHrv != null || eligibleStored(it.day) != null
             }.let { if (it >= 0) it else days.size - 1 }
-            if (idx < 0) return null   // no days at all
             val today = days[idx]
 
             // Baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
             // against its own recent past rather than itself.
             val baseline = if (idx > 0) days.subList(0, idx).takeLast(30) else emptyList()
 
-            // Historical days keep their own prior window. Post-reset days use
-            // independent HRV and resting-HR UTC cuts, matching Swift and Charge.
-            val rhrCut = Baselines.firstCountedDay(recoveryBaselineEpoch)
-            val hrvCut = Baselines.firstCountedDay(hrvBaselineEpoch)
             val rhrBase = baseline
-                .filter { rhrCut == null || today.day < rhrCut || it.day >= rhrCut }
+                .filter { rhrCut == null || it.day >= rhrCut }
                 .mapNotNull { it.restingHr?.toDouble() }
             val hrvBase = baseline
-                .filter { hrvCut == null || today.day < hrvCut || it.day >= hrvCut }
+                .filter { hrvCut == null || it.day >= hrvCut }
                 .mapNotNull { it.avgHrv }
 
             val meanRHR = mean(rhrBase)
@@ -1758,7 +1768,7 @@ internal class StressModel private constructor(
             val hrvT = today.avgHrv
 
             val derivedAvailable = (rhrT != null && meanRHR != null) || (hrvT != null && meanHRV != null)
-            val storedToday = stored[today.day]
+            val storedToday = eligibleStored(today.day)
             if (storedToday == null && !derivedAvailable) return null
 
             val derivedToday: Double? = if (derivedAvailable) {

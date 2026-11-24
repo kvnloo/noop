@@ -1,4 +1,5 @@
 import XCTest
+import StrandAnalytics
 import WhoopStore
 @testable import Strand
 
@@ -8,6 +9,8 @@ import WhoopStore
 /// used to be the one card that didn't, so it dropped to "Calibrating" while the rest showed numbers. These
 /// pin the carry: score the newest day that actually has RHR/HRV. Twin of the Android StressModelTest.
 final class StressModelCarryTests: XCTestCase {
+
+    private let july19Midnight: Double = 1_784_419_200
 
     private func day(_ d: String, rhr: Int?, hrv: Double?) -> DailyMetric {
         DailyMetric(day: d, totalSleepMin: nil, efficiency: nil, deepMin: nil, remMin: nil,
@@ -45,6 +48,33 @@ final class StressModelCarryTests: XCTestCase {
         XCTAssertEqual(model?.score ?? -1, 2.5, accuracy: 0.001,
                        "the latest day's stored stress must win over a carry")
     }
+    func testResetDayAfterUtcMidnightDoesNotUsePreResetHrv() throws {
+        let days = [
+            day("2026-07-18", rhr: 55, hrv: 90),
+            day("2026-07-19", rhr: 56, hrv: 78),
+        ]
+        let epoch = july19Midnight + 1
+        let charge = Baselines.foldHistory(
+            days.map(\.avgHrv), dayKeys: days.map(\.day), cfg: Baselines.metricCfg["hrv"]!, baselineEpoch: epoch
+        )
+        XCTAssertEqual(charge.nValid, 0)
+        let model = try XCTUnwrap(StressModel(days: days, stored: [], hrvBaselineEpoch: epoch))
+        XCTAssertNil(model.hrvDelta)
+        XCTAssertEqual(model.rhrDelta ?? .nan, 1, accuracy: 1e-9)
+    }
+
+    func testPreCutStoredStressDoesNotCarryIntoFirstKeptDay() throws {
+        let old = day("2026-07-19", rhr: nil, hrv: nil)
+        let kept = day("2026-07-20", rhr: nil, hrv: nil)
+        let stored = [(day: old.day, value: 2.5)]
+        let epoch = july19Midnight + 1
+        XCTAssertNil(StressModel(days: [old, kept], stored: stored, recoveryBaselineEpoch: epoch))
+        let current = try XCTUnwrap(StressModel(
+            days: [old, kept], stored: stored + [(day: kept.day, value: 1.5)], recoveryBaselineEpoch: epoch
+        ))
+        XCTAssertEqual(current.score, 1.5, accuracy: 1e-9)
+    }
+
     /// #2818: a Charge reset must not compare new HRV/RHR with the discarded era.
     func testEpochCutsAreIndependentAndKeepHistoricalDayContext() throws {
         let old = (14...18).map {

@@ -4741,7 +4741,9 @@ struct TodayView: View {
         // preferred, else derived off the live RHR/HRV baseline), so the pinned card never lags the detail
         // page on a day with no banked stress row. nil (no usable signal) keeps the honest "Calibrating"
         // placeholder, matching StressView's empty state. Fitness age / Vitality keep their merged reads.
-        stressToday = StressModel(days: repo.days, stored: await stressStoredA)?.score
+        stressToday = StressModel(days: repo.days, stored: await stressStoredA,
+                                  hrvBaselineEpoch: Baselines.hrvBaselineEpoch(),
+                                  recoveryBaselineEpoch: Baselines.recoveryBaselineEpoch())?.score
         fitnessAgeToday = (await fitnessAgeSeriesA).last?.value
         vo2maxToday = (await vo2maxSeriesA).last?.value   // #1391: latest banked VO₂max estimate
         vitalityToday = (await vitalitySeriesA).last?.value

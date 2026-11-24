@@ -866,11 +866,28 @@ struct StressModel {
     /// Returns nil only when there is no usable signal at all.
     init?(days: [DailyMetric], stored: [(day: String, value: Double)],
           hrvBaselineEpoch: Double = 0, recoveryBaselineEpoch: Double = 0) {
+        guard let displayDay = days.last?.day else { return nil }
+        let displayDayEnd = Self.dayParser.date(from: displayDay).map { $0.timeIntervalSince1970 + 86_400 }
+        // Activate on the reset's UTC date, even when Charge first keeps the next date.
+        func activeCut(_ epoch: Double) -> String? {
+            guard let displayDayEnd, epoch < displayDayEnd else { return nil }
+            return Baselines.firstCountedDay(baselineEpoch: epoch)
+        }
+        let rhrCut = activeCut(recoveryBaselineEpoch)
+        let hrvCut = activeCut(hrvBaselineEpoch)
+
         // Stored values keyed by day, clamped to 0–3.
         let storedByDay: [String: Double] = Dictionary(
             stored.map { ($0.day, min(max($0.value, 0), 3)) },
             uniquingKeysWith: { _, b in b }
         )
+        // Stored scores combine the vitals, so the later active cut governs the headline.
+        // The trend still shows historical stored values under their original dates.
+        let storedCut = [rhrCut, hrvCut].compactMap { $0 }.max()
+        func eligibleStored(_ day: String) -> Double? {
+            if let storedCut, day < storedCut { return nil }
+            return storedByDay[day]
+        }
 
         // Carry (#543): today's own row is often vitals-less until the overnight is analyzed —
         // especially right after an app update relaunches and re-runs the pass — so score the NEWEST
@@ -879,26 +896,21 @@ struct StressModel {
         // storedToday||derived gate below, so an imported stress-only latest day is still honored (not
         // skipped). Falls back to the last row when no day has any signal (cold start).
         guard let idx = days.lastIndex(where: {
-            $0.restingHr != nil || $0.avgHrv != nil || storedByDay[$0.day] != nil
+            $0.restingHr != nil || $0.avgHrv != nil || eligibleStored($0.day) != nil
         }) ?? days.indices.last
-        else { return nil }   // no days at all
+        else { return nil }
         let today = days[idx]
 
         // Baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
         // against its own recent past rather than itself.
         let baseline = idx > 0 ? Array(days[0..<idx].suffix(30)) : []
 
-        // The scored day keeps its own history when viewing a pre-reset day.
-        // For post-reset days, drop any earlier night whose UTC day start Charge
-        // would discard. RHR and HRV have independent reset epochs.
-        let rhrCut = Baselines.firstCountedDay(baselineEpoch: recoveryBaselineEpoch)
-        let hrvCut = Baselines.firstCountedDay(baselineEpoch: hrvBaselineEpoch)
         let rhrBase = baseline.filter { row in
-            guard let cut = rhrCut, today.day >= cut else { return true }
+            guard let cut = rhrCut else { return true }
             return row.day >= cut
         }.compactMap { $0.restingHr }.map(Double.init)
         let hrvBase = baseline.filter { row in
-            guard let cut = hrvCut, today.day >= cut else { return true }
+            guard let cut = hrvCut else { return true }
             return row.day >= cut
         }.compactMap { $0.avgHrv }
 
@@ -912,7 +924,7 @@ struct StressModel {
 
         // Resolve today's score: prefer a stored value, else derive.
         let derivedAvailable = (rhrT != nil && meanRHR != nil) || (hrvT != nil && meanHRV != nil)
-        let storedToday = storedByDay[today.day]
+        let storedToday = eligibleStored(today.day)
         guard storedToday != nil || derivedAvailable else { return nil }
 
         let derivedToday: Double? = derivedAvailable

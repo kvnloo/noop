@@ -1805,8 +1805,12 @@ struct LiquidTodayView: View {
                 .map { ($0.day, $0.value) },
             "weight": (await weightA).filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey },
         ]
+        let stressHrvEpoch = Baselines.hrvBaselineEpoch()
+        let stressRecoveryEpoch = Baselines.recoveryBaselineEpoch()
         stress = await Task.detached(priority: .utility) {
-            StressModel(days: daysSnapshot, stored: storedStress)?.score
+            StressModel(days: daysSnapshot, stored: storedStress,
+                        hrvBaselineEpoch: stressHrvEpoch,
+                        recoveryBaselineEpoch: stressRecoveryEpoch)?.score
         }.value
         fitnessAge = (await fitA).last?.value   // history-wide latest banked (not day-scoped)
         vo2max = (await vo2A).last?.value        // #1391: latest banked VO₂max estimate
