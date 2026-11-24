@@ -6,6 +6,64 @@ import XCTest
 final class OuraHistoryAdmissionTests: XCTestCase {
     private let replay = ["night 0x60 +1s", "night 0x60 +2s", "night 0x60 +3s"]
 
+    func testContinuousRecordsCannotExtendDrainPastDeadline() {
+        var now = 0.0
+        var timer = 0.0
+        var closedAt: TimeInterval?
+        let admission = OuraHistoryAdmission(now: { now }, onDeadline: { _ in closedAt = now }) {
+            timer = now + $0
+        }
+        func advance(to time: TimeInterval) {
+            now = time
+            if timer <= now, admission.takeIdleTimeout(whileFetching: true) { closedAt = now }
+        }
+
+        admission.startRequest()
+        for arrival in 0..<300 {
+            advance(to: Double(arrival))
+            XCTAssertEqual(admission.admit(replay, whileFetching: true), replay)
+        }
+        advance(to: 300)
+        XCTAssertEqual(closedAt, 300)
+        advance(to: 301)
+        XCTAssertEqual(admission.admit(replay, whileFetching: true), [])
+    }
+
+    func testRecordsAtDeadlineAreRejectedEvenIfTimerHasNotRun() {
+        var now = 0.0
+        var closed = false
+        let admission = OuraHistoryAdmission(now: { now }, onDeadline: { _ in closed = true })
+        admission.startRequest()
+        now = 300
+        XCTAssertEqual(admission.admit(replay, whileFetching: true), [])
+        XCTAssertTrue(closed)
+    }
+
+    func testContinuationDoesNotResetDeadline() {
+        var now = 1_000.0
+        var delay = 0.0
+        let admission = OuraHistoryAdmission(now: { now }) { delay = $0 }
+        admission.startRequest()
+        now += 298
+        XCTAssertTrue(admission.handleSummary(moreData: true, whileFetching: true))
+        XCTAssertTrue(admission.continueRequest())
+        XCTAssertEqual(delay, 2)
+        now += 2
+        XCTAssertFalse(admission.continueRequest())
+    }
+
+    func testUnattributedFinalAfterRecordsFallsBackToInactivity() {
+        var now = 0.0
+        var timer = 0.0
+        let admission = OuraHistoryAdmission(now: { now }) { timer = now + $0 }
+        admission.startRequest()
+        now = 1
+        XCTAssertEqual(admission.admit(replay, whileFetching: true), replay)
+        now = 2
+        XCTAssertFalse(admission.handleSummary(moreData: false, whileFetching: true))
+        XCTAssertEqual(timer, 11, "the final cannot shorten or extend inactivity")
+    }
+
     func testUnsolicitedReplayAfterOurDrainIsIgnored() {
         let admission = OuraHistoryAdmission()
         admission.startRequest()
@@ -27,7 +85,7 @@ final class OuraHistoryAdmissionTests: XCTestCase {
         var now = 0.0
         var timer: TimeInterval?
         var timedOut = false
-        let admission = OuraHistoryAdmission { delay in timer = now + delay }
+        let admission = OuraHistoryAdmission(now: { now }) { delay in timer = now + delay }
         func advance(to time: TimeInterval) {
             now = time
             if let deadline = timer, deadline <= now {

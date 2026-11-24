@@ -82,39 +82,66 @@ internal fun ouraAdvertisedLabel(advertisedName: String, fallback: String): Stri
 
 /**
  * Admit records only during our GetEvents drain (#2523). The shared 0x11 summary has no request
- * identifier: a zero bytes_left cannot end our request. Close on our own inactivity timer instead.
+ * identifier: a zero bytes_left cannot end our request. Close on inactivity or the drain deadline.
  * Twin of Swift OuraHistoryAdmission.
  */
-internal class OuraHistoryAdmission(private val restartIdleTimeout: (Long) -> Unit = {}) {
-    private var fetchOutstanding = false
+internal class OuraHistoryAdmission(
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val onDeadline: (Boolean) -> Unit = {},
+    private val restartIdleTimeout: (Long) -> Unit = {},
+) {
+    private var startedAtMs: Long? = null
+
+    val elapsedSeconds: Double
+        get() = startedAtMs?.let { (nowMs() - it) / 1000.0 } ?: 0.0
 
     fun startRequest() {
-        fetchOutstanding = true
+        startedAtMs = nowMs()
         restartIdleTimeout(IDLE_TIMEOUT_MS)
     }
 
-    fun handleSummary(moreData: Boolean, whileFetching: Boolean): Boolean =
-        fetchOutstanding && whileFetching && moreData
+    /** A continuation is another batch of the same drain, not a new deadline. */
+    fun continueRequest(): Boolean = refreshTimeout(whileFetching = true)
 
+    fun handleSummary(moreData: Boolean, whileFetching: Boolean): Boolean =
+        remainingWhileOpen(whileFetching, moreData) != null && moreData
+
+    /** Returns true only for inactivity; deadline expiry dispatches through [onDeadline]. */
     fun takeIdleTimeout(whileFetching: Boolean): Boolean {
-        if (!fetchOutstanding || !whileFetching) return false
+        if (remainingWhileOpen(whileFetching) == null) return false
         endRequest()
         return true
     }
 
     fun endRequest() {
-        fetchOutstanding = false
+        startedAtMs = null
     }
 
     fun <T> admit(records: List<T>, whileFetching: Boolean): List<T> {
-        if (!fetchOutstanding || !whileFetching || records.isEmpty()) return emptyList()
-        restartIdleTimeout(IDLE_TIMEOUT_MS)
+        if (records.isEmpty() || !refreshTimeout(whileFetching)) return emptyList()
         return records
+    }
+
+    private fun refreshTimeout(whileFetching: Boolean): Boolean {
+        val remaining = remainingWhileOpen(whileFetching) ?: return false
+        restartIdleTimeout(minOf(IDLE_TIMEOUT_MS, remaining))
+        return true
+    }
+
+    private fun remainingWhileOpen(whileFetching: Boolean, moreData: Boolean = false): Long? {
+        if (!whileFetching) return null
+        val start = startedAtMs ?: return null
+        val remaining = MAX_DRAIN_MS - (nowMs() - start)
+        if (remaining > 0) return remaining
+        endRequest()
+        onDeadline(moreData)
+        return null
     }
 
     private companion object {
         // Deliberately longer than the 1.5 s inter-batch debounce; this ends admission, not a batch.
         const val IDLE_TIMEOUT_MS = 10_000L
+        val MAX_DRAIN_MS = (OuraHistoryDrain.MAX_DRAIN_SECONDS * 1_000).toLong()
     }
 }
 
@@ -600,7 +627,10 @@ class OuraLiveSource(
      * see [OuraHistoryDrain] for the two-cursor model (seen = in-session continuation, stored = durable).
      */
     private val drain = OuraHistoryDrain()
-    private val historyAdmission = OuraHistoryAdmission { delayMs ->
+    private val historyAdmission = OuraHistoryAdmission(onDeadline = { moreData ->
+        log("Oura: history drain force-stopped at the deadline")
+        finishDrain(resumeBacklog = moreData || pendingContinuation)
+    }) { delayMs ->
         handler.removeCallbacks(historyIdleRunnable)
         handler.postDelayed(historyIdleRunnable, delayMs)
     }
@@ -630,9 +660,6 @@ class OuraLiveSource(
      */
     private var currentSyncAnchorTicks: Long? = null
     private var currentSyncAnchorUnixSeconds: Long? = null
-
-    /** Wall-clock start of the current drain; feeds the deadline guard. */
-    private var drainStartedAtMs: Long? = null
 
     /**
      * The cursor the LAST GetEvents request was issued at — the `start` of open_oura's progress test
@@ -721,7 +748,6 @@ class OuraLiveSource(
         // Arm the per-drain state: where we sought from (reboot detection), the seen/stored high-water
         // marks, and the stall/deadline guards.
         resumeCursorAtFetchStart = historyCursor
-        drainStartedAtMs = System.currentTimeMillis()
         drain.reset()
         historyAdmission.startRequest()
         lastRequestCursor = historyCursor
@@ -751,22 +777,15 @@ class OuraLiveSource(
      */
     private fun handleHistorySummary(summary: com.noop.oura.GetEventsSummary): Unit = guardedCallback("history-summary") {
         val d = driver ?: return@guardedCallback
+        val elapsed = historyAdmission.elapsedSeconds
         if (!historyAdmission.handleSummary(summary.moreData, d.phase == OuraDriverPhase.FetchingHistory)) {
             return@guardedCallback
         }
-        val elapsed = drainStartedAtMs?.let { (System.currentTimeMillis() - it) / 1000.0 } ?: 0.0
+        // Admission already enforced the deadline; this checks for stalled bytes_left.
         val continueDrain = drain.onSummary(summary.bytesLeft, moreData = true, elapsedSeconds = elapsed)
         if (!continueDrain) {
-            val reason = if (elapsed > OuraHistoryDrain.MAX_DRAIN_SECONDS) {
-                "exceeded ${OuraHistoryDrain.MAX_DRAIN_SECONDS.toInt()}s deadline"
-            } else {
-                "bytes_left stalled"
-            }
-            log("Oura: history drain force-stopped - $reason at bytes_left ${summary.bytesLeft} (guard)")
-            // A deadline stop with more data behind it is resumable backlog (progress banked); a STALL
-            // stop is the ring looping and must not chain.
-            val deadlineBacklog = elapsed > OuraHistoryDrain.MAX_DRAIN_SECONDS
-            finishDrain(resumeBacklog = deadlineBacklog)
+            log("Oura: history drain force-stopped - bytes_left stalled at ${summary.bytesLeft} (guard)")
+            finishDrain(resumeBacklog = false)
             return@guardedCallback
         }
         // More data behind this batch. Do NOT re-request yet: the ring emits the 0x11 summary EARLY
@@ -785,14 +804,16 @@ class OuraLiveSource(
      */
     private fun continueDrainAfterQuiet(): Unit = guardedCallback("batch-quiet") {
         if (!pendingContinuation) return@guardedCallback
+        if (driver?.phase != OuraDriverPhase.FetchingHistory) {
+            pendingContinuation = false
+            return@guardedCallback
+        }
+        if (!historyAdmission.continueRequest()) return@guardedCallback
         pendingContinuation = false
-        val d = driver ?: return@guardedCallback
-        if (d.phase != OuraDriverPhase.FetchingHistory) return@guardedCallback
         val next = drain.continuationCursor(lastRequestCursor)
         if (next != null) {
             lastRequestCursor = next
             log("Oura: history batch done - continuing from cursor $next")
-            historyAdmission.startRequest()
             advance(OuraTransition.HistoryCursorAdvanced(cursor = next, moreData = true))
         } else {
             log("Oura: history batch made no cursor progress - stopping drain (ring would re-serve)")
@@ -1320,7 +1341,6 @@ class OuraLiveSource(
         // Per-drain / per-session protocol state starts clean (twin of Swift's connect-setup reset).
         drain.reset()
         resumeCursorAtFetchStart = 0
-        drainStartedAtMs = null
         lastRequestCursor = 0
         pendingContinuation = false
         handler.removeCallbacks(batchQuietRunnable)

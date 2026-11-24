@@ -39,40 +39,68 @@ func ouraAdvertisedLabel(_ advertisedName: String, fallback: String) -> String {
 }
 
 /// Admits records only during our GetEvents drain (#2523). The shared 0x11 summary has no request
-/// identifier: a zero bytes_left cannot end our request. Close on our own inactivity timer instead.
+/// identifier: a zero bytes_left cannot end our request. Close on inactivity or the drain deadline.
 final class OuraHistoryAdmission {
     // Deliberately longer than the 1.5 s inter-batch debounce; this ends admission, not a batch.
     private static let idleTimeout: TimeInterval = 10
+    private let now: () -> TimeInterval
+    private let onDeadline: (Bool) -> Void
     private let restartIdleTimeout: (TimeInterval) -> Void
-    private var fetchOutstanding = false
+    private var startedAt: TimeInterval?
 
-    init(restartIdleTimeout: @escaping (TimeInterval) -> Void = { _ in }) {
+    init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         onDeadline: @escaping (Bool) -> Void = { _ in },
+         restartIdleTimeout: @escaping (TimeInterval) -> Void = { _ in }) {
+        self.now = now
+        self.onDeadline = onDeadline
         self.restartIdleTimeout = restartIdleTimeout
     }
 
+    var elapsedSeconds: TimeInterval { startedAt.map { now() - $0 } ?? 0 }
+
     func startRequest() {
-        fetchOutstanding = true
+        startedAt = now()
         restartIdleTimeout(Self.idleTimeout)
     }
 
-    func handleSummary(moreData: Bool, whileFetching: Bool) -> Bool {
-        fetchOutstanding && whileFetching && moreData
+    /// A continuation is another batch of the same drain, not a new deadline.
+    func continueRequest() -> Bool {
+        refreshTimeout(whileFetching: true)
     }
 
+    func handleSummary(moreData: Bool, whileFetching: Bool) -> Bool {
+        remainingWhileOpen(whileFetching: whileFetching, moreData: moreData) != nil && moreData
+    }
+
+    /// Returns true only for inactivity; deadline expiry dispatches through onDeadline.
     func takeIdleTimeout(whileFetching: Bool) -> Bool {
-        guard fetchOutstanding, whileFetching else { return false }
+        guard remainingWhileOpen(whileFetching: whileFetching) != nil else { return false }
         endRequest()
         return true
     }
 
     func endRequest() {
-        fetchOutstanding = false
+        startedAt = nil
     }
 
     func admit<Record>(_ records: [Record], whileFetching: Bool) -> [Record] {
-        guard fetchOutstanding, whileFetching, !records.isEmpty else { return [] }
-        restartIdleTimeout(Self.idleTimeout)
+        guard !records.isEmpty, refreshTimeout(whileFetching: whileFetching) else { return [] }
         return records
+    }
+
+    private func refreshTimeout(whileFetching: Bool) -> Bool {
+        guard let remaining = remainingWhileOpen(whileFetching: whileFetching) else { return false }
+        restartIdleTimeout(min(Self.idleTimeout, remaining))
+        return true
+    }
+
+    private func remainingWhileOpen(whileFetching: Bool, moreData: Bool = false) -> TimeInterval? {
+        guard whileFetching, startedAt != nil else { return nil }
+        let remaining = OuraHistoryDrain.maxDrainSeconds - elapsedSeconds
+        if remaining > 0 { return remaining }
+        endRequest()
+        onDeadline(moreData)
+        return nil
     }
 }
 
@@ -722,7 +750,11 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// persistence, logging, and the `historyCursorAdvanced` emit — and delegates every decision here so
     /// they can't silently regress in a refactor again (they did once: #91 → #291). See OuraHistoryDrainTests.
     private var drain = OuraHistoryDrain()
-    private lazy var historyAdmission = OuraHistoryAdmission { [weak self] delay in
+    private lazy var historyAdmission = OuraHistoryAdmission(onDeadline: { [weak self] moreData in
+        guard let self else { return }
+        log("Oura: history drain force-stopped at the deadline")
+        finishDrain(resumeBacklog: moreData || pendingContinuation)
+    }) { [weak self] delay in
         self?.restartHistoryIdleTimeout(after: delay)
     }
     private var loggedUnsolicitedHistory = false
@@ -742,8 +774,6 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// `previousSyncAnchor`. `nil` until `adoptSyncTimeAnchor(deviceTimestamp:status:receivedAt:source:)`
     /// first succeeds this session.
     private var currentSyncAnchor: (ringTicks: UInt32, unixSeconds: Int64)?
-    /// Wall-clock start of the current drain; `drain`'s deadline guard force-stops one running too long.
-    private var drainStartedAt: Date?
     /// The cursor the LAST GetEvents request was issued at — the `start` of open_oura's progress test
     /// (`next > start`). Continuation requests must advance past it or the drain stops.
     private var lastRequestCursor: UInt32 = 0
@@ -809,7 +839,6 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         // Arm the per-drain state: where we sought from (reboot detection), the stored-sample high-water
         // mark the cursor will commit from, and the stall/deadline guards.
         resumeCursorAtFetchStart = historyCursor
-        drainStartedAt = Date()
         drain.reset()
         historyAdmission.startRequest()
         lastRequestCursor = historyCursor
@@ -843,21 +872,15 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// now-stale ring-time. Stall/deadline guards are backstops only; they force-stop the drain but keep
     /// whatever forward progress was banked (never reset to 0 — that re-arms the loop).
     private func handleHistorySummary(_ summary: (eventsReceived: UInt8, bytesLeft: UInt32, moreData: Bool)) {
+        let elapsed = historyAdmission.elapsedSeconds
         guard historyAdmission.handleSummary(moreData: summary.moreData,
                                              whileFetching: driver?.phase == .fetchingHistory) else { return }
-        // Stall + deadline backstops.
-        let elapsed = drainStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        // Admission already enforced the deadline; this checks for stalled bytes_left.
         let continueDrain = drain.onSummary(bytesLeft: summary.bytesLeft, moreData: true,
                                             elapsedSeconds: elapsed)
         guard continueDrain else {
-            let reason = elapsed > OuraHistoryDrain.maxDrainSeconds
-                ? "exceeded \(Int(OuraHistoryDrain.maxDrainSeconds))s deadline"
-                : "bytes_left stalled"
-            log("Oura: history drain force-stopped - \(reason) at bytes_left \(summary.bytesLeft) (guard)")
-            // A deadline stop with more data behind it is resumable backlog (progress banked, the ring
-            // is healthy — we just chose to breathe); a STALL stop is the ring looping and must not chain.
-            let deadlineBacklog = elapsed > OuraHistoryDrain.maxDrainSeconds
-            finishDrain(resumeBacklog: deadlineBacklog)
+            log("Oura: history drain force-stopped - bytes_left stalled at \(summary.bytesLeft) (guard)")
+            finishDrain(resumeBacklog: false)
             return
         }
         // More data behind this batch. Do NOT re-request yet: the ring emits the 0x11 summary EARLY
@@ -874,12 +897,15 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     private func continueDrainAfterQuiet() {
         stopBatchQuietTimer()
         guard pendingContinuation else { return }
+        guard let driver, driver.phase == .fetchingHistory else {
+            pendingContinuation = false
+            return
+        }
+        guard historyAdmission.continueRequest() else { return }
         pendingContinuation = false
-        guard let driver, driver.phase == .fetchingHistory else { return }
         if let next = drain.continuationCursor(lastRequestCursor: lastRequestCursor) {
             lastRequestCursor = next
             log("Oura: history batch done - continuing from cursor \(next) [\(describeCursor(next))]")
-            historyAdmission.startRequest()
             advance(.historyCursorAdvanced(cursor: next, moreData: true))
         } else {
             log("Oura: history batch made no cursor progress - stopping drain (ring would re-serve)")
@@ -1818,7 +1844,6 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         lastPhaseCodeCount = 0
         drain.reset()
         resumeCursorAtFetchStart = 0
-        drainStartedAt = nil
         lastRequestCursor = 0
         pendingContinuation = false
         cancelHistoryIdleTimeout()
@@ -3083,7 +3108,6 @@ extension OuraLiveSource: @preconcurrency CBCentralManagerDelegate {
         // Per-drain cursor state starts clean each session (fetchHistoryIfIdle re-arms it per drain).
         drain.reset()
         resumeCursorAtFetchStart = 0
-        drainStartedAt = nil
         lastRequestCursor = 0
         pendingContinuation = false
         cancelHistoryIdleTimeout()
