@@ -74,7 +74,11 @@ final class JournalCatalogStore: ObservableObject {
         d = defaults
         if let blob = d.data(forKey: K.items),
            let decoded = try? JSONDecoder().decode([JournalCatalogItem].self, from: blob) {
-            items = decoded
+            // Keep the first stored row verbatim, regardless of its display sort order.
+            var seen = Set<String>()
+            let repaired = decoded.filter { seen.insert(Self.norm($0.canonical)).inserted }
+            items = repaired
+            if repaired.count != decoded.count { persistItems() }
         } else {
             // One-time fold of the legacy two-array store into v2 items. Custom questions become
             // `.bool` items in `.other`; hidden ones keep their hidden flag. Idempotent: after this

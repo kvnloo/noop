@@ -1,9 +1,14 @@
 package com.noop.ui
 
+import android.content.Context
 import com.noop.data.JournalEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import java.time.LocalDate
 
 /**
@@ -121,5 +126,42 @@ class JournalLogTest {
         assertEquals("2026-06-09", journalDayKey(1, today))
         // Month boundary.
         assertEquals("2025-12-31", journalDayKey(1, LocalDate.of(2026, 1, 1)))
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE)
+class JournalCatalogLoadTest {
+    @Test
+    fun v2LoadRepairsPersistedAliasesKeepingFirstStoredItem() {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val prefs = context.getSharedPreferences("noop_prefs", Context.MODE_PRIVATE)
+        val key = "noop.journalCatalogV2"
+        val first = JournalCatalogItem(
+            canonical = "Did you take\u2007a short walk?", displayName = "Evening walk",
+            kind = JournalKind.Numeric("minutes"), group = JournalGroup.Lifestyle,
+            sortIndex = 7, hidden = true, custom = true,
+        )
+        val duplicate = JournalCatalogItem(
+            canonical = "  DID YOU TAKE  A SHORT WALK? ", displayName = "Alias",
+            kind = JournalKind.Bool, group = JournalGroup.Other,
+            sortIndex = 0, hidden = false, custom = true,
+        )
+        val distinct = JournalCatalogItem(
+            canonical = "Did you read after dinner?", group = JournalGroup.Lifestyle,
+            sortIndex = 8, hidden = false, custom = true,
+        )
+        prefs.edit().putString(key, encodeJournalCatalog(listOf(first, duplicate, distinct))).apply()
+
+        val expected = listOf(first, distinct)
+        assertEquals(expected, loadJournalCatalogItems(context))
+        val repaired = checkNotNull(prefs.getString(key, null))
+        assertEquals(expected, decodeJournalCatalog(repaired))
+
+        // Insignificant JSON whitespace makes an unnecessary rewrite observable.
+        val clean = "$repaired "
+        prefs.edit().putString(key, clean).apply()
+        assertEquals(expected, loadJournalCatalogItems(context))
+        assertEquals(clean, prefs.getString(key, null))
     }
 }

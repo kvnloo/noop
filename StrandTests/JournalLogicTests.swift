@@ -274,6 +274,34 @@ final class JournalLogicTests: XCTestCase {
         XCTAssertEqual(reloaded.displayName(for: canonical), "Evening walk")
     }
 
+    @MainActor
+    func testV2LoadRepairsPersistedAliasesKeepingFirstStoredItem() throws {
+        let defaults = isolatedDefaults()
+        let first = JournalCatalogItem(
+            canonical: "Did you take\u{2007}a short walk?", displayName: "Evening walk",
+            kind: .numeric(unitLabel: "minutes"), group: .lifestyle,
+            sortIndex: 7, hidden: true, custom: true)
+        let duplicate = JournalCatalogItem(
+            canonical: "  DID YOU TAKE  A SHORT WALK? ", displayName: "Alias",
+            kind: .bool, group: .other, sortIndex: 0, hidden: false, custom: true)
+        let distinct = JournalCatalogItem(
+            canonical: "Did you read after dinner?", displayName: nil,
+            kind: .bool, group: .lifestyle, sortIndex: 8, hidden: false, custom: true)
+        let key = JournalCatalogBackupKeys.items
+        defaults.set(try JSONEncoder().encode([first, duplicate, distinct]), forKey: key)
+
+        let expected = [first, distinct]
+        XCTAssertEqual(JournalCatalogStore(defaults: defaults).items, expected)
+        let repaired = try XCTUnwrap(defaults.data(forKey: key))
+        XCTAssertEqual(try JSONDecoder().decode([JournalCatalogItem].self, from: repaired), expected)
+
+        // Insignificant JSON whitespace makes an unnecessary rewrite observable.
+        let clean = repaired + Data([0x20])
+        defaults.set(clean, forKey: key)
+        XCTAssertEqual(JournalCatalogStore(defaults: defaults).items, expected)
+        XCTAssertEqual(defaults.data(forKey: key), clean)
+    }
+
     func testUnicodeJournalIdentityMatchesKotlinWhitespaceContract() {
         // Mirrors JournalLogTest.kt exactly. None of these assertions changes
         // the actual saved question, only its comparison/deduplication key.
