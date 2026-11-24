@@ -220,47 +220,16 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
     }
 
     androidx.compose.runtime.LaunchedEffect(journalSeq, dayOffset, currentDayKey, catalogItems) {
-        val imported = vm.repo.journal("my-whoop", "0000-01-01", "9999-12-31")
-        val native = vm.repo.journal(JOURNAL_DEVICE_ID, "0000-01-01", "9999-12-31")
-        val entries = mergeJournalEntries(imported, native)
-        val byBehaviour = mutableMapOf<String, MutableSet<String>>()
-        val controlsByBehaviour = mutableMapOf<String, MutableSet<String>>()
-        // #322: a numeric log writes answeredYes=true too, so a numeric item lands in the with/without
-        // split here unchanged; its per-day value is captured separately for a numeric series the effect
-        // ranker can consume like any metric outcome (dose-response lands in the v5 hub). Additive.
-        val numericByBehaviour = mutableMapOf<String, MutableMap<String, Double>>()
-        for (e in entries) {
-            val bucket = if (e.answeredYes) byBehaviour else controlsByBehaviour
-            bucket.getOrPut(e.question) { mutableSetOf() }.add(e.day)
-            e.numericValue?.let { v -> numericByBehaviour.getOrPut(e.question) { mutableMapOf() }[e.day] = v }
-        }
-        behaviours = byBehaviour.mapValues { it.value.toSet() }
-        controls = controlsByBehaviour.mapValues { it.value.toSet() }
-        numericJournalSeries = numericByBehaviour.mapValues { it.value.toMap() }
-        importedQuestions = imported.map { it.question }.distinct()
-        val key = journalDayKey(dayOffset)
-        val answers = native.filter { it.day == key }.associate { it.question to it.answeredYes }
-        // #322: the selected day's numeric values (native-only; imported WHOOP rows carry none).
-        dayNumeric = native.filter { it.day == key && it.numericValue != null }
-            .associate { it.question to it.numericValue!! }
-        // Reusing yesterday is a *suggestion*, never a logged Yes/No.
-        // A historical row would otherwise be fabricated as though the user observed today.
-        // Only the explicit Copy button below can persist a fresh day's answers.
-        val yesterdayAnswers = if (dayOffset == 0L) {
-            // A numeric journal row also says answeredYes=true, but without its actual
-            // numericValue copying that bit would invent a dose-independent observation.
-            // Only current, visible boolean prompts may be copied after confirmation.
-            val eligible = resolveJournalItems(importedQuestions, catalogItems)
-                .filterNot { it.kind.isNumeric }
-                .mapTo(hashSetOf<String>()) { normJournalKey(it.canonical) }
-            previousBooleanJournalAnswers(native, journalDayKey(1L), eligible)
-        } else emptyMap()
-        // Imported WHOOP answers are observations too; do not offer a blanket copy that
-        // would overwrite today's imported evidence with a native row.
-        val currentRecorded = entries.filter { it.day == key }
-            .associate { it.question to it.answeredYes }
-        suggestedPreviousAnswers = journalCopySuggestion(dayOffset, currentRecorded, yesterdayAnswers)
-        dayAnswers = answers
+        val journal = loadInsightsJournal(
+            vm.repo, dayOffset, journalDayKey(dayOffset), journalDayKey(1L), catalogItems,
+        )
+        behaviours = journal.behaviours
+        controls = journal.controls
+        numericJournalSeries = journal.numericJournalSeries
+        importedQuestions = journal.importedQuestions
+        dayNumeric = journal.dayNumeric
+        suggestedPreviousAnswers = journal.suggestedPreviousAnswers
+        dayAnswers = journal.dayAnswers
         journalLoaded = true
     }
 
@@ -354,19 +323,7 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
                                 currentDayKey = selectedDay
                             } else {
                                 scope.launch {
-                                    // Check BOTH native and imported current-day evidence at tap
-                                    // time. Copy only missing questions, never overwrite real
-                                    // Yes/No observations that arrived since the suggestion.
-                                    val native = vm.repo.journal(JOURNAL_DEVICE_ID, selectedDay, selectedDay)
-                                    val imported = vm.repo.journal("my-whoop", selectedDay, selectedDay)
-                                    val current = mergeJournalEntries(imported, native)
-                                        .associate { it.question to it.answeredYes }
-                                    val uncopied = missingJournalCopyAnswers(pending, current)
-                                    if (uncopied.isNotEmpty()) {
-                                        vm.repo.upsertJournal(uncopied.map { (q, yes) ->
-                                            JournalEntry(JOURNAL_DEVICE_ID, selectedDay, q, yes)
-                                        })
-                                    }
+                                    copyInsightsJournalAnswers(vm.repo, selectedDay, pending)
                                     journalSeq++
                                 }
                             }
