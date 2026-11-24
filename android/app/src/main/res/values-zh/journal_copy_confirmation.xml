@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journal_copy_explainer">如果之前的“是/否”回答仍然适用，可以复制。数值记录必须重新填写。</string>
+    <string name="journal_copy_action">复制之前的回答</string>
+</resources>

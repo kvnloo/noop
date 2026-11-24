@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journal_copy_explainer">Предыдущие ответы «Да/Нет» можно скопировать, если они всё ещё верны. Числовые значения нужно внести заново.</string>
+    <string name="journal_copy_action">Копировать предыдущие ответы</string>
+</resources>

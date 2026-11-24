@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journal_copy_explainer">Previous Yes/No answers can be copied if they still apply. Numeric entries must be logged again.</string>
+    <string name="journal_copy_action">Copy previous answers</string>
+</resources>

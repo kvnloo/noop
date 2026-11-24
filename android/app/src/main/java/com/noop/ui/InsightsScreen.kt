@@ -192,7 +192,7 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
     var dayAnswers by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     // #322: the selected day's native numeric values (question -> value), drives the numeric fields.
     var dayNumeric by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
-    var preFilledFromYesterday by remember { mutableStateOf(false) }
+    var suggestedPreviousAnswers by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // #322: the v2 catalog (rename + numeric type + group + order), folding the legacy custom/hidden
@@ -219,53 +219,17 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    androidx.compose.runtime.LaunchedEffect(journalSeq, dayOffset, currentDayKey) {
-        val imported = vm.repo.journal("my-whoop", "0000-01-01", "9999-12-31")
-        val native = vm.repo.journal(JOURNAL_DEVICE_ID, "0000-01-01", "9999-12-31")
-        val entries = mergeJournalEntries(imported, native)
-        val byBehaviour = mutableMapOf<String, MutableSet<String>>()
-        val controlsByBehaviour = mutableMapOf<String, MutableSet<String>>()
-        // #322: a numeric log writes answeredYes=true too, so a numeric item lands in the with/without
-        // split here unchanged; its per-day value is captured separately for a numeric series the effect
-        // ranker can consume like any metric outcome (dose-response lands in the v5 hub). Additive.
-        val numericByBehaviour = mutableMapOf<String, MutableMap<String, Double>>()
-        for (e in entries) {
-            val bucket = if (e.answeredYes) byBehaviour else controlsByBehaviour
-            bucket.getOrPut(e.question) { mutableSetOf() }.add(e.day)
-            e.numericValue?.let { v -> numericByBehaviour.getOrPut(e.question) { mutableMapOf() }[e.day] = v }
-        }
-        behaviours = byBehaviour.mapValues { it.value.toSet() }
-        controls = controlsByBehaviour.mapValues { it.value.toSet() }
-        numericJournalSeries = numericByBehaviour.mapValues { it.value.toMap() }
-        importedQuestions = imported.map { it.question }.distinct()
-        val key = journalDayKey(dayOffset)
-        var answers = native.filter { it.day == key }.associate { it.question to it.answeredYes }
-        // #322: the selected day's numeric values (native-only; imported WHOOP rows carry none).
-        dayNumeric = native.filter { it.day == key && it.numericValue != null }
-            .associate { it.question to it.numericValue!! }
-        // Pre-fill from last night when opening today's journal with no entries yet, makes
-        // recurring patterns (e.g. no alcohol, read before bed) one tap to confirm instead of re-enter.
-        if (answers.isEmpty() && dayOffset == 0L) {
-            val yesterdayAnswers = native
-                .filter { it.day == journalDayKey(1L) }
-                .associate { it.question to it.answeredYes }
-            if (yesterdayAnswers.isNotEmpty()) {
-                // Upsert real rows for today so the effects engine counts the day as logged
-                // and onClear can delete the row it finds. Without this the chips looked
-                // pre-filled but no row existed, so "confirm" persisted nothing and
-                // "clear" tried to delete a phantom.
-                vm.repo.upsertJournal(yesterdayAnswers.map { (q, yes) ->
-                    JournalEntry(JOURNAL_DEVICE_ID, key, q, yes)
-                })
-                answers = yesterdayAnswers
-                preFilledFromYesterday = true
-            } else {
-                preFilledFromYesterday = false
-            }
-        } else {
-            preFilledFromYesterday = false
-        }
-        dayAnswers = answers
+    androidx.compose.runtime.LaunchedEffect(journalSeq, dayOffset, currentDayKey, catalogItems) {
+        val journal = loadInsightsJournal(
+            vm.repo, dayOffset, journalDayKey(dayOffset), journalDayKey(1L), catalogItems,
+        )
+        behaviours = journal.behaviours
+        controls = journal.controls
+        numericJournalSeries = journal.numericJournalSeries
+        importedQuestions = journal.importedQuestions
+        dayNumeric = journal.dayNumeric
+        suggestedPreviousAnswers = journal.suggestedPreviousAnswers
+        dayAnswers = journal.dayAnswers
         journalLoaded = true
     }
 
@@ -338,14 +302,34 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
         item { Spacer(Modifier.height(Metrics.sectionGap - 20.dp)) }
 
         // --- Native journal logging (always reachable, the account-free way in) ---
-        if (preFilledFromYesterday) {
+        if (dayOffset == 0L && suggestedPreviousAnswers.isNotEmpty()) {
             item {
-            Text(
-                uiString(R.string.l10n_insights_screen_pre_filled_from_last_night_tap_ce81097c),
-                style = NoopType.footnote,
-                color = Palette.textTertiary,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.journal_copy_explainer),
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    NoopButton(
+                        text = stringResource(R.string.journal_copy_action),
+                        kind = NoopButtonKind.Secondary,
+                        onClick = {
+                            val pending = suggestedPreviousAnswers.toMap()
+                            val selectedDay = journalDayKey(0L)
+                            if (selectedDay != currentDayKey) {
+                                // If midnight elapsed while Insights stayed open, reload for
+                                // the new day; never copy stale suggestions into its rows.
+                                currentDayKey = selectedDay
+                            } else {
+                                scope.launch {
+                                    copyInsightsJournalAnswers(vm.repo, selectedDay, pending)
+                                    journalSeq++
+                                }
+                            }
+                        },
+                    )
+                }
             }
         }
         item {
