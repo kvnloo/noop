@@ -109,7 +109,7 @@ class OuraInterruptedDrainCursorTest {
         )
         assertTrue(
             "Kotlin: the helper must reuse the existing stopped-early rules, not new cursor logic",
-            kotlinHelper.contains("commitResumeCursor(drainCompleted = false)"),
+            kotlinHelper.contains("commitResumeCursor(idleTimeout = false)"),
         )
         // An interrupted drain must NOT make the #2097 reboot judgement. That judgement wipes the cursor
         // to 0 and re-pulls the ring's whole history, and it declines when this session never adopted an
@@ -132,7 +132,7 @@ class OuraInterruptedDrainCursorTest {
         )
         assertTrue(
             "Swift: the helper must reuse the existing stopped-early rules, not new cursor logic",
-            swiftHelper.contains("commitResumeCursor(drainCompleted: false)"),
+            swiftHelper.contains("commitResumeCursor(idleTimeout: false)"),
         )
         assertTrue(
             "Swift: an interrupted drain must defer the reboot judgement",
