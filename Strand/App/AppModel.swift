@@ -1404,19 +1404,28 @@ final class AppModel: ObservableObject {
             .store(in: &ouraAdoptCancellables)
     }
 
-    /// How many owners want realtime HR: visible surfaces (Live and LiveWorkoutView) plus
-    /// the active recording, which must outlive both screens. The stream
+    /// How many owners want realtime HR: live screens, the active recording, and on macOS
+    /// the manual menu-bar request. The stream
     /// stays armed while ANY owner exists, so a screen closing cannot disarm a running workout
     /// (#681 , a WHOOP 5/MG manual workout started without first opening Live got
     /// no live HR, so every sample was dropped and the session was silently discarded). Ref-counted to
-    /// match Android's `realtimeWanters` (AppViewModel.requestRealtimeHr/releaseRealtimeHr).
+    /// match Android's WorkoutRealtimeOwner.
     private var realtimeWanters = 0
+
+    #if os(macOS)
+    @Published private(set) var menuBarRealtimeRequest = MenuBarRealtimeRequest()
+
+    func toggleMenuBarRealtime() {
+        menuBarRealtimeRequest = menuBarRealtimeRequest.toggled(
+            onStart: startRealtimeHR, onStop: stopRealtimeHR)
+    }
+    #endif
 
     /// A screen or recording acquired realtime HR. Arms the stream on the 0→1 edge, and ONLY
     /// on that edge blanks the stale smoothing window (#46) so a resume shows "," until a fresh sample
     /// lands, never re-clearing an already-live window when a second concurrent HR surface opens. The
     /// keep-alive re-arm goes through `ble.startRealtime()` directly, NOT here, so steady-state is
-    /// untouched. Each surface must balance this with exactly one `stopRealtimeHR()` on disappear.
+    /// untouched. Each owner must balance this with exactly one `stopRealtimeHR()`.
     func startRealtimeHR() {
         if realtimeWanters == 0 {
             resetSmoothing()

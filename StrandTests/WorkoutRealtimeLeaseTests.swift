@@ -3,6 +3,34 @@ import XCTest
 
 /// Swift twin of Android WorkoutRealtimeLeaseTest: same owners, edges and idempotence.
 final class WorkoutRealtimeLeaseTests: XCTestCase {
+    func testMenuBarOnlyTogglesItsOwnRequestWhileRecording() {
+        var owners = 0
+        var stops = 0
+        func request() { owners += 1 }
+        func release() {
+            owners -= 1
+            if owners == 0 { stops += 1 }
+        }
+
+        let workout = WorkoutRealtimeLease(onBegin: request, onEnd: release)
+        workout.begin()
+        var menu = MenuBarRealtimeRequest()
+        XCTAssertFalse(menu.isHeld) // Button offers Start even though the recording armed HR.
+
+        menu = menu.toggled(onStart: request, onStop: release)
+        XCTAssertTrue(menu.isHeld)
+        XCTAssertEqual(owners, 2)
+
+        menu = menu.toggled(onStart: request, onStop: release)
+        XCTAssertFalse(menu.isHeld)
+        XCTAssertEqual(owners, 1)
+        XCTAssertEqual(stops, 0)
+
+        workout.end()
+        XCTAssertEqual(owners, 0)
+        XCTAssertEqual(stops, 1)
+    }
+
     func testWorkoutOutlivesBothVisibleRealtimeScreens() {
         var owners = 0
         var commands: [String] = []
