@@ -2653,37 +2653,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val intervalMs = _hcSyncHours.value.toLong() * 60 * 60 * 1000
         val last = _hcLastSync.value
         val now = System.currentTimeMillis()
-        if (!force && last != 0L && now - last < intervalMs) return
         viewModelScope.launch {
-            val ran = withContext(Dispatchers.IO) {
-                if (HealthConnectImporter.sdkStatus(appContext) != HealthConnectClient.SDK_AVAILABLE) {
-                    return@withContext false
-                }
-                val granted = runCatching {
-                    HealthConnectImporter.client(appContext).permissionController.getGrantedPermissions()
-                }.getOrDefault(emptySet())
-                val selectedPermissions = HealthConnectImporter.permissionsFor(
-                    HealthConnectImporter.selectedCategories(appContext),
-                )
-                // Partial permissions are fine (#150): auto-import as long as at least one type is granted.
-                if (granted.none { it in selectedPermissions }) return@withContext false
-                // Pass the profile height so the importer can derive BMI (Health Connect has no BMI record).
-                // A returned ImportSummary.failure() is NOT a completed sync. Only stamp success;
-                // empty but successful scans remain valid and throttle the normal interval.
-                try {
-                    HealthConnectImporter.import(appContext, repository, profileStore.heightCm).succeeded
-                } catch (cancel: kotlin.coroutines.cancellation.CancellationException) {
-                    // A cancelled foreground sync must remain cancelled, not turn into a failed scan.
-                    throw cancel
-                } catch (_: Exception) {
-                    false
-                }
-            }
-            if (ran) {
-                val t = System.currentTimeMillis()
-                NoopPrefs.setHcLastSync(appContext, t)
-                _hcLastSync.value = t
-            }
+            syncHealthConnectImportIfStale(
+                force = force,
+                last = last,
+                now = now,
+                intervalMs = intervalMs,
+                import = {
+                    withContext(Dispatchers.IO) {
+                        if (HealthConnectImporter.sdkStatus(appContext) != HealthConnectClient.SDK_AVAILABLE) {
+                            return@withContext null
+                        }
+                        val granted = runCatching {
+                            HealthConnectImporter.client(appContext).permissionController.getGrantedPermissions()
+                        }.getOrDefault(emptySet())
+                        val selectedPermissions = HealthConnectImporter.permissionsFor(
+                            HealthConnectImporter.selectedCategories(appContext),
+                        )
+                        // Partial permissions are fine (#150): at least one selected type must be granted.
+                        if (granted.none { it in selectedPermissions }) return@withContext null
+                        try {
+                            // Pass the profile height so the importer can derive BMI.
+                            HealthConnectImporter.import(appContext, repository, profileStore.heightCm)
+                        } catch (cancel: kotlin.coroutines.cancellation.CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                },
+                stamp = {
+                    val t = System.currentTimeMillis()
+                    NoopPrefs.setHcLastSync(appContext, t)
+                    _hcLastSync.value = t
+                },
+            )
         }
     }
 
