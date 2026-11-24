@@ -295,11 +295,11 @@ public struct MenuBarContent: View {
         VStack(spacing: 8) {
             if live.bonded {
                 menuButton(
-                    live.liveFeedActive ? "Stop live feed" : "Start live feed",
-                    systemImage: live.liveFeedActive ? "pause.fill" : "play.fill",
+                    model.menuBarRealtimeRequest.isHeld ? "Stop live feed" : "Start live feed",
+                    systemImage: model.menuBarRealtimeRequest.isHeld ? "pause.fill" : "play.fill",
                     tone: .accent
                 ) {
-                    if live.liveFeedActive { model.stopRealtimeHR() } else { model.startRealtimeHR() }
+                    model.toggleMenuBarRealtime()
                 }
             } else {
                 menuButton(
@@ -317,6 +317,7 @@ public struct MenuBarContent: View {
                 }
                 if live.connected {
                     menuButton("Disconnect", systemImage: "xmark.circle", tone: .critical, compact: true) {
+                        if model.menuBarRealtimeRequest.isHeld { model.toggleMenuBarRealtime() }
                         model.disconnect()
                     }
                 }
