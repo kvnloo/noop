@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.noop.analytics.BaselineState
 import com.noop.analytics.Baselines
 import com.noop.analytics.DaytimeStress
 import com.noop.analytics.HrvFreqDomain
@@ -82,8 +83,8 @@ import kotlinx.coroutines.withContext
 //
 // A Whoop-style "Stress Monitor": one 0–3 number, a band (LOW/MEDIUM/HIGH), and a
 // single plain-English line on *why*. The score is a transparent proxy for autonomic
-// load, DERIVED from how today's resting HR / HRV sit against a personal 30-day
-// baseline (a stored "stress" series, if present, takes priority):
+// load, DERIVED from resting HR versus its 30-day baseline and HRV versus Charge's
+// folded baseline (a stored "stress" series, if present, takes priority):
 //
 //   zRHR = (todayRHR − meanRHR) / sdRHR        // positive when RHR is UP
 //   zHRV = (meanHRV − todayHRV) / sdHRV        // positive when HRV is DOWN
@@ -103,6 +104,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
     val days by vm.recentDays.collectAsStateWithLifecycle()
+    val chargeBaselines by vm.chargeBaselines.collectAsStateWithLifecycle()
+    val chargeHrvBaseline = chargeBaselines?.hrv
 
     // #698: the liquid day-of-sky backdrop is gated on the same "Day-cycle background" setting as Today,
     // so turning it off falls back to the flat theme canvas on every liquid screen alike.
@@ -194,8 +197,8 @@ fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
     val prefs = NoopPrefs.of(context)
     val hrvEpoch = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
     val recoveryEpoch = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble()
-    val model = remember(days, stored, hrvEpoch, recoveryEpoch) {
-        StressModel.build(days, stored, hrvBaselineEpoch = hrvEpoch, recoveryBaselineEpoch = recoveryEpoch)
+    val model = remember(days, stored, hrvEpoch, recoveryEpoch, chargeHrvBaseline) {
+        StressModel.build(days, stored, hrvEpoch, recoveryEpoch, chargeHrvBaseline)
     }
 
     LazyScreenScaffold(
@@ -329,7 +332,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.StressContent(
             modifier = Modifier.staggeredAppear(1),
             verticalArrangement = Arrangement.spacedBy(Metrics.gap),
         ) {
-            SectionHeader("Today", overline = "Markers", trailing = "vs 30-day baseline")
+            SectionHeader("Today", overline = "Markers", trailing = uiString(R.string.skin_temp_vs_baseline))
             StressTiles(model)
         }
     }
@@ -1376,7 +1379,7 @@ private fun MarkerTile(
     val deltaColor: Color
     if (delta == null) {
         // NO CHIP, rather than a claim we cannot make. The delta is null when today has no reading or
-        // there is no 30-day baseline to stand it against, and both of those used to render the
+        // there is no baseline to stand it against, and both of those used to render the
         // at-baseline chip: a tile with no reading read "— at baseline", and a first-week tile said a
         // reading sat exactly on a baseline that did not exist yet. StatTile draws no chip for null.
         deltaText = null
@@ -1385,7 +1388,7 @@ private fun MarkerTile(
         val up = delta > 0
         val isStressful = (up == higherIsStress)
         // The magnitude alone, signed. TrendChip reads the sign to pick its ▲/▼, and the section
-        // header two lines up already says "vs 30-day baseline", so spelling "vs base" again inside
+        // header two lines up already says "vs baseline", so spelling "vs base" again inside
         // the chip spent width on a word the reader has just been given (#2145).
         deltaText = "${if (up) "+" else "−"}${kotlin.math.abs(delta).roundToInt()}"
         deltaColor = if (isStressful) Palette.statusWarning else Palette.statusPositive
@@ -1691,7 +1694,7 @@ internal class StressModel private constructor(
     val rhrToday: Int?,
     val hrvToday: Double?,
     val rhrDelta: Double?,        // today − baseline mean (bpm)
-    val hrvDelta: Double?,        // today − baseline mean (ms)
+    val hrvDelta: Double?,        // today − Charge baseline (ms)
     val fullTrend: List<TrendPoint>, // entire daily proxy history, oldest → newest
     val calmTimeValue: String,
     val calmTimeCaption: String,
@@ -1721,6 +1724,7 @@ internal class StressModel private constructor(
             stored: Map<String, Double>,
             hrvBaselineEpoch: Double = 0.0,
             recoveryBaselineEpoch: Double = 0.0,
+            chargeHrvBaseline: BaselineState? = null,
         ): StressModel? {
             val displayDay = days.lastOrNull()?.day ?: return null
             val displayDayEnd = runCatching { (LocalDate.parse(displayDay).toEpochDay() + 1) * 86_400.0 }
@@ -1748,21 +1752,19 @@ internal class StressModel private constructor(
             }.let { if (it >= 0) it else days.size - 1 }
             val today = days[idx]
 
-            // Baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
+            // RHR baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
             // against its own recent past rather than itself.
             val baseline = if (idx > 0) days.subList(0, idx).takeLast(30) else emptyList()
 
             val rhrBase = baseline
                 .filter { rhrCut == null || it.day >= rhrCut }
                 .mapNotNull { it.restingHr?.toDouble() }
-            val hrvBase = baseline
-                .filter { hrvCut == null || it.day >= hrvCut }
-                .mapNotNull { it.avgHrv }
-
             val meanRHR = mean(rhrBase)
             val sdRHR = std(rhrBase, meanRHR)
-            val meanHRV = mean(hrvBase)
-            val sdHRV = std(hrvBase, meanHRV)
+            // Use the same folded state as Today; never compare a carried pre-cut night to it.
+            val hrvBase = chargeHrvBaseline?.takeIf { it.usable && (hrvCut == null || today.day >= hrvCut) }
+            val meanHRV = hrvBase?.baseline
+            val sdHRV = hrvBase?.let(Baselines::sigma) ?: 0.0
 
             val rhrT = today.restingHr?.toDouble()
             val hrvT = today.avgHrv

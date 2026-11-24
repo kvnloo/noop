@@ -1490,7 +1490,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">en la escala de carga autonómica 0-3</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">La línea traza su carga autonómica a lo largo del día de despertar, marcado against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">Son lentes de VFC adicionales, bajo demanda, calculadas a partir de los intervalos R-R de hoy. Son informativas y no cambian la puntuación de estrés de arriba.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Comparamos la frecuencia cardíaca de reposo de hoy y el HRV a tus propios 30 días baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Comparamos la frecuencia cardíaca en reposo y la VFC de hoy con tus referencias personales. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Informe de error</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Arreglar</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Organizar secciones Hoy</string>

@@ -178933,60 +178933,60 @@
         }
       }
     },
-    "We compare today's resting heart rate and HRV to your own 30-day baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.": {
+    "We compare today's resting heart rate and HRV to your own baselines. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wir vergleichen die heutige Ruheherzfrequenz und HRV mit deiner eigenen 30-Tage-Baseline. Eine höher als üblich ruhende HR und eine niedriger als üblich HRV schieben beide die Punktzahl nach oben, klassische Zeichen, dass der Körper aktiviert wird. Die kombinierte Schicht wird auf eine 0-3 Skala abgebildet: 0 ist ruhig, 1,5 sitzt an der Basislinie, 3 ist stark aktiviert."
+            "value": "Wir vergleichen die heutige Ruheherzfrequenz und HRV mit deiner eigenen Basislinie. Eine höher als üblich ruhende HR und eine niedriger als üblich HRV schieben beide die Punktzahl nach oben, klassische Zeichen, dass der Körper aktiviert wird. Die kombinierte Schicht wird auf eine 0-3 Skala abgebildet: 0 ist ruhig, 1,5 sitzt an der Basislinie, 3 ist stark aktiviert."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comparamos la frecuencia cardíaca de reposo de hoy y el HRV a su propia base de 30 días. Un RRHHH de reposo superior a lo habitual y un HRV inferior a lo habitual empujan la puntuación hacia arriba, signos clásicos que el cuerpo está activado. El cambio combinado se mapea en una escala 0-3: 0 es calma, 1,5 se sienta en su base, 3 está altamente activado."
+            "value": "Comparamos la frecuencia cardíaca de reposo de hoy y el HRV a su propia referencia personal. Un RRHHH de reposo superior a lo habitual y un HRV inferior a lo habitual empujan la puntuación hacia arriba, signos clásicos que el cuerpo está activado. El cambio combinado se mapea en una escala 0-3: 0 es calma, 1,5 se sienta en su base, 3 está altamente activado."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nous comparons votre fréquence cardiaque au repos et votre VFC du jour à votre propre référence sur 30 jours. Une FC au repos plus élevée que d'habitude et une VFC plus basse que d'habitude font toutes deux monter le score, des signes classiques d'un corps activé. Le changement combiné est reporté sur une échelle de 0 à 3 : 0 est calme, 1,5 correspond à votre référence, 3 est très activé."
+            "value": "Nous comparons votre fréquence cardiaque au repos et votre VFC du jour à votre propre référence. Une FC au repos plus élevée que d'habitude et une VFC plus basse que d'habitude font toutes deux monter le score, des signes classiques d'un corps activé. Le changement combiné est reporté sur une échelle de 0 à 3 : 0 est calme, 1,5 correspond à votre référence, 3 est très activé."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Confrontiamo la FC a riposo e la HRV di oggi con la tua linea di base personale a 30 giorni. Una FC a riposo più alta del solito e una HRV più bassa del solito fanno entrambe salire il punteggio, segni classici di un corpo attivato. Lo spostamento combinato viene riportato su una scala 0-3: 0 è calmo, 1,5 corrisponde alla tua linea di base, 3 è molto attivato."
+            "value": "Confrontiamo la FC a riposo e la HRV di oggi con la tua linea di base personale. Una FC a riposo più alta del solito e una HRV più bassa del solito fanno entrambe salire il punteggio, segni classici di un corpo attivato. Lo spostamento combinato viene riportato su una scala 0-3: 0 è calmo, 1,5 corrisponde alla tua linea di base, 3 è molto attivato."
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comparámos a frequência cardíaca em repouso e a VFC de hoje com a tua linha de base de 30 dias. Uma FC em repouso acima do normal e uma VFC abaixo do normal aumentam a pontuação, sinais clássicos de que o corpo está ativado. A mudança combinada é mapeada numa escala de 0 a 3: 0 é calmo, 1,5 fica na linha de base, 3 é altamente ativado."
+            "value": "Comparámos a frequência cardíaca em repouso e a VFC de hoje com a tua linha de base. Uma FC em repouso acima do normal e uma VFC abaixo do normal aumentam a pontuação, sinais clássicos de que o corpo está ativado. A mudança combinada é mapeada numa escala de 0 a 3: 0 é calmo, 1,5 fica na linha de base, 3 é altamente ativado."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Porównujemy dzisiejsze tętno spoczynkowe i HRV z Twoją własną wartością bazową z 30 dni. Wyższe niż zwykle tętno spoczynkowe i niższe niż zwykle HRV podnoszą wynik, co jest klasycznym sygnałem, że organizm jest pobudzony. Połączone przesunięcie jest odwzorowywane na skali 0-3: 0 oznacza spokój, 1,5 znajduje się na poziomie podstawowym, 3 jest wysoce aktywowany."
+            "value": "Porównujemy dzisiejsze tętno spoczynkowe i HRV z Twoją własną wartością bazową. Wyższe niż zwykle tętno spoczynkowe i niższe niż zwykle HRV podnoszą wynik, co jest klasycznym sygnałem, że organizm jest pobudzony. Połączone przesunięcie jest odwzorowywane na skali 0-3: 0 oznacza spokój, 1,5 znajduje się na poziomie podstawowym, 3 jest wysoce aktywowany."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Мы сравниваем сегодняшние пульс в покое и ВСР с вашей собственной 30-дневной нормой. Более высокий, чем обычно, пульс в покое и более низкая, чем обычно, ВСР — оба повышают оценку: классические признаки активации организма. Совокупный сдвиг отображается на шкалу 0–3: 0 — спокойствие, 1,5 — ваша норма, 3 — сильная активация."
+            "value": "Мы сравниваем сегодняшние пульс в покое и ВСР с вашей собственной нормой. Более высокий, чем обычно, пульс в покое и более низкая, чем обычно, ВСР — оба повышают оценку: классические признаки активации организма. Совокупный сдвиг отображается на шкалу 0–3: 0 — спокойствие, 1,5 — ваша норма, 3 — сильная активация."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "我们将你今天的静息心率和 HRV 与你自己的 30 天基线比较。高于平常的静息心率和低于平常的 HRV 都会推高该分数，这是身体被激活的典型迹象。二者的综合偏移被映射到 0-3 量表：0 表示平静，1.5 位于你的基线，3 表示高度激活。"
+            "value": "我们将你今天的静息心率和 HRV 与你自己的基线比较。高于平常的静息心率和低于平常的 HRV 都会推高该分数，这是身体被激活的典型迹象。二者的综合偏移被映射到 0-3 量表：0 表示平静，1.5 位于你的基线，3 表示高度激活。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "我們將你今天的靜息心率和 HRV 與你自己的 30 天基線比較。高於平常的靜息心率和低於平常的 HRV 都會推高該分數，這是身體被啟動的典型跡象。二者的綜合偏移被映射到 0-3 量表：0 表示平靜，1.5 位於你的基線，3 表示高度啟動。"
+            "value": "我們將你今天的靜息心率和 HRV 與你自己的基線比較。高於平常的靜息心率和低於平常的 HRV 都會推高該分數，這是身體被啟動的典型跡象。二者的綜合偏移被映射到 0-3 量表：0 表示平靜，1.5 位於你的基線，3 表示高度啟動。"
           }
         }
       }

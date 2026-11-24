@@ -1629,7 +1629,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">在 0-3 自主神经负荷量表上</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">折线追踪着您清醒状态下的自主神经负荷变化，按 against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">这些是根据今天的 R-R 间期计算的额外、按需的 HRV 视角。它们仅供参考，不会改变上方的压力评分。</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">我们会将今天的静息心率和 HRV 与您过去 30 天的 baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">我们会将今天的静息心率和 HRV 与您的个人基线进行比较。 A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Bug 报告</string>
     <string name="l10n_today_screen_arrange_cfdd099c">整理</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">自定义“今日”面板排版</string>

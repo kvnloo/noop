@@ -4743,7 +4743,8 @@ struct TodayView: View {
         // placeholder, matching StressView's empty state. Fitness age / Vitality keep their merged reads.
         stressToday = StressModel(days: repo.days, stored: await stressStoredA,
                                   hrvBaselineEpoch: Baselines.hrvBaselineEpoch(),
-                                  recoveryBaselineEpoch: Baselines.recoveryBaselineEpoch())?.score
+                                  recoveryBaselineEpoch: Baselines.recoveryBaselineEpoch(),
+                                  chargeHrvBaseline: repo.chargeBaselines?.hrv)?.score
         fitnessAgeToday = (await fitnessAgeSeriesA).last?.value
         vo2maxToday = (await vo2maxSeriesA).last?.value   // #1391: latest banked VO₂max estimate
         vitalityToday = (await vitalitySeriesA).last?.value

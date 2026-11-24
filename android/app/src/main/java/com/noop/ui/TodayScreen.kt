@@ -586,9 +586,10 @@ fun TodayScreen(
     val stressPrefs = NoopPrefs.of(context)
     val hrvBaselineEpoch = stressPrefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
     val stressRecoveryEpoch = stressPrefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble()
-    LaunchedEffect(days, hrvBaselineEpoch, stressRecoveryEpoch) {
-        // #849: skip unchanged history AND unchanged epochs across tab re-mounts.
-        val sig = 31 * (31 * days.hashCode() + hrvBaselineEpoch.hashCode()) + stressRecoveryEpoch.hashCode()
+    val chargeHrvBaseline = chargeBaselines?.hrv
+    LaunchedEffect(days, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline) {
+        // #849: skip unchanged inputs across tab re-mounts.
+        val sig = listOf(days, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline).hashCode()
         if (viewModel.todayCardsLoadedSig == sig) return@LaunchedEffect
         // Read each pinned card from the SAME source its own detail screen reads, the proven path that
         // already shows real numbers there (and the resolution iOS's exploreSeries uses). Stress is derived
@@ -613,7 +614,7 @@ fun TodayScreen(
             withContext(Dispatchers.Default) {
                 val stored = viewModel.repo.metricSeries("my-whoop", "stress", "0000-01-01", "9999-12-31")
                     .associate { it.day to it.value.coerceIn(0.0, 3.0) }
-                StressModel.build(days, stored, hrvBaselineEpoch, stressRecoveryEpoch)?.score
+                StressModel.build(days, stored, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline)?.score
             }
         }.getOrNull()
         fitnessAgeToday = runCatching {
@@ -1877,7 +1878,7 @@ fun TodayScreen(
                                 day = displayMetric,
                                 carriedDay = lastScoredRecoveryDay,
                                 vitalsDay = lastVitalsDay,
-                                chargeHrvBaseline = chargeBaselines?.hrv,
+                                chargeHrvBaseline = chargeHrvBaseline,
                                 hrvBaselineEpoch = hrvBaselineEpoch,
                                 onOpenMetric = onOpenMetric,
                             )

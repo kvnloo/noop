@@ -1708,7 +1708,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">по шкале вегетативной нагрузки 0–3</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">Линия показывает вашу вегетативную нагрузку в течение дня бодрствования, оценённую against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">Это дополнительные измерения ВСР по запросу, вычисленные по сегодняшним интервалам R-R. Они информационные и не меняют оценку стресса выше.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Мы сравниваем сегодняшние пульс в покое и ВСР с вашей собственной 30-дневной baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Мы сравниваем сегодняшние пульс в покое и ВСР с вашими личными базовыми значениями. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Отчёт об ошибке</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Расположение</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Настроить разделы «Сегодня»</string>

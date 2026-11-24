@@ -1,6 +1,7 @@
 package com.noop.ui
 
 import com.noop.analytics.Baselines
+import com.noop.analytics.ChargeBaselines
 import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -9,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * StressModel.build carry (#543). The Today "Stress" metric derives against a 30-day RHR/HRV baseline.
+ * StressModel.build carry (#543). The Today "Stress" metric uses a 30-day RHR baseline and Charge's folded HRV baseline.
  * Today's own daily row is often vitals-less until the overnight is analyzed (especially right after an
  * app update relaunches and re-runs the analyze pass), and every OTHER Today vital carries last night's
  * value — Stress used to be the one card that didn't, so it dropped to "Calibrating" while the rest showed
@@ -66,7 +67,7 @@ class StressModelTest {
             days.map { it.avgHrv }, days.map { it.day }, Baselines.metricCfg.getValue("hrv"), epoch,
         )
         assertEquals(0, charge.nValid)
-        val model = StressModel.build(days, emptyMap(), hrvBaselineEpoch = epoch)!!
+        val model = StressModel.build(days, emptyMap(), hrvBaselineEpoch = epoch, chargeHrvBaseline = charge)!!
         assertNull(model.hrvDelta)
         assertEquals(1.0, model.rhrDelta!!, 1e-9)
     }
@@ -84,6 +85,25 @@ class StressModelTest {
         assertEquals(1.5, current.score, 1e-9)
     }
 
+    @Test
+    fun hrvDeltaUsesChargeFoldAfterRecalibration() {
+        val epoch = july19Midnight + 1
+        val days = listOf(
+            day("2026-07-19", rhr = null, hrv = 105.0), // reset day is not counted
+            day("2026-07-20", rhr = null, hrv = 60.0),
+            day("2026-07-21", rhr = null, hrv = 60.0),
+            day("2026-07-22", rhr = null, hrv = 60.0),
+            day("2026-07-23", rhr = null, hrv = 150.0),
+            day("2026-07-24", rhr = null, hrv = 55.0),
+        )
+        val charge = ChargeBaselines.resolve(emptyList(), days, days.last().day, epoch, 0.0).hrv
+        assertEquals(5, charge.nValid)
+        // Swift oracle: nValid=5 baseline=65.108752668795361
+        assertEquals(65.108752668795361, charge.baseline, 1e-9)
+        val model = StressModel.build(days, emptyMap(), hrvBaselineEpoch = epoch, chargeHrvBaseline = charge)!!
+        assertEquals(charge.baseline, days.last().avgHrv!! - model.hrvDelta!!, 1e-9)
+    }
+
     /** #2818: independent Charge epoch cuts and historical readback parity with Swift. */
     @Test
     fun epochCutsAreIndependentAndKeepHistoricalDayContext() {
@@ -95,22 +115,28 @@ class StressModelTest {
             day("2026-07-22", rhr = 60, hrv = 78.0),
         )
         val all = old + recent + day("2026-07-23", rhr = 59, hrv = 82.0)
-        val legacy = StressModel.build(all, emptyMap())!!
+        val legacyCharge = ChargeBaselines.resolve(emptyList(), all, all.last().day, 0.0, 0.0).hrv
+        val legacy = StressModel.build(all, emptyMap(), chargeHrvBaseline = legacyCharge)!!
+        val resetCharge = ChargeBaselines.resolve(
+            emptyList(), all, all.last().day, 1_784_376_000.0, 1_784_548_800.0,
+        ).hrv
+        assertEquals(5, resetCharge.nValid)
         val recalibrated = StressModel.build(
             all, emptyMap(), hrvBaselineEpoch = 1_784_376_000.0,
-            recoveryBaselineEpoch = 1_784_548_800.0,
+            recoveryBaselineEpoch = 1_784_548_800.0, chargeHrvBaseline = resetCharge,
         )!!
-        assertEquals(-8.0 / 3.0, legacy.hrvDelta!!, 1e-9)
+        assertTrue(legacy.hrvDelta!! < 0.0)
         assertEquals(16.0 / 9.0, legacy.rhrDelta!!, 1e-9)
-        assertEquals(4.0, recalibrated.hrvDelta!!, 1e-9)
+        assertTrue(recalibrated.hrvDelta!! > 0.0)
         assertEquals(-1.5, recalibrated.rhrDelta!!, 1e-9)
         assertTrue(recalibrated.score < 1.0)
 
         val historical = old.take(4)
-        val before = StressModel.build(historical, emptyMap())!!
+        val historicalCharge = ChargeBaselines.resolve(emptyList(), historical, historical.last().day, 0.0, 0.0).hrv
+        val before = StressModel.build(historical, emptyMap(), chargeHrvBaseline = historicalCharge)!!
         val withFutureReset = StressModel.build(
             historical, emptyMap(), hrvBaselineEpoch = 1_784_376_000.0,
-            recoveryBaselineEpoch = 1_784_548_800.0,
+            recoveryBaselineEpoch = 1_784_548_800.0, chargeHrvBaseline = historicalCharge,
         )!!
         assertEquals(before.hrvDelta!!, withFutureReset.hrvDelta!!, 1e-9)
         assertEquals(before.rhrDelta!!, withFutureReset.rhrDelta!!, 1e-9)

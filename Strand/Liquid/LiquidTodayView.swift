@@ -1807,10 +1807,12 @@ struct LiquidTodayView: View {
         ]
         let stressHrvEpoch = Baselines.hrvBaselineEpoch()
         let stressRecoveryEpoch = Baselines.recoveryBaselineEpoch()
+        let chargeHrvBaseline = repo.chargeBaselines?.hrv
         stress = await Task.detached(priority: .utility) {
             StressModel(days: daysSnapshot, stored: storedStress,
                         hrvBaselineEpoch: stressHrvEpoch,
-                        recoveryBaselineEpoch: stressRecoveryEpoch)?.score
+                        recoveryBaselineEpoch: stressRecoveryEpoch,
+                        chargeHrvBaseline: chargeHrvBaseline)?.score
         }.value
         fitnessAge = (await fitA).last?.value   // history-wide latest banked (not day-scoped)
         vo2max = (await vo2A).last?.value        // #1391: latest banked VO₂max estimate

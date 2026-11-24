@@ -23,7 +23,7 @@ func stressActivityMaskedHoursCaption(_ count: Int) -> String? {
 //   1. The persisted `stress` metric series ("my-whoop") via `repo.series` — if a
 //      day has a stored stress value we trust it.
 //   2. Otherwise we DERIVE it from how today's resting HR / HRV sit against a
-//      personal 30-day baseline. Stress shows up as HIGHER resting HR and LOWER
+//      30-day RHR baseline and Charge's folded HRV baseline. Stress shows up as HIGHER resting HR and LOWER
 //      HRV, so we sum two z-scores and squash onto 0–3 with a logistic curve:
 //
 //        zRHR = (todayRHR − meanRHR) / sdRHR        // positive when RHR is UP
@@ -206,12 +206,15 @@ struct StressView: View {
     private func rebuildModelIfNeeded() {
         let hrvEpoch = Baselines.hrvBaselineEpoch()
         let recoveryEpoch = Baselines.recoveryBaselineEpoch()
+        let chargeHrvBaseline = repo.chargeBaselines?.hrv
         let signature = StressInputs(days: repo.days, stored: storedSeries,
-                                     hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch)
+                                     hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch,
+                                     chargeHrvBaseline: chargeHrvBaseline)
         guard signature != modelSignature else { return }
         modelSignature = signature
         model = StressModel(days: repo.days, stored: storedSeries,
-                            hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch)
+                            hrvBaselineEpoch: hrvEpoch, recoveryBaselineEpoch: recoveryEpoch,
+                            chargeHrvBaseline: chargeHrvBaseline)
     }
 
     // MARK: Loaded content
@@ -234,7 +237,7 @@ struct StressView: View {
 
             // 2. Today's numbers — uniform tiles in one grid.
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-                SectionHeader("Today", overline: "Markers", trailing: String(localized: "vs 30-day baseline"))
+                SectionHeader("Today", overline: "Markers", trailing: String(localized: "vs baseline"))
                 tileGrid(model)
             }
             .staggeredAppear(index: 1)
@@ -577,7 +580,7 @@ struct StressView: View {
         let deltaText: String?
         let deltaColor: Color
         // NO CHIP for a missing delta, rather than a claim we cannot make (#2145). It is nil when
-        // today has no reading or there is no 30-day baseline to stand one against, and both fell
+        // today has no reading or there is no baseline to stand one against, and both fell
         // through to the at-baseline chip: a tile with no reading read "— at baseline", and a
         // first-week tile put a reading exactly on a baseline that did not exist yet. StatTile draws
         // the pill only for a non-nil delta, so nil is already the way to say nothing here.
@@ -679,7 +682,7 @@ struct StressView: View {
                      : "Stress is derived from two autonomic signals.")
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("We compare today's resting heart rate and HRV to your own 30-day baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.")
+                Text("We compare today's resting heart rate and HRV to your own baselines. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.")
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -821,6 +824,7 @@ private struct StressInputs: Equatable {
     let stored: [StoredPoint]
     let hrvBaselineEpoch: Double
     let recoveryBaselineEpoch: Double
+    let chargeHrvBaseline: BaselineState?
 
     struct StoredPoint: Equatable {
         let day: String
@@ -828,11 +832,12 @@ private struct StressInputs: Equatable {
     }
 
     init(days: [DailyMetric], stored: [(day: String, value: Double)],
-         hrvBaselineEpoch: Double, recoveryBaselineEpoch: Double) {
+         hrvBaselineEpoch: Double, recoveryBaselineEpoch: Double, chargeHrvBaseline: BaselineState?) {
         self.days = days
         self.stored = stored.map { StoredPoint(day: $0.day, value: $0.value) }
         self.hrvBaselineEpoch = hrvBaselineEpoch
         self.recoveryBaselineEpoch = recoveryBaselineEpoch
+        self.chargeHrvBaseline = chargeHrvBaseline
     }
 }
 
@@ -845,7 +850,7 @@ struct StressModel {
     let rhrToday: Int?
     let hrvToday: Double?
     let rhrDelta: Double?        // today − baseline mean (bpm)
-    let hrvDelta: Double?        // today − baseline mean (ms)
+    let hrvDelta: Double?        // today − Charge baseline (ms)
     let fullTrend: [TrendPoint]  // entire daily proxy history, oldest→newest
     let calmTimeValue: String    // e.g. "58%"
     let calmTimeCaption: String  // e.g. "of last 30 days"
@@ -865,7 +870,8 @@ struct StressModel {
     /// Build from oldest→newest daily metrics plus any stored "stress" series.
     /// Returns nil only when there is no usable signal at all.
     init?(days: [DailyMetric], stored: [(day: String, value: Double)],
-          hrvBaselineEpoch: Double = 0, recoveryBaselineEpoch: Double = 0) {
+          hrvBaselineEpoch: Double = 0, recoveryBaselineEpoch: Double = 0,
+          chargeHrvBaseline: BaselineState? = nil) {
         guard let displayDay = days.last?.day else { return nil }
         let displayDayEnd = Self.dayParser.date(from: displayDay).map { $0.timeIntervalSince1970 + 86_400 }
         // Activate on the reset's UTC date, even when Charge first keeps the next date.
@@ -901,7 +907,7 @@ struct StressModel {
         else { return nil }
         let today = days[idx]
 
-        // Baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
+        // RHR baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
         // against its own recent past rather than itself.
         let baseline = idx > 0 ? Array(days[0..<idx].suffix(30)) : []
 
@@ -909,15 +915,14 @@ struct StressModel {
             guard let cut = rhrCut else { return true }
             return row.day >= cut
         }.compactMap { $0.restingHr }.map(Double.init)
-        let hrvBase = baseline.filter { row in
-            guard let cut = hrvCut else { return true }
-            return row.day >= cut
-        }.compactMap { $0.avgHrv }
-
         let meanRHR = StressMath.mean(rhrBase)
         let sdRHR   = StressMath.std(rhrBase, mean: meanRHR)
-        let meanHRV = StressMath.mean(hrvBase)
-        let sdHRV   = StressMath.std(hrvBase, mean: meanHRV)
+        // Use the same folded state as Today; never compare a carried pre-cut night to it.
+        let hrvBase = chargeHrvBaseline.flatMap { state in
+            state.usable && (hrvCut.map { today.day >= $0 } ?? true) ? state : nil
+        }
+        let meanHRV = hrvBase?.baseline
+        let sdHRV   = hrvBase.map { Baselines.sigma($0) } ?? 0
 
         let rhrT = today.restingHr.map(Double.init)
         let hrvT = today.avgHrv

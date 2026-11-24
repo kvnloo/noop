@@ -1690,7 +1690,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">auf der Skala 0-3 autonome Last</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">Die Linie verfolgt deine autonome Last über den wachen Tag, erzielt against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">Das sind zusätzliche HRV-Blickwinkel auf Abruf, berechnet aus den heutigen R-R-Intervallen. Sie sind informativ und ändern den Stresswert oben nicht.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Wir vergleichen die heutige Ruheherzfrequenz und HRV mit deiner eigenen 30-tägigen baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Wir vergleichen deine heutige Ruheherzfrequenz und HRV mit deinen persönlichen Basiswerten. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Fehlerbericht</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Anordnung</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Heute Abschnitte arrangieren</string>
