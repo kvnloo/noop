@@ -2860,4 +2860,6 @@
     <string name="raw_diag_ecg_probe_running">Puede que siga activa una captura en esta correa. El veredicto se registra en el strap log.</string>
     <string name="today_customize_live_session_availability">Aparece hoy si Live Sessions está activado en Ajustes o hay una sesión activa.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Hoy a tu manera, frecuencia cardíaca para cualquier aplicación e italiano</string>
+    <string name="today_hrv_over_baseline">VFC %1$d%% por encima de la línea base</string>
+    <string name="today_hrv_under_baseline">VFC %1$d%% por debajo de la línea base</string>
 </resources>
