@@ -299,7 +299,12 @@ private const val JOURNAL_CATALOG_V2_KEY = "noop.journalCatalogV2"
 fun loadJournalCatalogItems(context: Context): List<JournalCatalogItem> {
     val prefs = context.getSharedPreferences("noop_prefs", Context.MODE_PRIVATE)
     val blob = prefs.getString(JOURNAL_CATALOG_V2_KEY, null)
-    if (blob != null) return decodeJournalCatalog(blob)
+    if (blob != null) {
+        val decoded = decodeJournalCatalog(blob)
+        val repaired = decoded.distinctBy { normJournalKey(it.canonical) }
+        if (repaired.size != decoded.size) saveJournalCatalogItems(context, repaired)
+        return repaired
+    }
     val migrated = migrateLegacyJournalCatalog(
         custom = loadCustomJournalQuestions(context),
         hidden = loadHiddenJournalQuestions(context),
