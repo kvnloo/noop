@@ -1795,7 +1795,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">on the 0-3 autonomic-load scale</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">The line traces your autonomic load across the waking day, scored against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">These are extra, on-demand HRV lenses computed from today\'s R-R intervals. They are informational and do not change the stress score above.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">We compare today\'s resting heart rate and HRV to your own 30-day baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">We compare today\'s resting heart rate and HRV to your own baselines. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Bug report</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Arrange</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Arrange Today sections</string>
@@ -2889,4 +2889,6 @@
     <string name="raw_diag_ecg_probe_running">A capture may still be running on this strap. The verdict goes to the strap log.</string>
     <string name="today_customize_live_session_availability">Appears today when Live Sessions is enabled in Settings or a session is active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today your way, heart rate any app can read, and Italian</string>
+    <string name="today_hrv_over_baseline">HRV %1$d%% over baseline</string>
+    <string name="today_hrv_under_baseline">HRV %1$d%% under baseline</string>
 </resources>

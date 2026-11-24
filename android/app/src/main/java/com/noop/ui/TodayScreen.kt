@@ -156,6 +156,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.noop.R
 import com.noop.ai.AiKeyStore
+import com.noop.analytics.BaselineState
 import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
 import com.noop.analytics.BatteryEstimator
@@ -579,11 +580,16 @@ fun TodayScreen(
     var fitnessAgeToday by remember { mutableStateOf(viewModel.todayFitnessAgeCache) }
     var vo2maxToday by remember { mutableStateOf(viewModel.todayVo2maxCache) }
     var vitalityToday by remember { mutableStateOf(viewModel.todayVitalityCache) }
-    LaunchedEffect(days) {
-        // #849 re-mount guard: skip the whole-history scan when `days` is content-identical to the last load
-        // (data class hashCode is a stable structural signature). The marker + cached values live on the
-        // long-lived ViewModel, so a tab-return / post-import re-mount restores the numbers without re-reading.
-        val sig = days.hashCode()
+    // The pinned Stress card must use the same epochs as the Stress detail screen.
+    // Include them in the cached signature: a recalibration with unchanged days
+    // changes Stress's answer and must invalidate the prior card value.
+    val stressPrefs = NoopPrefs.of(context)
+    val hrvBaselineEpoch = stressPrefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
+    val stressRecoveryEpoch = stressPrefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble()
+    val chargeHrvBaseline = chargeBaselines?.hrv
+    LaunchedEffect(days, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline) {
+        // #849: skip unchanged inputs across tab re-mounts.
+        val sig = listOf(days, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline).hashCode()
         if (viewModel.todayCardsLoadedSig == sig) return@LaunchedEffect
         // Read each pinned card from the SAME source its own detail screen reads, the proven path that
         // already shows real numbers there (and the resolution iOS's exploreSeries uses). Stress is derived
@@ -608,7 +614,7 @@ fun TodayScreen(
             withContext(Dispatchers.Default) {
                 val stored = viewModel.repo.metricSeries("my-whoop", "stress", "0000-01-01", "9999-12-31")
                     .associate { it.day to it.value.coerceIn(0.0, 3.0) }
-                StressModel.build(days, stored)?.score
+                StressModel.build(days, stored, hrvBaselineEpoch, stressRecoveryEpoch, chargeHrvBaseline)?.score
             }
         }.getOrNull()
         fitnessAgeToday = runCatching {
@@ -1069,10 +1075,9 @@ fun TodayScreen(
         // Thread the persisted "Recalibrate HRV baseline" epoch (0 = none) so N folds the SAME
         // epoch-aware history the recovery engine folds — otherwise a post-recalibration user's pre-epoch
         // nights inflate the count past the seed gate and the score side wrongly reads NeedsStrap (Bug B).
-        val hrvEpoch = NoopPrefs.of(context).getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
         recoveryCalibrationNights(
             chargeBaselines?.hrvHistory?.values.orEmpty(), chargeBaselines?.hrvHistory?.dayKeys.orEmpty(),
-            displayMetric?.recovery != null, hrvEpoch,
+            displayMetric?.recovery != null, hrvBaselineEpoch,
         )
     } else {
         null
@@ -1869,8 +1874,14 @@ fun TodayScreen(
                         }
                         // The three hero vitals, HRV / Resting HR / Respiratory. Carried day (#543).
                         TodaySection.RECOVERY_VITALS -> Box(modifier = Modifier.fillMaxWidth().staggeredAppear(stagger)) {
-                            HeroMetricRows(day = displayMetric, carriedDay = lastScoredRecoveryDay,
-                                           vitalsDay = lastVitalsDay, onOpenMetric = onOpenMetric)
+                            HeroMetricRows(
+                                day = displayMetric,
+                                carriedDay = lastScoredRecoveryDay,
+                                vitalsDay = lastVitalsDay,
+                                chargeHrvBaseline = chargeHrvBaseline,
+                                hrvBaselineEpoch = hrvBaselineEpoch,
+                                onOpenMetric = onOpenMetric,
+                            )
                         }
                         // YOUR CARDS, the user-customisable dashboard (WHOOP "My Dashboard"). Hydration is
                         // hidden when its tracking is OFF (the editor still offers it, so the choice
@@ -3745,6 +3756,8 @@ private fun HeroMetricRows(
     day: DailyMetric?,
     carriedDay: DailyMetric? = null,
     vitalsDay: DailyMetric? = null,
+    chargeHrvBaseline: BaselineState?,
+    hrvBaselineEpoch: Double,
     // #706/#684: the same `vital_detail/<key>` trends the HRV / Resting HR / Respiratory dashboard cards
     // open. These three rows show the SAME metrics and had no way through, so the summary card was the one
     // place on Today where a metric was a dead end. Keys come from `dashboardCardMetricKey`, so the two
@@ -3752,7 +3765,12 @@ private fun HeroMetricRows(
     onOpenMetric: (String) -> Unit = {},
 ) {
     // Per-field, today-first: today's own value wins; the vitals carry only fills a field today lacks.
-    val hrv = day?.avgHrv ?: vitalsDay?.avgHrv
+    val hrvRow = if (day?.avgHrv != null) day else vitalsDay
+    val hrv = hrvRow?.avgHrv?.takeIf { it.isFinite() }
+    val hrvComparison = todayHrvBaselineDeltaPct(hrvRow, chargeHrvBaseline, hrvBaselineEpoch)?.let { pct ->
+        if (pct >= 0) uiString(R.string.today_hrv_over_baseline, pct)
+        else uiString(R.string.today_hrv_under_baseline, -pct)
+    }
     val rhr = day?.restingHr ?: vitalsDay?.restingHr
     val resp = day?.respRateBpm ?: vitalsDay?.respRateBpm
     // The caption reflects the row the shown vitals actually came from: if today supplied ANY of them the
@@ -3788,6 +3806,7 @@ private fun HeroMetricRows(
                 value = hrv?.let { "${it.roundToInt()} ms" } ?: NO_DATA,
                 tint = Palette.metricCyan,
                 fraction = hrv?.let { (it / 120.0).coerceIn(0.0, 1.0) },
+                caption = hrvComparison,
                 metricKey = dashboardCardMetricKey(DashboardCard.HRV),
                 onOpenMetric = onOpenMetric,
             )
@@ -3833,6 +3852,7 @@ private fun HeroVitalRow(
     value: String,
     tint: Color,
     fraction: Double?,
+    caption: String? = null,
     // The metric-detail key this row opens, from `dashboardCardMetricKey` so the row and its dashboard-card
     // twin cannot drift onto different trends for the same vital. NULL means the row simply does not
     // navigate: it loses the tap AND the chevron together, which is the honest degradation. An earlier
@@ -3871,7 +3891,12 @@ private fun HeroVitalRow(
                 modifier = Modifier.size(26.dp),
             )
         }
-        Text(label, style = NoopType.subhead, color = Palette.textSecondary, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = NoopType.subhead, color = Palette.textSecondary)
+            if (caption != null) {
+                Text(caption, style = NoopType.caption, color = Palette.textTertiary)
+            }
+        }
         Text(
             displayValue,
             style = NoopType.number(15f),

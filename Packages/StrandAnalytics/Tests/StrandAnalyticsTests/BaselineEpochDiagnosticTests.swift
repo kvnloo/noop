@@ -11,6 +11,21 @@ final class BaselineEpochDiagnosticTests: XCTestCase {
     private let days = ["2026-07-16", "2026-07-17", "2026-07-18",   // before the epoch → dropped
                         "2026-07-19", "2026-07-20", "2026-07-21"]   // on/after → kept
 
+    func testFirstCountedDayMatchesUtcFoldAndDiagnostic() {
+        XCTAssertNil(Baselines.firstCountedDay(baselineEpoch: 0))
+        XCTAssertNil(Baselines.firstCountedDay(baselineEpoch: .infinity))
+        XCTAssertEqual(Baselines.firstCountedDay(baselineEpoch: epoch), "2026-07-19")
+        // One second after UTC midnight excludes that day's night as foldHistory does.
+        XCTAssertEqual(Baselines.firstCountedDay(baselineEpoch: epoch + 1), "2026-07-20")
+        let reset = epoch + 1
+        let diagnostic = Baselines.epochDropDiagnostic(dayKeys: days, baselineEpoch: reset)
+        XCTAssertEqual(diagnostic.dropped, 4)
+        let values: [Double?] = Array(repeating: 60.0, count: days.count)
+        let folded = Baselines.foldHistory(values, dayKeys: days,
+                                           cfg: Baselines.metricCfg["hrv"]!, baselineEpoch: reset)
+        XCTAssertEqual(folded.nValid, 2)
+    }
+
     func testNoEpochDropsNothing() {
         let d = Baselines.epochDropDiagnostic(dayKeys: days, baselineEpoch: 0)
         XCTAssertEqual(d.dropped, 0)

@@ -1764,7 +1764,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">sulla scala di carico autonomico 0-3</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">La linea traccia il tuo carico autonomico durante la giornata di veglia, valutato against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">Queste sono lenti HRV aggiuntive, su richiesta, calcolate dagli intervalli R-R di oggi. Sono informative e non modificano il punteggio dello stress qui sopra.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Confrontiamo la frequenza cardiaca a riposo e l\'HRV di oggi con i tuoi valori personali dei 30 giorni baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Confrontiamo la frequenza cardiaca a riposo e la HRV di oggi con i tuoi valori di riferimento personali. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Segnalazione di bug</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Disponi</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Disponi le sezioni di Oggi</string>
@@ -2828,4 +2828,6 @@
     <string name="raw_diag_ecg_probe_running">Una acquisizione potrebbe essere ancora attiva su questo strap. Il verdetto va nello strap log.</string>
     <string name="today_customize_live_session_availability">Compare oggi se le sessioni in diretta sono attivate nelle Impostazioni o una sessione è attiva.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Oggi a modo tuo, frequenza cardiaca leggibile da ogni app e l\'italiano</string>
+    <string name="today_hrv_over_baseline">HRV %1$d%% sopra la linea di base</string>
+    <string name="today_hrv_under_baseline">HRV %1$d%% sotto la linea di base</string>
 </resources>

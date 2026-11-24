@@ -1653,7 +1653,7 @@
     <string name="l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107">na escala de carga autónoma 0-3</string>
     <string name="l10n_stress_screen_the_line_traces_your_autonomic_load_804f4028">A linha acompanha a tua carga autónoma ao longo do dia, pontuada against your own calm hours today (the same 0-3 proxy as the score above, read hour by hour). Hours without enough data are skipped.</string>
     <string name="l10n_stress_screen_these_are_extra_on_demand_hrv_9303f1de">Estas são lentes HRV extra a pedido, calculadas a partir dos intervalos RR atuais. São informativos e não alteram a pontuação de stress acima.</string>
-    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Comparámos a frequência cardíaca em repouso e a VFC de hoje com a tua frequência cardíaca de 30 dias baseline. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
+    <string name="l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955">Comparamos a frequência cardíaca em repouso e a VFC de hoje com os teus valores de referência pessoais. A higher-than-usual resting HR and a lower-than-usual HRV both push the score up, classic signs the body is activated. The combined shift is mapped onto a 0-3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <string name="l10n_test_centre_screen_bug_report_5a7ee5ac">Relatório de erro</string>
     <string name="l10n_today_screen_arrange_cfdd099c">Organizar</string>
     <string name="l10n_today_screen_arrange_today_sections_9675862b">Organizar secções de Hoje</string>
@@ -2852,4 +2852,6 @@
     <string name="raw_diag_ecg_probe_running">Pode ainda estar a decorrer uma captura nesta pulseira. O veredicto vai para o strap log.</string>
     <string name="today_customize_live_session_availability">Aparece hoje quando as sessões em direto estão ativadas nas Definições ou existe uma sessão ativa.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Hoje à sua maneira, frequência cardíaca para qualquer aplicação e italiano</string>
+    <string name="today_hrv_over_baseline">VFC %1$d%% acima da linha de base</string>
+    <string name="today_hrv_under_baseline">HRV %1$d%% abaixo da linha de base</string>
 </resources>

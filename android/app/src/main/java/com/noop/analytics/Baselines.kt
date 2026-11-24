@@ -130,6 +130,18 @@ object Baselines {
     const val recoveryBaselineEpochKey: String = "noop.recoveryBaselineEpoch"
 
     /**
+     * First UTC day key kept by the epoch-aware fold. A reset after midnight
+     * drops that day; a reset at midnight keeps it. null disables the cut.
+     * Mirrors Swift Baselines.firstCountedDay and foldHistory's strict comparison.
+     */
+    fun firstCountedDay(baselineEpoch: Double): String? {
+        if (baselineEpoch <= 0.0 || !baselineEpoch.isFinite()) return null
+        val utcDay = java.time.LocalDate.ofEpochDay(kotlin.math.floor(baselineEpoch / 86_400.0).toLong())
+        val dayStart = utcDay.atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond().toDouble()
+        return (if (dayStart < baselineEpoch) utcDay.plusDays(1) else utcDay).toString()
+    }
+
+    /**
      * Default per-metric configurations (HRV, resting HR, respiration, skin temp, daily
      * Effort/strain).
      *

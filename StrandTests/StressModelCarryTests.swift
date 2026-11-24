@@ -1,13 +1,16 @@
 import XCTest
+import StrandAnalytics
 import WhoopStore
 @testable import Strand
 
-/// StressModel carry (#543). The Today "Stress" metric derives against a 30-day RHR/HRV baseline. Today's
+/// StressModel carry (#543). The Today "Stress" metric uses a 30-day RHR baseline and Charge's folded HRV baseline. Today's
 /// own daily row is often vitals-less until the overnight is analyzed (especially right after an app update
 /// relaunches and re-runs the analyze pass), and every OTHER Today vital carries last night's value — Stress
 /// used to be the one card that didn't, so it dropped to "Calibrating" while the rest showed numbers. These
 /// pin the carry: score the newest day that actually has RHR/HRV. Twin of the Android StressModelTest.
 final class StressModelCarryTests: XCTestCase {
+
+    private let july19Midnight: Double = 1_784_419_200
 
     private func day(_ d: String, rhr: Int?, hrv: Double?) -> DailyMetric {
         DailyMetric(day: d, totalSleepMin: nil, efficiency: nil, deepMin: nil, remMin: nil,
@@ -44,5 +47,92 @@ final class StressModelCarryTests: XCTestCase {
         XCTAssertNotNil(model)
         XCTAssertEqual(model?.score ?? -1, 2.5, accuracy: 0.001,
                        "the latest day's stored stress must win over a carry")
+    }
+    func testResetDayAfterUtcMidnightDoesNotUsePreResetHrv() throws {
+        let days = [
+            day("2026-07-18", rhr: 55, hrv: 90),
+            day("2026-07-19", rhr: 56, hrv: 78),
+        ]
+        let epoch = july19Midnight + 1
+        let charge = Baselines.foldHistory(
+            days.map(\.avgHrv), dayKeys: days.map(\.day), cfg: Baselines.metricCfg["hrv"]!, baselineEpoch: epoch
+        )
+        XCTAssertEqual(charge.nValid, 0)
+        let model = try XCTUnwrap(StressModel(days: days, stored: [], hrvBaselineEpoch: epoch,
+                                              chargeHrvBaseline: charge))
+        XCTAssertNil(model.hrvDelta)
+        XCTAssertEqual(model.rhrDelta ?? .nan, 1, accuracy: 1e-9)
+    }
+
+    func testPreCutStoredStressDoesNotCarryIntoFirstKeptDay() throws {
+        let old = day("2026-07-19", rhr: nil, hrv: nil)
+        let kept = day("2026-07-20", rhr: nil, hrv: nil)
+        let stored = [(day: old.day, value: 2.5)]
+        let epoch = july19Midnight + 1
+        XCTAssertNil(StressModel(days: [old, kept], stored: stored, recoveryBaselineEpoch: epoch))
+        let current = try XCTUnwrap(StressModel(
+            days: [old, kept], stored: stored + [(day: kept.day, value: 1.5)], recoveryBaselineEpoch: epoch
+        ))
+        XCTAssertEqual(current.score, 1.5, accuracy: 1e-9)
+    }
+
+    func testHrvDeltaUsesChargeFoldAfterRecalibration() throws {
+        let epoch = july19Midnight + 1
+        let days = [
+            day("2026-07-19", rhr: nil, hrv: 105), // reset day is not counted
+            day("2026-07-20", rhr: nil, hrv: 60),
+            day("2026-07-21", rhr: nil, hrv: 60),
+            day("2026-07-22", rhr: nil, hrv: 60),
+            day("2026-07-23", rhr: nil, hrv: 150),
+            day("2026-07-24", rhr: nil, hrv: 55),
+        ]
+        let charge = ChargeBaselines.resolve(imported: [], own: days, anchorDay: "2026-07-24",
+                                             hrvEpoch: epoch, recoveryEpoch: 0).hrv
+        XCTAssertEqual(charge.nValid, 5)
+        let model = try XCTUnwrap(StressModel(days: days, stored: [], hrvBaselineEpoch: epoch,
+                                              chargeHrvBaseline: charge))
+        XCTAssertEqual(charge.baseline, 55 - (try XCTUnwrap(model.hrvDelta)), accuracy: 1e-9)
+    }
+
+    /// #2818: a Charge reset must not compare new HRV/RHR with the discarded era.
+    func testEpochCutsAreIndependentAndKeepHistoricalDayContext() throws {
+        let old = (14...18).map {
+            day(String(format: "2026-07-%02d", $0), rhr: 55, hrv: 90)
+        }
+        let recent = [
+            day("2026-07-19", rhr: 59, hrv: 77),
+            day("2026-07-20", rhr: 60, hrv: 78),
+            day("2026-07-21", rhr: 61, hrv: 79),
+            day("2026-07-22", rhr: 60, hrv: 78),
+        ]
+        let all = old + recent + [day("2026-07-23", rhr: 59, hrv: 82)]
+        let legacyCharge = ChargeBaselines.resolve(imported: [], own: all, anchorDay: "2026-07-23",
+                                                   hrvEpoch: 0, recoveryEpoch: 0).hrv
+        let legacy = try XCTUnwrap(StressModel(days: all, stored: [], chargeHrvBaseline: legacyCharge))
+        // HRV reset Jul 18 noon -> Jul 19 kept. RHR reset Jul 20 noon -> Jul 21 kept.
+        let resetCharge = ChargeBaselines.resolve(imported: [], own: all, anchorDay: "2026-07-23",
+                                                  hrvEpoch: 1_784_376_000, recoveryEpoch: 1_784_548_800).hrv
+        XCTAssertEqual(resetCharge.nValid, 5)
+        let recalibrated = try XCTUnwrap(StressModel(
+            days: all, stored: [], hrvBaselineEpoch: 1_784_376_000,
+            recoveryBaselineEpoch: 1_784_548_800, chargeHrvBaseline: resetCharge
+        ))
+        XCTAssertLessThan(try XCTUnwrap(legacy.hrvDelta), 0)
+        XCTAssertEqual(legacy.rhrDelta ?? .nan, 16.0 / 9.0, accuracy: 1e-9)
+        XCTAssertGreaterThan(try XCTUnwrap(recalibrated.hrvDelta), 0)
+        XCTAssertEqual(recalibrated.rhrDelta ?? .nan, -1.5, accuracy: 1e-9)
+        XCTAssertLessThan(recalibrated.score, 1.0)
+
+        // An historical, pre-reset scored day retains its own preceding nights.
+        let historical = Array(old.prefix(4))
+        let historicalCharge = ChargeBaselines.resolve(imported: [], own: historical, anchorDay: "2026-07-17",
+                                                       hrvEpoch: 0, recoveryEpoch: 0).hrv
+        let before = try XCTUnwrap(StressModel(days: historical, stored: [], chargeHrvBaseline: historicalCharge))
+        let withFutureReset = try XCTUnwrap(StressModel(
+            days: historical, stored: [], hrvBaselineEpoch: 1_784_376_000,
+            recoveryBaselineEpoch: 1_784_548_800, chargeHrvBaseline: historicalCharge
+        ))
+        XCTAssertEqual(before.hrvDelta ?? .nan, withFutureReset.hrvDelta ?? .nan, accuracy: 1e-9)
+        XCTAssertEqual(before.rhrDelta ?? .nan, withFutureReset.rhrDelta ?? .nan, accuracy: 1e-9)
     }
 }
