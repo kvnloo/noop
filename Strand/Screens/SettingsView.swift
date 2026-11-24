@@ -158,6 +158,9 @@ struct SettingsView: View {
     /// sustained-elevated window and offers — via a single dismissible card — to save it as a workout.
     /// Nothing is ever created automatically. Mirrors the Android `NoopPrefs.KEY_AUTO_DETECT_WORKOUTS`.
     @AppStorage(PuffinExperiment.autoDetectWorkoutsKey) private var autoDetectWorkoutsEnabled = false
+    // Both limits are optional (zero = no additional filter), device-local and separate from scoring.
+    @AppStorage("workouts.autoDetectMinimumAverageBpm") private var autoDetectMinAverageBpm = 0
+    @AppStorage("workouts.autoDetectMaximumDurationMin") private var autoDetectMaxDurationMin = 0
 
     /// "Journal reminder" (#627, default ON). When ON, Today shows the persistent journal widget
     /// (last-7-days strip + tap-through). Mirrors the Android `NoopPrefs.KEY_JOURNAL_REMINDER_ENABLED`.
@@ -1716,6 +1719,55 @@ struct SettingsView: View {
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if autoDetectWorkoutsEnabled {
+                    rowDivider
+                    FormRow(label: "Avg HR") {
+                        HStack(spacing: NoopMetrics.space2) {
+                            Text("Threshold")
+                                .font(StrandFont.caption)
+                            if autoDetectMinAverageBpm == 0 {
+                                Text("Off")
+                            } else {
+                                Text("\(autoDetectMinAverageBpm) bpm")
+                            }
+                            Stepper("Threshold") {
+                                autoDetectMinAverageBpm = autoDetectMinAverageBpm == 0
+                                    ? 80 : min(160, autoDetectMinAverageBpm + 10)
+                            } onDecrement: {
+                                autoDetectMinAverageBpm = autoDetectMinAverageBpm <= 80
+                                    ? 0 : autoDetectMinAverageBpm - 10
+                            }
+                            .labelsHidden()
+                        }
+                        .font(StrandFont.bodyNumber)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    }
+                    rowDivider
+                    FormRow(label: "Duration") {
+                        HStack(spacing: NoopMetrics.space2) {
+                            Text("Max")
+                                .font(StrandFont.caption)
+                            if autoDetectMaxDurationMin == 0 {
+                                Text("Off")
+                            } else {
+                                Text("\(autoDetectMaxDurationMin) min")
+                            }
+                            Stepper("Duration") {
+                                let choices = [0, 30, 60, 120, 240]
+                                let index = choices.firstIndex(of: autoDetectMaxDurationMin) ?? 0
+                                autoDetectMaxDurationMin = choices[min(choices.count - 1, index + 1)]
+                            } onDecrement: {
+                                let choices = [0, 30, 60, 120, 240]
+                                let index = choices.firstIndex(of: autoDetectMaxDurationMin) ?? 0
+                                autoDetectMaxDurationMin = choices[max(0, index - 1)]
+                            }
+                            .labelsHidden()
+                        }
+                        .font(StrandFont.bodyNumber)
+                        .foregroundStyle(StrandPalette.textPrimary)
+                    }
+                }
 
                 rowDivider
 

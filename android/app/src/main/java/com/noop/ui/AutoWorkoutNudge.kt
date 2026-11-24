@@ -346,7 +346,11 @@ private suspend fun autoDetectCandidate(
     val detectedDismissed = repo.dismissedDetectedUnion(viewModel.deviceId)
         .map { it.startTs to it.endTs }
         .distinct()
-    return candidates
+    return AutoWorkoutDetector.filterSuggestions(
+        candidates,
+        minimumAverageBPM = AutoWorkoutPrefs.minimumAverageBpm(context),
+        maximumDurationMin = AutoWorkoutPrefs.maximumDurationMin(context),
+    )
         .filterNot { AutoWorkoutPrefs.isDismissed(it, legacyDismissed, detectedDismissed) }
         .maxByOrNull { it.startSec }
 }
