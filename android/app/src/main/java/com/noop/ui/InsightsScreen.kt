@@ -81,20 +81,17 @@ import com.noop.analytics.EffectRanker
 //     (HRV ↔ charge, rest ↔ charge, RHR ↔ charge, charge → next-day charge),
 //     each rendered as a one-line insight with r and a plain-English reading.
 //
-// Data note vs macOS: the Swift app computes these via the StrandAnalytics package
-// (BehaviorInsights / CorrelationEngine) over a metricSeries store. On Android the
-// analytics package isn't ported, and the guaranteed outcome source is the cached
-// DailyMetric rows (vm.recentDays). So the outcome series here are read straight off
-// those rows (recovery / avgHrv / sleep-efficiency / restingHr) and the simple, honest
-// math (group means + Cohen's d, Pearson r) is computed inline below. No fabricated
-// values: a behaviour or relationship only appears when there is real overlapping data.
+// Android reuses the Kotlin EffectRanker and cached DailyMetric values for Charge,
+// HRV and RHR. Rest is NOT raw efficiency: it is the 0..100 sleep_performance
+// composite from the source-aware repository resolver, matching the Swift
+// InsightsView series. No unseen journal answers or missing scores are invented.
 
 // MARK: - Outcome (segmented selection)
 
 /** One interrogable outcome metric: how to read it off a DailyMetric, its label,
  *  units, and whether higher is the "good" direction (drives sign-aware tint). */
-private enum class Outcome(
-    val label: String,
+internal enum class Outcome(
+    private val resolveLabel: () -> String,
     val outcomeName: String,
     val higherIsBetter: Boolean,
     /** The Bevel colour world the outcome belongs to, drives the card wash so the
@@ -105,21 +102,25 @@ private enum class Outcome(
     val format: (Double) -> String,
 ) {
     Recovery(
-        label = uiString(R.string.l10n_insights_screen_charge_d4e1aee4), outcomeName = "Charge", higherIsBetter = true, domain = DomainTheme.Charge,
+        resolveLabel = { uiString(R.string.l10n_insights_screen_charge_d4e1aee4) }, outcomeName = "Charge", higherIsBetter = true, domain = DomainTheme.Charge,
         pick = { it.recovery }, format = { "${it.roundToInt()}%" },
     ),
     Hrv(
-        label = "HRV", outcomeName = "HRV", higherIsBetter = true, domain = DomainTheme.Rest,
+        resolveLabel = { "HRV" }, outcomeName = "HRV", higherIsBetter = true, domain = DomainTheme.Rest,
         pick = { it.avgHrv }, format = { "${it.roundToInt()} ms" },
     ),
     Sleep(
-        label = uiString(R.string.l10n_insights_screen_rest_b79e5f48), outcomeName = "Rest", higherIsBetter = true, domain = DomainTheme.Rest,
-        pick = { it.efficiency }, format = { "${it.roundToInt()}%" },
+        resolveLabel = { uiString(R.string.l10n_insights_screen_rest_b79e5f48) }, outcomeName = "Rest", higherIsBetter = true, domain = DomainTheme.Rest,
+        // Rest is a 0..100 resolved composite, never DailyMetric.efficiency (0..1).
+        pick = { null }, format = { "${it.roundToInt()}%" },
     ),
     Rhr(
-        label = uiString(R.string.l10n_insights_screen_rhr_04edf9b3), outcomeName = "Resting HR", higherIsBetter = false, domain = DomainTheme.Stress,
+        resolveLabel = { uiString(R.string.l10n_insights_screen_rhr_04edf9b3) }, outcomeName = "Resting HR", higherIsBetter = false, domain = DomainTheme.Stress,
         pick = { it.restingHr?.toDouble() }, format = { "${it.roundToInt()} bpm" },
-    ),
+    );
+
+    // The series projection doesn't need to resolve Android presentation resources.
+    val label: String get() = resolveLabel()
 }
 
 // MARK: - Computed shapes (plain data; behaviour effects come from the analytics package)
@@ -136,7 +137,7 @@ private data class Relationship(
     val significant: Boolean get() = n >= 4 && abs(r) >= significanceThreshold(n)
 }
 
-/** The fully-computed insight inputs for the current data, recomputed off recentDays. */
+/** The fully-computed insight inputs for the current data, recomputed from the active strap snapshot. */
 private data class InsightModel(
     /** behaviour question → set of days it was answered "yes". */
     val behaviours: Map<String, Set<String>>,
@@ -161,14 +162,15 @@ private data class InsightModel(
 /**
  * Insights, behaviour effects + metric relationships over cached history.
  *
- * Loads the journal (all days) and the per-day outcome series from `vm.recentDays`,
+ * Loads the journal (all days) and the per-day outcome series from the active strap snapshot,
  * then presents the ranked behaviour effects for the selected outcome and the curated
  * Pearson relationships. Empty/sparse states explain what's missing rather than faking
  * numbers, matching the macOS data-display contract.
  */
 @Composable
 fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
-    val days by vm.recentDays.collectAsStateWithLifecycle()
+    val daily by vm.insightsDays.collectAsStateWithLifecycle(initialValue = InsightsDailySnapshot())
+    val days = daily.days
 
     // Journal answers (all history): imported "my-whoop" rows UNIONED with native "noop-journal"
     // rows (native wins per (day, question)). Keyed on journalSeq so the logging card's saves and
@@ -282,10 +284,10 @@ fun InsightsScreen(vm: AppViewModel, onOpenInsightsHub: () -> Unit = {}) {
     var experimentDurationDays by remember { mutableStateOf(loadExperimentInt(ctx, EXP_DURATION, ExperimentLength.TwoWeeks.days)) }
     var experimentBaselineDays by remember { mutableStateOf(loadExperimentInt(ctx, EXP_BASELINE, ExperimentLength.TwoWeeks.days)) }
 
-    // Build outcome day-maps + ordered series off the cached daily metrics. Cheap and
-    // recomputed only when `days` changes (not on every recomposition).
-    val model = remember(days, behaviours, controls, numericJournalSeries) {
-        buildModel(days, behaviours, controls, numericJournalSeries)
+    // Model consumers include behaviour effects, Rest↔Charge correlations and
+    // personal-experiment snapshots; all must read the SAME Rest series.
+    val model = remember(daily, behaviours, controls, numericJournalSeries) {
+        buildModel(days, behaviours, controls, numericJournalSeries, daily.restByDay)
     }
 
     // Ranked behaviour effects for the current outcome (recomputed when outcome/data change).
@@ -1571,21 +1573,37 @@ private fun RBar(r: Double, color: Color) {
 
 // MARK: - Model building + math (simple, honest, no external analytics)
 
-/** Build the per-outcome day maps + ordered series from cached daily metrics. */
+/** The Rest outcome's measured points in the cached window. Unlike a daily
+ * efficiency pick, missing composites remain missing. Pure so JVM regression
+ * tests never need to initialize Android's localized UI resources. */
+internal fun classicInsightsRestSeries(
+    days: List<DailyMetric>,
+    restCompositeByDay: Map<String, Double>,
+): List<Pair<String, Double>> =
+    days.mapNotNull { day -> restCompositeByDay[day.day]?.let { day.day to it } }
+
+internal fun classicInsightsSeries(
+    days: List<DailyMetric>,
+    restCompositeByDay: Map<String, Double>,
+): Map<Outcome, List<Pair<String, Double>>> = Outcome.entries.associateWith { outcome ->
+    // Oldest → newest; one value per day in the cached window.
+    if (outcome == Outcome.Sleep) {
+        classicInsightsRestSeries(days, restCompositeByDay)
+    } else {
+        days.mapNotNull { day -> outcome.pick(day)?.let { day.day to it } }
+    }
+}
+
+/** Shape daily outcomes for effects, relationships and experiment snapshots. */
 private fun buildModel(
     days: List<DailyMetric>,
     behaviours: Map<String, Set<String>>,
     controls: Map<String, Set<String>>,
     numericJournalSeries: Map<String, Map<String, Double>> = emptyMap(),
+    restCompositeByDay: Map<String, Double>,
 ): InsightModel {
-    val outcomeByDay = mutableMapOf<Outcome, Map<String, Double>>()
-    val seriesByOutcome = mutableMapOf<Outcome, List<Pair<String, Double>>>()
-    for (o in Outcome.entries) {
-        // Oldest → newest; one value per day (DailyMetric PK is (deviceId, day)).
-        val series = days.mapNotNull { d -> o.pick(d)?.let { d.day to it } }
-        seriesByOutcome[o] = series
-        outcomeByDay[o] = series.toMap()
-    }
+    val seriesByOutcome = classicInsightsSeries(days, restCompositeByDay)
+    val outcomeByDay = seriesByOutcome.mapValues { (_, series) -> series.toMap() }
     return InsightModel(behaviours, controls, outcomeByDay, seriesByOutcome, numericJournalSeries)
 }
 
