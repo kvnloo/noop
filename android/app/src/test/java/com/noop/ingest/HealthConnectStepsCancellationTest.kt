@@ -14,13 +14,20 @@ import com.noop.data.AppleDaily
 import com.noop.data.WhoopDao
 import com.noop.data.WhoopRepository
 import com.noop.ui.NoopPrefs
+import com.noop.ui.refreshImportedStepsForDay
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.intrinsics.startCoroutineUninterceptedOrReturn
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
@@ -30,6 +37,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 /**
  * Cancellation during Health Connect's live steps top-up must not be treated as a recoverable
@@ -109,6 +117,7 @@ class HealthConnectStepsCancellationTest {
         records: List<StepsRecord> = emptyList(),
         calls: MutableList<String> = mutableListOf(),
         secondPageFailure: Exception? = null,
+        read: (suspend () -> ReadRecordsResponse<StepsRecord>)? = null,
     ): HealthConnectClient {
         var pagesRead = 0
         val controller = Proxy.newProxyInstance(
@@ -125,11 +134,16 @@ class HealthConnectStepsCancellationTest {
         return Proxy.newProxyInstance(
             HealthConnectClient::class.java.classLoader,
             arrayOf(HealthConnectClient::class.java),
-        ) { _, method, _ ->
+        ) { _, method, args ->
             when (method.name) {
                 "getPermissionController" -> controller
                 "readRecords" -> {
                     calls.add("readRecords")
+                    if (read != null) {
+                        @Suppress("UNCHECKED_CAST")
+                        val continuation = args.last() as Continuation<ReadRecordsResponse<StepsRecord>>
+                        return@newProxyInstance read.startCoroutineUninterceptedOrReturn(continuation)
+                    }
                     if (pagesRead++ > 0 && secondPageFailure != null) throw secondPageFailure
                     // The SDK response constructor is internal; build this test fixture reflectively.
                     val constructor = ReadRecordsResponse::class.java.declaredConstructors.single {
@@ -142,6 +156,39 @@ class HealthConnectStepsCancellationTest {
                 else -> error("Unexpected Health Connect call: " + method.name)
             }
         } as HealthConnectClient
+    }
+
+    @Test
+    fun cancellingTodayRefreshWhileReadingStepsDoesNotLoadStoredSteps() = runTest {
+        val (context, before) = preparedContext()
+        val started = CompletableDeferred<Unit>()
+        val daoCalls = mutableListOf<String>()
+        val client = fakeClient(read = {
+            started.complete(Unit)
+            awaitCancellation()
+        })
+        val repo = repository(daoCalls)
+        var visibleSteps: Int? = null
+        val job = launch {
+            refreshImportedStepsForDay(
+                isToday = true,
+                refreshTodaySteps = { HealthConnectImporter.refreshTodaySteps(context, repo, client) },
+            ) {
+                repo.appleDaily("health-connect", "2026-11-03", "2026-11-03")
+                visibleSteps = 42
+            }
+        }
+
+        started.await()
+        assertTrue(job.isActive)
+        job.cancelAndJoin()
+
+        assertTrue(job.isCancelled)
+        assertEquals("The cancelled refresh must not update Today state", null, visibleSteps)
+        assertTrue("No DAO work is allowed after a cancelled steps read", daoCalls.isEmpty())
+        assertTrue("Cancellation must not be reported as a Health Connect read error",
+            ShadowLog.getLogsForTag("HealthConnect").none { it.msg.contains("failed; skipping") })
+        assertNoStamp(context, before)
     }
 
     private fun repository(
