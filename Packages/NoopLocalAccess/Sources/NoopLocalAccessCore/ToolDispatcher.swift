@@ -42,9 +42,9 @@ public final class NoopToolDispatcher {
             return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
         case "sleep_stages":
             return try data().sleepStages(
-                days: boundedDays(arguments["days"], default: 30, max: 4000),
-                limit: boundedLimit(arguments["limit"], default: 14, max: 60),
-                maxPoints: boundedLimit(arguments["max_points"], default: 200, max: 2000)
+                days: arguments["days"]?.intValue ?? SleepStageBounds.defaultDays,
+                limit: arguments["limit"]?.intValue ?? SleepStageBounds.defaultLimit,
+                maxPoints: arguments["max_points"]?.intValue ?? SleepStageBounds.defaultMaxPoints
             )
         default:
             throw LocalAccessError.toolNotFound(name)

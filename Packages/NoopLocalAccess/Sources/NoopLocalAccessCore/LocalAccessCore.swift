@@ -381,6 +381,32 @@ public final class ReadonlyNoopStore {
     }
 }
 
+enum SleepStageBounds {
+    static let defaultDays = 30
+    static let defaultLimit = 14
+    static let defaultMaxPoints = 200
+
+    static let days = 1...4_000
+    static let sessions = 1...60
+    static let points = 1...2_000
+
+    static func clampDays(_ value: Int) -> Int {
+        clamp(value, to: days)
+    }
+
+    static func clampLimit(_ value: Int) -> Int {
+        clamp(value, to: sessions)
+    }
+
+    static func clampMaxPoints(_ value: Int) -> Int {
+        clamp(value, to: points)
+    }
+
+    private static func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+}
+
 public final class NoopDataAccess {
     private let store: ReadonlyNoopStore
     private let deviceId: String
@@ -512,7 +538,11 @@ public final class NoopDataAccess {
         ])
     }
 
-    public func sleepStages(days: Int, limit: Int, maxPoints: Int) throws -> JSONValue {
+    /// Returns stored stages with bounded lookback, session count, and points per session.
+    public func sleepStages(days requestedDays: Int, limit requestedLimit: Int, maxPoints requestedMaxPoints: Int) throws -> JSONValue {
+        let days = SleepStageBounds.clampDays(requestedDays)
+        let limit = SleepStageBounds.clampLimit(requestedLimit)
+        let maxPoints = SleepStageBounds.clampMaxPoints(requestedMaxPoints)
         let (fromTs, toTs) = timestampRange(days: days)
         let imported = try store.sleepSessions(deviceId: deviceId, from: fromTs, to: toTs, limit: 5000)
         let computed = try store.sleepSessions(deviceId: computedDeviceId, from: fromTs, to: toTs, limit: 5000)
