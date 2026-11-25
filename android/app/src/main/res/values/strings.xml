@@ -2889,4 +2889,14 @@
     <string name="raw_diag_ecg_probe_running">A capture may still be running on this strap. The verdict goes to the strap log.</string>
     <string name="today_customize_live_session_availability">Appears today when Live Sessions is enabled in Settings or a session is active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today your way, heart rate any app can read, and Italian</string>
+
+    <!-- #2682: consented Android GPS route output into a wearer-selected SAF folder. -->
+    <string name="route_auto_export_title">Automatic GPX route export</string>
+    <string name="route_auto_export_disclosure">After you save a GPS workout, NOOP writes its route to your chosen folder. GPX tracks reveal where you were. A synced folder may share them with other apps or services.</string>
+    <string name="route_auto_export_default_off">Off by default. Other apps cannot request routes directly from NOOP.</string>
+    <string name="route_auto_export_failed">The last route export failed or folder access was revoked. Choose the folder again.</string>
+    <string name="route_auto_export_choose">Choose folder to enable</string>
+    <string name="route_auto_export_change">Change export folder</string>
+    <string name="route_auto_export_disable">Turn off automatic export</string>
+    <string name="route_auto_export_denied">Folder access was not granted. The export setting was not changed.</string>
 </resources>

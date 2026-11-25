@@ -2830,4 +2830,14 @@
     <string name="raw_diag_ecg_probe_running">此腕带上可能仍在采集。结论会写入 strap log。</string>
     <string name="today_customize_live_session_availability">在设置中启用Live Sessions 实时记录或有正在进行的训练时，今天会显示此部分。</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">自定义「今天」页面、任何应用都能读取的心率，以及意大利语</string>
+
+    <!-- #2682: consented Android GPS route output into a wearer-selected SAF folder. -->
+    <string name="route_auto_export_title">自动导出 GPX 路线</string>
+    <string name="route_auto_export_disclosure">保存 GPS 运动记录后，NOOP 会将路线写入所选文件夹。GPX 轨迹会暴露您的位置。同步文件夹可能将轨迹共享给其他应用或服务。</string>
+    <string name="route_auto_export_default_off">默认关闭。其他应用无法直接向 NOOP 请求路线。</string>
+    <string name="route_auto_export_failed">上次路线导出失败，或文件夹访问权限已撤销。请重新选择文件夹。</string>
+    <string name="route_auto_export_choose">选择文件夹并启用</string>
+    <string name="route_auto_export_change">更改导出文件夹</string>
+    <string name="route_auto_export_disable">关闭自动导出</string>
+    <string name="route_auto_export_denied">未获得文件夹访问权限。导出设置未更改。</string>
 </resources>

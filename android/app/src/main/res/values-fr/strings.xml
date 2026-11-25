@@ -2859,4 +2859,14 @@
     <string name="raw_diag_ecg_probe_running">Une capture est peut-être encore active sur ce bracelet. Le verdict est écrit dans le strap log.</string>
     <string name="today_customize_live_session_availability">Apparaît aujourd’hui si les sessions en direct sont activées dans Paramètres ou si une session est active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Aujourd\'hui à votre façon, fréquence cardiaque lisible par toute application, et l\'italien</string>
+
+    <!-- #2682: consented Android GPS route output into a wearer-selected SAF folder. -->
+    <string name="route_auto_export_title">Export automatique des parcours GPX</string>
+    <string name="route_auto_export_disclosure">Après l’enregistrement d’une séance GPS, NOOP écrit son parcours dans le dossier choisi. Les traces GPX révèlent vos déplacements. Un dossier synchronisé peut les partager avec d’autres applications ou services.</string>
+    <string name="route_auto_export_default_off">Désactivé par défaut. Aucune autre application ne peut demander directement des parcours à NOOP.</string>
+    <string name="route_auto_export_failed">Le dernier export a échoué ou l’accès au dossier a été révoqué. Choisissez à nouveau le dossier.</string>
+    <string name="route_auto_export_choose">Choisir un dossier pour activer</string>
+    <string name="route_auto_export_change">Changer le dossier d’export</string>
+    <string name="route_auto_export_disable">Désactiver l’export automatique</string>
+    <string name="route_auto_export_denied">Accès au dossier non accordé. Le réglage reste inchangé.</string>
 </resources>
