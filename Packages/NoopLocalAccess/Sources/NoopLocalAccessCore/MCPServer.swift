@@ -235,7 +235,10 @@ public func toolsList() -> JSONValue {
                     "kind": stringProperty("Required event.kind filter. One kind per call."),
                     "hours": integerProperty("Trailing hours if from_ts/to_ts are not provided, default 6, max 24."),
                     "from_ts": integerProperty("Inclusive unix-seconds start. Requires to_ts."),
-                    "to_ts": integerProperty("Inclusive unix-seconds end. Requires from_ts."),
+                    "to_ts": integerProperty(
+                        "Inclusive unix-seconds end. Requires from_ts and must be at or after it, "
+                            + "no more than \(EventSeriesBounds.hours.upperBound) hours later."
+                    ),
                     "limit": integerProperty("Maximum returned points as a suffix, default 500, max 2000."),
                     "device_id": stringProperty("Device id. Defaults to the configured NOOP_DEVICE_ID."),
                 ],

@@ -403,6 +403,22 @@ public final class ReadonlyNoopStore {
     }
 }
 
+enum EventSeriesBounds {
+    static let defaultHours = 6
+    static let defaultLimit = 500
+    static let hours = 1...24
+    static let rows = 1...2_000
+    static let secondsPerHour = 3_600
+
+    static func clampHours(_ value: Int) -> Int {
+        min(max(value, hours.lowerBound), hours.upperBound)
+    }
+
+    static func clampLimit(_ value: Int) -> Int {
+        min(max(value, rows.lowerBound), rows.upperBound)
+    }
+}
+
 public final class NoopDataAccess {
     private let store: ReadonlyNoopStore
     private let deviceId: String
@@ -556,27 +572,38 @@ public final class NoopDataAccess {
         ])
     }
 
+    /// Returns the newest matching events within a bounded window.
+    /// Explicit bounds must be paired, ordered, and no more than 24 hours apart.
     public func eventSeries(
         kind: String,
-        hours: Int,
+        hours requestedHours: Int,
         fromTs explicitFrom: Int?,
         toTs explicitTo: Int?,
-        limit: Int,
+        limit requestedLimit: Int,
         deviceId overrideDeviceId: String?
     ) throws -> JSONValue {
         if (explicitFrom == nil) != (explicitTo == nil) {
             throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
         }
 
-        let now = Int(Date().timeIntervalSince1970)
+        let hours = EventSeriesBounds.clampHours(requestedHours)
+        let limit = EventSeriesBounds.clampLimit(requestedLimit)
         let fromTs: Int
         let toTs: Int
         if let explicitFrom, let explicitTo {
+            guard explicitFrom <= explicitTo else {
+                throw LocalAccessError.invalidParams("event_series from_ts must be <= to_ts")
+            }
+            let (span, overflow) = explicitTo.subtractingReportingOverflow(explicitFrom)
+            let maxHours = EventSeriesBounds.hours.upperBound
+            guard !overflow, span <= maxHours * EventSeriesBounds.secondsPerHour else {
+                throw LocalAccessError.invalidParams("event_series explicit range must not exceed \(maxHours) hours")
+            }
             fromTs = explicitFrom
             toTs = explicitTo
         } else {
-            fromTs = now - hours * 3_600
-            toTs = now
+            toTs = Int(Date().timeIntervalSince1970)
+            fromTs = toTs - hours * EventSeriesBounds.secondsPerHour
         }
 
         let resolvedDeviceId = overrideDeviceId ?? deviceId

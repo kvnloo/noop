@@ -51,10 +51,10 @@ public final class NoopToolDispatcher {
             }
             return try data().eventSeries(
                 kind: kind,
-                hours: boundedDays(arguments["hours"], default: 6, max: 24),
+                hours: EventSeriesBounds.clampHours(arguments["hours"]?.intValue ?? EventSeriesBounds.defaultHours),
                 fromTs: fromTs,
                 toTs: toTs,
-                limit: boundedLimit(arguments["limit"], default: 500, max: 2000),
+                limit: EventSeriesBounds.clampLimit(arguments["limit"]?.intValue ?? EventSeriesBounds.defaultLimit),
                 deviceId: arguments["device_id"]?.stringValue
             )
         default:
