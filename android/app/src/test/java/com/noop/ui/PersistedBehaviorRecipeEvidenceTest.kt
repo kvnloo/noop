@@ -68,9 +68,14 @@ class PersistedBehaviorRecipeEvidenceTest {
                         MetricSeriesRow("my-whoop", day, recipe.metric, value)
                     },
                 )
+            }
 
+            // Both recipes share the store; scope each journal readback to its question.
+            for (recipe in recipes) {
                 val imported = dao.journal("my-whoop", days.first(), days.last())
+                    .filter { it.question == recipe.factor }
                 val native = dao.journal("noop-journal", days.first(), days.last())
+                    .filter { it.question == recipe.factor }
                 val metric = dao.metricSeries("my-whoop", recipe.metric, days.first(), days.last())
                 assertEquals(6, imported.size)
                 assertEquals(5, native.size)

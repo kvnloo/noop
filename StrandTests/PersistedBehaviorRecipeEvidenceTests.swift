@@ -42,12 +42,16 @@ final class PersistedBehaviorRecipeEvidenceTests: XCTestCase {
             let samples = zip(days, recipe.withValues + recipe.withoutValues + recipe.unansweredValues)
                 .map { MetricPoint(day: $0.0, key: recipe.metric, value: $0.1) }
             try await store.upsertMetricSeries(samples, deviceId: "my-whoop")
+        }
 
-            // Read back through production storage before invoking production merge/analytics.
+        // Both recipes share the store; scope each journal readback to its question.
+        for recipe in recipes {
             let importedRead = try await store.journalEntries(
                 deviceId: "my-whoop", from: days[0], to: days[11])
+                .filter { $0.question == recipe.factor }
             let nativeRead = try await store.journalEntries(
                 deviceId: "noop-journal", from: days[0], to: days[11])
+                .filter { $0.question == recipe.factor }
             let metricRead = try await store.metricSeries(
                 deviceId: "my-whoop", key: recipe.metric, from: days[0], to: days[11])
 
