@@ -15,6 +15,7 @@ public final class NoopToolDispatcher {
         "data_freshness",
         "sleep_summary",
         "workout_summary",
+        "sleep_stages",
     ]
 
     public func dispatch(name: String, arguments: [String: JSONValue] = [:]) throws -> JSONValue {
@@ -39,6 +40,12 @@ public final class NoopToolDispatcher {
             return try data().sleepSummary(days: boundedDays(arguments["days"], default: 30, max: 4000))
         case "workout_summary":
             return try data().workoutSummary(days: boundedDays(arguments["days"], default: 90, max: 4000))
+        case "sleep_stages":
+            return try data().sleepStages(
+                days: arguments["days"]?.intValue ?? SleepStageBounds.defaultDays,
+                limit: arguments["limit"]?.intValue ?? SleepStageBounds.defaultLimit,
+                maxPoints: arguments["max_points"]?.intValue ?? SleepStageBounds.defaultMaxPoints
+            )
         default:
             throw LocalAccessError.toolNotFound(name)
         }
