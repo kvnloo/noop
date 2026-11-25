@@ -175,6 +175,12 @@ public struct StorageStats: Equatable, Sendable {
     public let rawBytes: Int
 }
 
+public struct EventRow: Equatable, Sendable {
+    public let ts: Int
+    public let kind: String
+    public let payloadJSON: String
+}
+
 public final class ReadonlyNoopStore {
     private let dbQueue: DatabaseQueue
     private let tableNames: Set<String>
@@ -319,6 +325,22 @@ public final class ReadonlyNoopStore {
         }
     }
 
+    public func events(deviceId: String, kind: String, from: Int, to: Int, limit: Int) throws -> [EventRow] {
+        guard tableNames.contains("event") else { return [] }
+        let cap = max(1, limit)
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT ts, kind, payloadJSON FROM event
+                WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ?
+                ORDER BY ts DESC, kind DESC LIMIT ?
+                """, arguments: [deviceId, kind, from, to, cap])
+                .map {
+                    EventRow(ts: $0["ts"], kind: $0["kind"], payloadJSON: $0["payloadJSON"])
+                }
+            return Array(rows.reversed())
+        }
+    }
+
     public func storageStats() throws -> StorageStats {
         try dbQueue.read { db in
             // Every durable decoded per-second table. The four below the first line were landed as
@@ -378,6 +400,22 @@ public final class ReadonlyNoopStore {
                 "This looks like a NOOP-like SQLite file without GRDB migration metadata. Open NOOP to repair it before using local access."
             )
         }
+    }
+}
+
+enum EventSeriesBounds {
+    static let defaultHours = 6
+    static let defaultLimit = 500
+    static let hours = 1...24
+    static let rows = 1...2_000
+    static let secondsPerHour = 3_600
+
+    static func clampHours(_ value: Int) -> Int {
+        min(max(value, hours.lowerBound), hours.upperBound)
+    }
+
+    static func clampLimit(_ value: Int) -> Int {
+        min(max(value, rows.lowerBound), rows.upperBound)
     }
 }
 
@@ -531,6 +569,70 @@ public final class NoopDataAccess {
             "totalEnergyKcal": .double(calories),
             "totalStrain": .double(strain),
             "workouts": .array(rows.suffix(300).map(workoutJSON)),
+        ])
+    }
+
+    /// Returns the newest matching events within a bounded window.
+    /// Explicit bounds must be paired, ordered, and no more than 24 hours apart.
+    public func eventSeries(
+        kind: String,
+        hours requestedHours: Int,
+        fromTs explicitFrom: Int?,
+        toTs explicitTo: Int?,
+        limit requestedLimit: Int,
+        deviceId overrideDeviceId: String?
+    ) throws -> JSONValue {
+        if (explicitFrom == nil) != (explicitTo == nil) {
+            throw LocalAccessError.invalidParams("event_series requires both from_ts and to_ts")
+        }
+
+        let hours = EventSeriesBounds.clampHours(requestedHours)
+        let limit = EventSeriesBounds.clampLimit(requestedLimit)
+        let fromTs: Int
+        let toTs: Int
+        if let explicitFrom, let explicitTo {
+            guard explicitFrom <= explicitTo else {
+                throw LocalAccessError.invalidParams("event_series from_ts must be <= to_ts")
+            }
+            let (span, overflow) = explicitTo.subtractingReportingOverflow(explicitFrom)
+            let maxHours = EventSeriesBounds.hours.upperBound
+            guard !overflow, span <= maxHours * EventSeriesBounds.secondsPerHour else {
+                throw LocalAccessError.invalidParams("event_series explicit range must not exceed \(maxHours) hours")
+            }
+            fromTs = explicitFrom
+            toTs = explicitTo
+        } else {
+            toTs = Int(Date().timeIntervalSince1970)
+            fromTs = toTs - hours * EventSeriesBounds.secondsPerHour
+        }
+
+        let resolvedDeviceId = overrideDeviceId ?? deviceId
+        let rows = try store.events(
+            deviceId: resolvedDeviceId,
+            kind: kind,
+            from: fromTs,
+            to: toTs,
+            limit: limit + 1
+        )
+        let truncated = rows.count > limit
+        let points = Array(rows.suffix(limit))
+        return .object([
+            "kind": .string(kind),
+            "range": .object([
+                "fromTs": .int(fromTs),
+                "toTs": .int(toTs),
+                "hours": .int(hours),
+            ]),
+            "returned": .int(points.count),
+            "truncated": .bool(truncated),
+            "points": .array(points.map { row in
+                .object([
+                    "ts": .int(row.ts),
+                    "iso": .string(iso(Date(timeIntervalSince1970: TimeInterval(row.ts)))),
+                    "kind": .string(row.kind),
+                    "payload": parseEventPayloadJSON(row.payloadJSON),
+                ])
+            }),
         ])
     }
 
@@ -717,6 +819,15 @@ private func optionalDouble(_ value: Double?) -> JSONValue {
 
 private func optionalInt(_ value: Int?) -> JSONValue {
     value.map { .int($0) } ?? .null
+}
+
+private func parseEventPayloadJSON(_ raw: String) -> JSONValue {
+    guard let data = raw.data(using: .utf8),
+          let decoded = try? JSONDecoder().decode(JSONValue.self, from: data)
+    else {
+        return .string(raw)
+    }
+    return decoded
 }
 
 func boundedDays(_ value: JSONValue?, default defaultValue: Int, max maxValue: Int) -> Int {
