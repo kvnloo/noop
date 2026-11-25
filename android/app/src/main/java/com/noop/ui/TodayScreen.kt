@@ -107,6 +107,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -301,6 +302,8 @@ internal suspend fun refreshImportedStepsForDay(
     if (isToday) {
         try {
             refreshTodaySteps()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { /* best-effort */ }
     }
     loadStoredSteps()
