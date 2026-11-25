@@ -107,6 +107,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -290,6 +291,23 @@ private data class TodayLiveSnapshot(
     /** Charging hides the runtime estimate (no "X left" while topping up). Rare flips, snapshot-safe. */
     val charging: Boolean?,
 )
+
+internal suspend fun refreshImportedStepsForDay(
+    isToday: Boolean,
+    refreshTodaySteps: suspend () -> Int?,
+    loadStoredSteps: suspend () -> Unit,
+) {
+    // Today's steps go stale within minutes of a manual import. Top them up before
+    // reading the stored rows; an ordinary HC hiccup falls back to whatever is stored. (#150)
+    if (isToday) {
+        try {
+            refreshTodaySteps()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) { /* best-effort */ }
+    }
+    loadStoredSteps()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -893,19 +911,16 @@ fun TodayScreen(
         } else null to 0
     }
     LaunchedEffect(days, selectedDayKey) {
-        // Today's steps keep moving after the manual one-shot HC import, so the stored row goes
-        // stale within minutes, top it up with ONE live StepsRecord read before the stored-row
-        // read below. Best-effort: any HC hiccup just falls through to whatever is stored. (#150)
-        if (selectedDayOffset == 0) {
-            try {
-                HealthConnectImporter.refreshTodaySteps(context, viewModel.repo)
-            } catch (_: Exception) { /* best-effort */ }
+        refreshImportedStepsForDay(
+            isToday = selectedDayOffset == 0,
+            refreshTodaySteps = { HealthConnectImporter.refreshTodaySteps(context, viewModel.repo) },
+        ) {
+            importedStepsForDay = stepsForDay(
+                viewModel.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31"),
+                viewModel.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31"),
+                selectedDayKey,
+            )
         }
-        importedStepsForDay = stepsForDay(
-            viewModel.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31"),
-            viewModel.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31"),
-            selectedDayKey,
-        )
     }
 
     // On-device steps ESTIMATE for the selected day (key "steps_est", computed "-noop" source). The
