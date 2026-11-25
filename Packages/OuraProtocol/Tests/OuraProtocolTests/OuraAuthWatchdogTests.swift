@@ -80,6 +80,8 @@ final class OuraAuthWatchdogTests: XCTestCase {
         // Past auth: a session that reached the enable triplet / streaming must never be re-opened.
         let past = OuraDriver(ringGen: .gen3, authKey: key)
         _ = past.nextStep(after: .ready)
+        let pastProof = past.nextStep(after: .nonceReceived(Array(0..<UInt8(OuraAuth.nonceLength))))
+        XCTAssertEqual(pastProof.map(\.label), ["submit_proof"])
         _ = past.nextStep(after: .authCompleted(.success))
         XCTAssertEqual(past.phase, .enablingLiveHR)
         XCTAssertNil(past.authNonceRetryCommand())
@@ -87,6 +89,8 @@ final class OuraAuthWatchdogTests: XCTestCase {
         // A rejected handshake is a verdict, not silence.
         let failed = OuraDriver(ringGen: .gen3, authKey: key)
         _ = failed.nextStep(after: .ready)
+        let failedProof = failed.nextStep(after: .nonceReceived(Array(0..<UInt8(OuraAuth.nonceLength))))
+        XCTAssertEqual(failedProof.map(\.label), ["submit_proof"])
         _ = failed.nextStep(after: .authCompleted(.authError))
         XCTAssertEqual(failed.phase, .authFailed(.authError))
         XCTAssertNil(failed.authNonceRetryCommand())

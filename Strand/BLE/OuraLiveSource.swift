@@ -512,6 +512,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// True while a teardown was USER/COORDINATOR-initiated (`stop()`), so the disconnect handler suppresses
     /// the auto-reconnect (mirrors BLEManager's `intentionalDisconnect`). Cleared on every `connect(_:)`.
     private var intentionalDisconnect = false
+    private var authRefusalPolicy = OuraAuthRefusalPolicy()
     /// Consecutive involuntary reconnect attempts, driving the capped-exponential backoff (3, 6, 12, 24,
     /// 48, 60s). Reset to 0 on a successful connect and on an explicit `connect(_:)`. Matches BLEManager
     /// (#414) and the Android `ReconnectBackoff` so a ring genuinely out of range doesn't hammer BLE.
@@ -1666,6 +1667,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// is the documented way out of that dead end — and never scans past a known ring.
     public func reconnect() {
         needsPairing = nil
+        authRefusalPolicy.resetForUserReconnect()
         intentionalDisconnect = false
         failedReconnectAttempts = 0
         if let p = peripheral, p.state == .connected {
@@ -1872,7 +1874,9 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     /// Advance the driver with a transition and write whatever it asks for next.
     private func advance(_ transition: OuraTransition) {
         guard let driver else { return }
+        let wasAuthenticating = driver.phase == .authenticating
         let commands = driver.nextStep(after: transition)
+        let authAction = wasAuthenticating ? authRefusalPolicy.observe(driver.phase) : nil
         write(commands)
         // `.ready` is the step that writes `get_nonce`; from here the session waits on the ring, and
         // nothing else is armed until `auth OK`. Start the clock on that wait (#2304).
@@ -1888,8 +1892,25 @@ public final class OuraLiveSource: NSObject, ObservableObject {
             } else {
                 announceNeedsPairing(reason: .factoryResetOrNoKey)
             }
-        case .authFailed(let status):
-            announceNeedsPairing(reason: .authFailed(status))
+        case .authFailed, .retryableAuthFailure:
+            guard let authAction else { return }
+            let reason: NeedsPairingReason
+            if case .authFailed(let status) = driver.phase {
+                reason = .authFailed(status)
+                log("Oura: auth status \(status.rawValue)")
+            } else {
+                reason = .ambiguousAuthRefusal
+                log("Oura: ambiguous auth refusal after unexpected nonce")
+            }
+            clearAuthWatchdog()
+            driver.stop()
+            switch authAction {
+            case .reconnect:
+                log("Oura: retrying auth once before pausing auto-reconnect")
+                if let p = peripheral { central.cancelPeripheralConnection(p) }
+            case .needsPairing:
+                announceNeedsPairing(reason: reason)
+            }
         case .streaming:
             if !reachedStreaming {
                 reachedStreaming = true
@@ -2795,6 +2816,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
     private enum NeedsPairingReason {
         case factoryResetOrNoKey
         case authFailed(OuraAuthStatus)
+        case ambiguousAuthRefusal
         case installFailed(String)
     }
 
@@ -2821,15 +2843,18 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         guard needsPairing == nil else { return }
         let detail: String
+        var recovery = " The ring isn't bricked: re-pair it in the Oura app to recover it."
         switch reason {
         case .factoryResetOrNoKey:
             detail = "NOOP needs the ring's install key to read it live, and that pairing handshake isn't set up yet."
         case .authFailed(let status):
             detail = "The ring rejected the pairing handshake (status \(status.rawValue))."
+        case .ambiguousAuthRefusal:
+            detail = "NOOP couldn't confirm the pairing handshake. Automatic reconnect is paused."
+            recovery = " Close other apps connected to the ring, then reconnect from Live."
         case .installFailed(let why):
             detail = "NOOP couldn't take over this ring (\(why))."
         }
-        let recovery = " The ring isn't bricked: re-pair it in the Oura app to recover it."
         let msg = detail + " Live data isn't available - export from the Oura app and import the file instead." + recovery
         needsPairing = msg
         log("Oura: \(msg)")
@@ -3396,9 +3421,13 @@ extension OuraLiveSource: @preconcurrency CBPeripheralDelegate {
     private func handleSecure(_ routing: OuraDriver.SecureRouting) {
         switch routing {
         case .nonce(let nonce):
-            clearAuthWatchdog()   // the ring answered: the healthy path, and the watchdog's only exit
-            silentSessionsInARow = 0
-            log("Oura: auth nonce received - submitting proof")
+            if driver?.expectsAuthNonce == true {
+                clearAuthWatchdog()   // the ring answered our outstanding request
+                silentSessionsInARow = 0
+                log("Oura: auth nonce received - submitting proof")
+            } else {
+                log("Oura: foreign nonce ignored (no get_nonce outstanding)")
+            }
             advance(.nonceReceived(nonce))
         case .authStatus(let status):
             if status.isSuccess {

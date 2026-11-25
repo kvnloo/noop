@@ -24,6 +24,7 @@ import com.noop.data.OuraStreamMapping
 import com.noop.data.StreamBatch
 import com.noop.data.StreamPersistence
 import com.noop.oura.OuraAuth
+import com.noop.oura.OuraAuthRefusalPolicy
 import com.noop.oura.OuraAuthWatchdog
 import com.noop.oura.OuraCommand
 import com.noop.oura.OuraDriver
@@ -387,6 +388,7 @@ class OuraLiveSource(
      */
     @Volatile
     private var intentionalDisconnect = false
+    private val authRefusalPolicy = OuraAuthRefusalPolicy()
     /**
      * Consecutive involuntary reconnect attempts, feeding the capped-exponential [ReconnectBackoff] (3, 6,
      * 12, 24, 48, 60s). Reset to 0 on a successful connect and on an explicit [connect] so a ring genuinely
@@ -1191,6 +1193,7 @@ class OuraLiveSource(
      */
     fun reconnect() {
         _needsPairing.value = null
+        authRefusalPolicy.resetForUserReconnect()
         intentionalDisconnect = false
         failedReconnectAttempts = 0
         handler.removeCallbacks(reconnectRunnable)
@@ -1665,12 +1668,14 @@ class OuraLiveSource(
      *  enable triplet completes the driver reports Streaming; we then begin the periodic re-engage. */
     private fun advance(transition: OuraTransition) = guardedCallback("advance") {
         val d = driver ?: return@guardedCallback
+        val wasAuthenticating = d.phase == OuraDriverPhase.Authenticating
         val commands = d.nextStep(transition)
+        val authAction = if (wasAuthenticating) authRefusalPolicy.observe(d.phase) else null
         for (cmd in commands) write(cmd)
         // Ready is the step that writes `get_nonce`; from here the session waits on the ring, and nothing
         // else is armed until `auth OK`. Start the clock on that wait (#2304).
         if (transition == OuraTransition.Ready && d.phase == OuraDriverPhase.Authenticating) armAuthWatchdog()
-        when (d.phase) {
+        when (val state = d.phase) {
             OuraDriverPhase.Streaming -> {
                 // The driver returns to Streaming after EACH history-fetch pass completes, so gate all the
                 // one-shot streaming work on reachedStreaming (twin of Swift's `if !reachedStreaming`) - it
@@ -1715,9 +1720,23 @@ class OuraLiveSource(
                 // otherwise stay honest and never loop the dangerous command.
                 if (adoptIntent) provisionKeyInstall(d) else announceNeedsPairing(KEY_INSTALL_MESSAGE)
             }
-            is OuraDriverPhase.AuthFailed -> {
-                log("Oura: auth failed - the stored install key does not match this ring")
-                announceNeedsPairing(AUTH_FAILED_MESSAGE)
+            is OuraDriverPhase.AuthFailed, OuraDriverPhase.RetryableAuthFailure -> {
+                if (authAction == null) return@guardedCallback
+                val message = if (state is OuraDriverPhase.AuthFailed) {
+                    log("Oura: auth status ${state.status.name}")
+                    AUTH_FAILED_MESSAGE
+                } else {
+                    log("Oura: ambiguous auth refusal after unexpected nonce")
+                    AMBIGUOUS_AUTH_REFUSAL_MESSAGE
+                }
+                clearAuthWatchdog()
+                d.stop()
+                when (authAction) {
+                    OuraAuthRefusalPolicy.Action.RECONNECT ->
+                        log("Oura: retrying auth once before pausing auto-reconnect")
+                    OuraAuthRefusalPolicy.Action.NEEDS_PAIRING -> announceNeedsPairing(message)
+                }
+                runCatching { gatt?.disconnect() }
             }
             else -> Unit
         }
@@ -1939,8 +1958,12 @@ class OuraLiveSource(
     private fun routeSecure(d: OuraDriver, secure: com.noop.oura.OuraSecureFrame) = guardedCallback("secure-route") {
         when (val routing = d.handleSecureFrame(secure)) {
             is OuraDriver.SecureRouting.Nonce -> {
-                clearAuthWatchdog()   // the ring answered: the healthy path, and the watchdog's only exit
-                silentSessionsInARow = 0
+                if (d.expectsAuthNonce) {
+                    clearAuthWatchdog()   // the ring answered our outstanding request
+                    silentSessionsInARow = 0
+                } else {
+                    log("Oura: foreign nonce ignored (no get_nonce outstanding)")
+                }
                 advance(OuraTransition.NonceReceived(routing.nonce))
             }
             is OuraDriver.SecureRouting.AuthStatus -> {
@@ -2635,6 +2658,11 @@ class OuraLiveSource(
             "NOOP couldn't pair with this Oura ring. Live data isn't available. The ring is not damaged: " +
                 "re-pair it in the Oura app to set it up again. NOOP adopt is Beta and may not work on " +
                 "every ring or firmware yet. You can also export from the Oura app and use file import."
+
+        private const val AMBIGUOUS_AUTH_REFUSAL_MESSAGE =
+            "NOOP couldn't confirm the pairing handshake. Automatic reconnect is paused. Close other " +
+                "apps connected to the ring, then reconnect from Live. You can also export from the " +
+                "Oura app and use file import."
 
         /** Honest fallback copy: a key IS installed but it does not match this ring. Same recovery note. */
         private const val AUTH_FAILED_MESSAGE =

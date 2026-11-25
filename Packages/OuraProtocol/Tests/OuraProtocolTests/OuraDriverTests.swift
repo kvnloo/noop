@@ -122,6 +122,7 @@ final class OuraDriverTests: XCTestCase {
     func testFactoryResetStatusDrivesNeedsKeyInstall() {
         let d = OuraDriver(ringGen: .gen3, authKey: key)
         _ = d.nextStep(after: .ready)
+        _ = d.nextStep(after: .nonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
         let cmds = d.nextStep(after: .authCompleted(.inFactoryReset))
         XCTAssertTrue(cmds.isEmpty)
         XCTAssertEqual(d.phase, .needsKeyInstall)
@@ -130,8 +131,71 @@ final class OuraDriverTests: XCTestCase {
     func testAuthErrorIsSurfacedNotRetriedBlindly() {
         let d = OuraDriver(ringGen: .gen3, authKey: key)
         _ = d.nextStep(after: .ready)
+        _ = d.nextStep(after: .nonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
         _ = d.nextStep(after: .authCompleted(.authError))
         XCTAssertEqual(d.phase, .authFailed(.authError))
+    }
+
+    /// A shared CoreBluetooth link delivers the other client's nonce; only our single outstanding
+    /// get_nonce may authorize a proof. A refused handshake after an extra nonce needs a reconnect.
+    func testForeignNonceIgnoredAndRefusalIsRetryable() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key)
+        let own = bytes("0102030405060708090a0b0c0d0e0f")
+        let foreign = bytes("f0e0d0c0b0a0908070605040302010")
+
+        XCTAssertTrue(d.nextStep(after: .nonceReceived(foreign)).isEmpty)
+        XCTAssertEqual(d.phase, .idle)
+        XCTAssertFalse(d.expectsAuthNonce)
+
+        XCTAssertEqual(d.nextStep(after: .ready).map { $0.label }, ["notify_all", "get_nonce"])
+        XCTAssertTrue(d.expectsAuthNonce)
+        let proof = d.nextStep(after: .nonceReceived(own))
+        XCTAssertEqual(proof.map { $0.label }, ["submit_proof"])
+        XCTAssertEqual(Array(proof[0].bytes[0..<3]), [0x2F, 0x11, 0x2D])
+        XCTAssertFalse(d.expectsAuthNonce)
+        XCTAssertNil(d.authNonceRetryCommand(), "one get_nonce must not authorize two proofs")
+        XCTAssertTrue(d.nextStep(after: .nonceReceived(foreign)).isEmpty)
+        XCTAssertEqual(d.phase, .authenticating)
+
+        XCTAssertTrue(d.nextStep(after: .authCompleted(.authError)).isEmpty)
+        XCTAssertEqual(d.phase, .retryableAuthFailure)
+        XCTAssertTrue(d.nextStep(after: .nonceReceived(own)).isEmpty)
+        XCTAssertEqual(d.phase, .retryableAuthFailure)
+        d.stop()
+        XCTAssertFalse(d.expectsAuthNonce)
+        XCTAssertEqual(d.phase, .stopped)
+    }
+
+    /// A status 3 after auth OK (and a late second client's nonce) cannot revoke an authenticated link.
+    func testLateAuthStatusesCannotDemoteAnAuthenticatedSession() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key)
+        _ = d.nextStep(after: .ready)
+        _ = d.nextStep(after: .nonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
+        XCTAssertEqual(d.nextStep(after: .authCompleted(.success)).map { $0.label }, ["dhr_read"])
+        XCTAssertEqual(d.phase, .enablingLiveHR)
+        XCTAssertTrue(d.nextStep(after: .nonceReceived(bytes("f0e0d0c0b0a0908070605040302010"))).isEmpty)
+        XCTAssertTrue(d.nextStep(after: .authCompleted(.notOriginalDevice)).isEmpty)
+        XCTAssertTrue(d.nextStep(after: .authCompleted(.success)).isEmpty)
+        XCTAssertEqual(d.phase, .enablingLiveHR)
+        XCTAssertEqual(d.nextStep(after: .enableAckReceived).map { $0.label }, ["dhr_enable"])
+        XCTAssertEqual(d.nextStep(after: .enableAckReceived).map { $0.label }, ["dhr_subscribe"])
+        XCTAssertTrue(d.nextStep(after: .enableAckReceived).isEmpty)
+        XCTAssertEqual(d.phase, .streaming)
+        XCTAssertTrue(d.nextStep(after: .authCompleted(.authError)).isEmpty)
+        XCTAssertEqual(d.phase, .streaming)
+    }
+
+    /// Another client's status before NOOP has sent a proof cannot authenticate the driver.
+    func testAuthStatusBeforeOurProofIsIgnored() {
+        let d = OuraDriver(ringGen: .gen3, authKey: key)
+        _ = d.nextStep(after: .ready)
+        XCTAssertTrue(d.nextStep(after: .authCompleted(.success)).isEmpty)
+        XCTAssertEqual(d.phase, .authenticating)
+        XCTAssertTrue(d.expectsAuthNonce)
+        XCTAssertEqual(d.authNonceRetryCommand()?.label, "get_nonce")
+        XCTAssertEqual(d.nextStep(after: .nonceReceived(bytes("0102030405060708090a0b0c0d0e0f")))
+            .map { $0.label }, ["submit_proof"])
+        XCTAssertEqual(d.nextStep(after: .authCompleted(.success)).map { $0.label }, ["dhr_read"])
     }
 
     // MARK: - Post-factory-reset key install sequencing (s3.2), gated on allowKeyInstall

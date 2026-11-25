@@ -107,12 +107,16 @@ class OuraAuthWatchdogTest {
 
         val past = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
         past.nextStep(OuraTransition.Ready)
+        val pastProof = past.nextStep(OuraTransition.NonceReceived(IntArray(OuraAuth.nonceLength) { it }))
+        assertEquals(listOf("submit_proof"), pastProof.map { it.label })
         past.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.SUCCESS))
         assertEquals(OuraDriverPhase.EnablingLiveHR, past.phase)
         assertNull(past.authNonceRetryCommand())
 
         val failed = OuraDriver(ringGen = OuraRingGen.GEN3, authKey = key)
         failed.nextStep(OuraTransition.Ready)
+        val failedProof = failed.nextStep(OuraTransition.NonceReceived(IntArray(OuraAuth.nonceLength) { it }))
+        assertEquals(listOf("submit_proof"), failedProof.map { it.label })
         failed.nextStep(OuraTransition.AuthCompleted(OuraAuthStatus.AUTH_ERROR))
         assertEquals(OuraDriverPhase.AuthFailed(OuraAuthStatus.AUTH_ERROR), failed.phase)
         assertNull(failed.authNonceRetryCommand())

@@ -46,6 +46,8 @@ public enum OuraDriverPhase: Equatable, Sendable {
     case needsKeyInstall      // ring is in factory reset; honest pairing path (s3.5 status 0x02)
     case installingKey        // post-factory-reset key install in flight (s3.2); awaiting the 0x25 ack
     case authFailed(OuraAuthStatus)
+    /// A shared-link auth reply is ambiguous; reconnect rather than claiming the key was refused.
+    case retryableAuthFailure
     case stopped
 }
 
@@ -67,6 +69,12 @@ public final class OuraDriver {
     public let notificationMask: UInt8
 
     public private(set) var phase: OuraDriverPhase = .idle
+    /// Only the first nonce replying to our outstanding get_nonce may produce a proof. The shared
+    /// CoreBluetooth link also delivers other clients' nonces and statuses (#2508).
+    private var nonceOutstanding = false
+    private var proofOutstanding = false
+    private var unexpectedNonceSeen = false
+    public var expectsAuthNonce: Bool { phase == .authenticating && nonceOutstanding }
     /// Tracks how many of the live-HR enable triplet ACKs have been seen.
     private var liveHREnableStep = 0
     /// Whether auth success should arm the live-HR enable triplet (`dhr_read` / `dhr_enable` /
@@ -131,11 +139,19 @@ public final class OuraDriver {
                 return []
             }
             phase = .authenticating
+            nonceOutstanding = true
+            proofOutstanding = false
+            unexpectedNonceSeen = false
             // Enable notifications, then request the auth nonce. SyncTime can follow auth.
             return [OuraCommands.enableAllNotifications(mask: notificationMask),
                     OuraCommand(label: "get_nonce", bytes: OuraAuth.getAuthNonceCommand())]
 
         case .nonceReceived(let nonce):
+            guard expectsAuthNonce else {
+                unexpectedNonceSeen = true
+                return []
+            }
+            nonceOutstanding = false
             guard let key = effectiveKey else {
                 phase = .needsKeyInstall
                 return []
@@ -145,9 +161,18 @@ public final class OuraDriver {
                 phase = .authFailed(.authError)
                 return []
             }
+            proofOutstanding = true
             return [OuraCommand(label: "submit_proof", bytes: cmd)]
 
         case .authCompleted(let status):
+            // Statuses are broadcast on the shared link. Accept only a verdict for a proof we sent.
+            // A late failure after auth OK must never revoke a working session (#2508).
+            guard phase == .authenticating, proofOutstanding else { return [] }
+            proofOutstanding = false
+            if unexpectedNonceSeen && status != .success {
+                phase = .retryableAuthFailure
+                return []
+            }
             switch status {
             case .success:
                 // A connect the app does not want live HR for (suspended night) skips the triplet
@@ -233,6 +258,9 @@ public final class OuraDriver {
     public func keyInstallAcknowledged() -> [OuraCommand] {
         guard phase == .installingKey, installedKey != nil else { return [] }
         phase = .authenticating
+        nonceOutstanding = true
+        proofOutstanding = false
+        unexpectedNonceSeen = false
         return [OuraCommands.enableAllNotifications(mask: notificationMask),
                 OuraCommand(label: "get_nonce", bytes: OuraAuth.getAuthNonceCommand())]
     }
@@ -242,13 +270,16 @@ public final class OuraDriver {
     /// the transport can never re-open the handshake on a session that already moved on (streaming, a
     /// pairing dead-end, stopped). Same bytes as the `.ready` step; the phase is left untouched.
     public func authNonceRetryCommand() -> OuraCommand? {
-        guard phase == .authenticating else { return nil }
+        guard expectsAuthNonce else { return nil }
         return OuraCommand(label: "get_nonce", bytes: OuraAuth.getAuthNonceCommand())
     }
 
     /// Stop: reset the flow so a fresh session re-runs auth (the app key is session-scoped, s3.1).
     public func stop() {
         phase = .stopped
+        nonceOutstanding = false
+        proofOutstanding = false
+        unexpectedNonceSeen = false
         liveHREnableStep = 0
         lastRingTimestamp = 0
         installedKey = nil
